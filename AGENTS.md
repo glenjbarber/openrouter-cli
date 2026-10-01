@@ -541,6 +541,42 @@ so that a later change does not silently reverse it.
 - The marker is written at mode `0600` and holds a process identifier only. No
   conversation text is written anywhere.
 
+### Stream detail
+
+- `/verbose` reports the shape of each streamed turn, on or off. It is off
+  unless asked for, since a reader who did not ask for it would read the extra
+  line as output from the model.
+- The mode is a display preference rather than a recording one. Nothing about
+  the request, the reply, or the conversation changes because of it, so it
+  coexists with `/cognito` and with a thread.
+- The events are counted and the shape is summarised rather than one row per
+  event. A reply commonly arrives as hundreds of deltas, so a line each would
+  bury the reply under the detail that was meant to explain it.
+- The summary is one line, however long the turn was. A detail that grows with
+  the turn is the noise the summary exists to avoid.
+- What is reported is the count of deltas, the character count, the finish
+  reason, and whether the accounting arrived. The finish reason is the one
+  thing about a stream a reader cannot infer from the text.
+- A missing terminator is reported, and so is a turn that failed, since a
+  summary that read like a complete one would misdescribe the exchange.
+- Absent accounting is stated rather than left out. A reader watching the token
+  counters would otherwise wait for figures that are never coming.
+- The error text is not repeated. It is already shown in the pane, and a second
+  copy would be noise.
+- The report is gathered only when the mode is on, so a session without it does
+  no work for it.
+- The mode is read once per turn rather than per event. The request goroutine
+  owns the turn, and a mode changed midway would otherwise show half a summary
+  under a reply that did not produce it.
+- Every stream event carries a kind, naming what it held, since a caller cannot
+  otherwise tell a delta from the accounting that arrives on the same chunk.
+- The kind labels the event rather than replacing it. The fields the interface
+  already relied on are untouched, so the label adds no coupling to the fields
+  it describes.
+- The count is in deltas and characters rather than tokens, since an exact
+  token count needs the model tokenizer, and the accounting carries the token
+  figures where the endpoint reported them.
+
 ### Wrapping
 
 - A reply longer than the pane is folded rather than cut. Cutting loses

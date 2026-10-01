@@ -73,6 +73,12 @@ type Session struct {
 	// because the user asked for it, or because it was left on by a crash,
 	// which is reported at startup rather than honoured silently.
 	cognito bool
+	// verbose reports that the pane should describe the shape of each
+	// streamed turn. It is a display mode rather than a recording one, so
+	// nothing about the request or the conversation changes because of it.
+	// It is guarded by mu, since the request goroutine reads it while the
+	// input goroutine may turn it on.
+	verbose bool
 	// windows caches the context length of each model seen, so that the
 	// threshold can be evaluated without a call per message.
 	windows *contextLength
@@ -349,6 +355,8 @@ func (s *Session) command(line string) bool {
 		s.toggleBell()
 	case "/cognito":
 		s.toggleCognito()
+	case "/verbose":
+		s.toggleVerbose()
 	case "/delegate":
 		s.startDelegate(strings.Join(args[1:], " "))
 	case "/btw":
@@ -396,6 +404,7 @@ func helpText() string {
 		"/new               clear the conversation",
 		"/bell              ring the terminal bell on reply, on or off",
 		"/cognito           record nothing, on or off",
+		"/verbose           report the shape of each streamed turn, on or off",
 		"/delegate QUESTION  ask a question alongside, without recording it",
 		"/btw               start a thread branched from this conversation",
 		"/main              leave the thread and return to the conversation",
@@ -700,6 +709,13 @@ func (s *Session) send(line string) {
 	defer s.endWork()
 
 	var reply strings.Builder
+	// The shape of the turn is gathered only when it was asked for, so that a
+	// session without the mode does no work for it. The value is read once
+	// here rather than per event, since this is the goroutine that owns the
+	// turn and a mode turned on mid-request would otherwise show half a
+	// summary.
+	var report streamReport
+	verbose := s.verboseOn()
 	// The streaming fields are cleared on every exit from the request,
 	// including a failure, so that a stale partial reply is not left on
 	// screen behind the error.
@@ -707,12 +723,16 @@ func (s *Session) send(line string) {
 		s.frame.Busy = false
 		s.frame.Partial = ""
 		s.frame.Status.State = stateIdle
+		if verbose {
+			s.frame.Reply = append(s.frame.Reply, "[stream] "+report.summary())
+		}
 	}()
 
 	err := s.client.Chat(s.ctx, openrouter.ChatRequest{
 		Model:    s.conv.Model(),
 		Messages: s.conv.Pending(line),
 	}, func(e openrouter.StreamEvent) {
+		report.note(e)
 		if e.Usage != nil {
 			s.conv.AddTokens(e.Usage.PromptTokens, e.Usage.CompletionTokens)
 			s.updateStatus()
