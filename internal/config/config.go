@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -83,6 +84,10 @@ type ErrNoAPIKey struct {
 	// same reasoning as the model: a file that cannot be read for its key has
 	// still been read.
 	Mouse bool
+	// URLBase is the endpoint the file asks for. It is carried through for the
+	// same reason: a reader whose key has not been entered yet is still talking
+	// to whichever endpoint the file names.
+	URLBase string
 }
 
 // Error implements the error interface.
@@ -124,15 +129,8 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("locating the home directory: %w", err)
 	}
 
-	for _, name := range fileNames {
-		path := name
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(home, filepath.FromSlash(name))
-		}
-		if resolved, ok := xdgOverride(name); ok {
-			path = resolved
-		}
-
+	paths := searchPaths(home)
+	for _, path := range paths {
 		info, err := os.Stat(path)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
@@ -145,21 +143,56 @@ func Load() (*Config, error) {
 		}
 		return parse(path)
 	}
-	return nil, fmt.Errorf("%w: searched %s", ErrNotFound, filepath.Join(home, fileNames[0]))
+	return nil, fmt.Errorf("%w: searched %s", ErrNotFound, strings.Join(paths, " and "))
+}
+
+// searchPaths returns the candidate paths in the order they are searched. The
+// first match wins and the results are not merged.
+//
+// The paths are shared with the installer rather than being written twice, so
+// that a default written at the first path cannot shadow a configuration found
+// at a later one.
+func searchPaths(home string) []string {
+	paths := make([]string, 0, len(fileNames))
+	for _, name := range fileNames {
+		// The XDG check comes first, since it matches the relative name and is
+		// re-rooted by itself. Joining first would compare a home-qualified
+		// path against a relative one and never match.
+		if resolved, ok := xdgOverride(name); ok {
+			paths = append(paths, resolved)
+			continue
+		}
+		if !filepath.IsAbs(name) {
+			name = filepath.Join(home, filepath.FromSlash(name))
+		}
+		paths = append(paths, name)
+	}
+	return paths
 }
 
 // xdgOverride redirects the XDG relative path to $XDG_CONFIG_HOME when that
 // variable is set.
+//
+// A relative value is ignored. The specification requires the variable to
+// hold an absolute path, and a relative one would be resolved against the
+// working directory, so running the client in a directory someone else wrote
+// would read a credential file out of it.
 func xdgOverride(name string) (string, bool) {
 	if name != fileNames[1] {
 		return "", false
 	}
 	base := os.Getenv("XDG_CONFIG_HOME")
-	if base == "" {
+	if base == "" || !filepath.IsAbs(base) {
 		return "", false
 	}
-	// Strip the leading ".config" component and re-root it.
-	rel := filepath.FromSlash("openrouter-cli/openrouter-cli.json")
+	// The leading .config element is exactly what the variable replaces, so
+	// what remains of the search path is the part below it. It is derived
+	// rather than written out a second time, since two copies of one path
+	// drift apart the moment either is edited.
+	rel, err := filepath.Rel(filepath.FromSlash(".config"), fileNames[1])
+	if err != nil {
+		return "", false
+	}
 	return filepath.Join(base, rel), true
 }
 
@@ -181,27 +214,65 @@ func parse(path string) (*Config, error) {
 		return nil, fmt.Errorf("%s is not valid JSON: %w", path, err)
 	}
 
+	// A key of nothing but whitespace is not a credential. The value itself is
+	// passed on exactly as written, since altering what goes on the wire is
+	// not this loader's decision, but a key that is blank once trimmed is
+	// treated as unset so that the interface reports an absent key rather than
+	// sending one the backend will reject.
+	unset := strings.TrimSpace(raw.APIKey) == ""
+
 	cfg := &Config{
 		APIKey:  raw.APIKey,
 		Model:   strings.TrimSpace(raw.Model),
 		Bell:    raw.Bell,
-		URLBase: raw.URLBase,
+		URLBase: resolveURLBase(raw.URLBase),
 		Path:    path,
-		Skipped: raw.SetupKey && raw.APIKey == "",
+		Skipped: raw.SetupKey && unset,
 		Mouse:   raw.Mouse,
 	}
 
-	if cfg.APIKey == "" {
+	if unset {
+		// The setup state is reported as an error so that a caller can stand in
+		// a configuration, and every value the file does carry travels with it.
+		// A preference dropped here would make a file that was read look as
+		// though it had not been.
 		if raw.SetupKey {
 			return cfg, nil
 		}
-		return nil, &ErrNoAPIKey{Path: path, Model: cfg.Model, Mouse: raw.Mouse}
-	}
-
-	if cfg.URLBase == "" {
-		cfg.URLBase = DefaultURLBase
+		return nil, &ErrNoAPIKey{
+			Path:    path,
+			Bell:    raw.Bell,
+			Model:   cfg.Model,
+			Mouse:   raw.Mouse,
+			URLBase: cfg.URLBase,
+		}
 	}
 	return cfg, nil
+}
+
+// resolveURLBase applies the endpoint override rule.
+//
+// An override carrying a path is used verbatim, so a self-hosted deployment
+// that serves the endpoints from somewhere other than /api/v1 keeps working.
+// The suffix is appended only to a bare scheme and host, such as
+// http://localhost:3000, which names an endpoint rather than a prefix.
+//
+// A value that does not parse as a URL is passed on as written, so that the
+// backend reports it rather than this client guessing at what was meant.
+func resolveURLBase(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return DefaultURLBase
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return raw
+	}
+	if strings.Trim(u.Path, "/") != "" {
+		return raw
+	}
+	u.Path = strings.TrimRight(u.Path, "/") + "/api/v1"
+	return u.String()
 }
 
 // checkMode enforces the 0600 requirement.

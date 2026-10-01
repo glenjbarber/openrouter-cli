@@ -29,14 +29,10 @@ func resolve(path string) (string, error) {
 			return current, nil
 		}
 
-		// Compare the link itself against its target. Lstat is what gives
-		// the link without following it; Stat would return the target and
-		// so would compare the target with itself.
-		linkInfo, err := os.Lstat(current)
-		if err != nil {
-			return "", fmt.Errorf("resolving %s: %w", current, err)
-		}
-
+		// The link itself is compared against its target. Lstat is what gives
+		// the link without following it; Stat would return the target and so
+		// would compare the target with itself.
+		linkInfo := info
 		dest, err := os.Readlink(current)
 		if err != nil {
 			return "", fmt.Errorf("reading the link %s: %w", current, err)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/glenjbarber/openrouter-cli/internal/bootstrap"
@@ -64,12 +65,14 @@ func run(args []string) error {
 		if !errors.As(err, &keyErr) {
 			return err
 		}
-		// The model and the mouse preference are preserved from the file
-		// even though the key is not, so that a file carrying a preference
+		// The model, the endpoint, and the preferences are preserved from the
+		// file even though the key is not, so that a file carrying a preference
 		// is not treated as unread.
 		cfg = config.EmptyMouse(keyErr.Model, keyErr.Mouse, keyErr.Bell)
+		if keyErr.URLBase != "" {
+			cfg.URLBase = keyErr.URLBase
+		}
 	}
-	_ = cfg
 
 	// The interface is entered only when both ends are a terminal. A
 	// redirected run reports why and stops rather than writing a frame into
@@ -100,10 +103,8 @@ func interface_(out, in *os.File, cfg *config.Config, opts options) error {
 	// Mouse reporting is not turned on unless it is asked for, because a
 	// terminal that reports events takes the drag that begins a selection
 	// away from the terminal, and text that cannot be selected is worse than
-	// a wheel that does nothing. The flag asks for it, and a session inside
-	// tmux stays off by default since the flag is a request the user can
-	// make again in a plain terminal.
-	if opts.mouse || (!tui.InTmux() && cfg.Mouse) {
+	// a wheel that does nothing.
+	if mouseWanted(opts, cfg) {
 		session.SetMouse(true)
 	}
 
@@ -121,6 +122,19 @@ func interface_(out, in *os.File, cfg *config.Config, opts options) error {
 	return nil
 }
 
+// mouseWanted reports whether mouse reporting is asked for at startup.
+//
+// Neither the flag nor the file is honoured inside tmux. The drag that begins a
+// selection is the gesture a nested terminal is most often used for, so a
+// session inside tmux turns reporting on with /mouse and not before. Outside
+// tmux either request is enough.
+func mouseWanted(opts options, cfg *config.Config) bool {
+	if tui.InTmux() {
+		return false
+	}
+	return opts.mouse || cfg.Mouse
+}
+
 // options holds the parsed command line.
 type options struct {
 	bootstrap   string
@@ -133,11 +147,16 @@ type options struct {
 //
 // The flag set stops at the first non-flag argument so that a subcommand name
 // is never mistaken for the value of a flag.
+//
+// The flag set writes nothing itself. It would otherwise report a bad flag on
+// stderr and return the same error, which the caller then reports again, so one
+// mistake reached the reader twice. The error is returned instead and named
+// once.
 func parseFlags(args []string) (options, error) {
 	var opts options
 
 	fs := flag.NewFlagSet("openrouter-cli", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(io.Discard)
 	fs.StringVar(&opts.bootstrap, "bootstrap", "",
 		"start the session from this Markdown or JSON document")
 	fs.BoolVar(&opts.mouse, "mouse", false,
@@ -162,7 +181,8 @@ func parseFlags(args []string) (options, error) {
 		case "help":
 			opts.showHelp = true
 		default:
-			return opts, fmt.Errorf("unknown command %q", rest[0])
+			return opts, fmt.Errorf("unknown command %q: run openrouter-cli -help "+
+				"for the commands and options", rest[0])
 		}
 	}
 	return opts, nil

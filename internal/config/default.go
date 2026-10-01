@@ -20,7 +20,13 @@ const DefaultFile = `{
 // DefaultFileName is the primary search path, written when no file is present.
 const DefaultFileName = ".openrouter-cli.json"
 
-// InstallDefault writes the default configuration when no file exists.
+// InstallDefault writes the default configuration when no configuration exists.
+//
+// A default is written only when the search finds nothing at any of its paths.
+// Writing it at the first path while a file waits at a later one would shadow
+// that file on the next load, since the search stops at the first match and
+// does not merge, so a reader whose configuration lives under XDG_CONFIG_HOME
+// would silently lose it on the first run.
 //
 // An existing file is left exactly as it is. The merge is deliberately not
 // attempted: a partial merge of a credential file can produce a file that
@@ -39,6 +45,22 @@ func InstallDefault() (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("locating the home directory: %w", err)
 	}
+
+	// A directory at a search path is left for InstallDefaultAt to report, so
+	// that the ordinary case of a directory at the primary path still produces
+	// the error rather than a silent skip.
+	for _, path := range searchPaths(home) {
+		info, err := os.Stat(path)
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			continue
+		case err != nil:
+			return false, fmt.Errorf("examining %s: %w", path, err)
+		case !info.IsDir():
+			return false, nil
+		}
+	}
+
 	return InstallDefaultAt(filepath.Join(home, DefaultFileName))
 }
 
@@ -69,6 +91,17 @@ func InstallDefaultAt(path string) (bool, error) {
 		return false, fmt.Errorf("creating %s: %w", path, err)
 	}
 	defer f.Close()
+
+	// The mode passed to open is filtered through the umask, so it is only an
+	// upper bound: a umask clearing any of the owner bits leaves a file the
+	// loader refuses on the next run, which is the client rejecting its own
+	// work. The mode is therefore set on the open descriptor rather than left
+	// to the umask, and a failure to set it is reported rather than ignored.
+	if err := f.Chmod(RequiredMode); err != nil {
+		f.Close()
+		os.Remove(path)
+		return false, fmt.Errorf("setting the mode of %s: %w", path, err)
+	}
 
 	if _, err := f.WriteString(DefaultFile); err != nil {
 		f.Close()
