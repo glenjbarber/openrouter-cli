@@ -383,18 +383,25 @@ func (s *Session) Run() error {
 		}
 
 		line, err := s.editor.ReadLine()
+		// The composed line is taken before the frame is cleared of it. The
+		// editor reports the line after every keystroke, so the frame holds
+		// what was in hand when the interrupt arrived. Clearing it first
+		// left nothing to test, which made the test below always true and
+		// ended the session on every interrupt.
+		composed := s.frame.Input
+		s.mu.Lock()
 		s.frame.Input = ""
 		s.frame.Pasted = nil
+		s.mu.Unlock()
 		switch {
 		case errors.Is(err, ErrEndOfInput):
 			return nil
 		case errors.Is(err, ErrInterrupt):
-			if s.frame.Input == "" {
+			if composed == "" {
 				return ErrQuit
 			}
 			// An interrupt with text in hand abandons the line rather than
 			// the session, which is what a shell does.
-			s.frame.Input = ""
 			s.draw()
 			continue
 		case err != nil:

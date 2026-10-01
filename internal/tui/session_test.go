@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"errors"
+	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -307,5 +310,77 @@ func TestStatusWriteWaitsForTheLockThePaintPathHolds(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("the status write did not complete once the lock was released")
+	}
+}
+
+// interruptSession returns a session reading its keys from a pipe, with the
+// callbacks Start installs, so that a key can be delivered the way a terminal
+// would deliver it rather than by calling the path under test directly.
+func interruptSession(t *testing.T, keys string) (*Session, func() string) {
+	t.Helper()
+	s, capture := auditSession(t, auditStream)
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("creating the input pipe: %v", err)
+	}
+	t.Cleanup(func() { reader.Close(); writer.Close() })
+
+	s.editor = NewLineEditor(reader)
+	s.editor.OnChange = func(line string) {
+		s.mu.Lock()
+		s.frame.Input = line
+		s.mu.Unlock()
+		s.draw()
+	}
+
+	go func() {
+		io.WriteString(writer, keys)
+		writer.Close()
+	}()
+	return s, capture
+}
+
+// runSession drives Run on its own goroutine and reports what it returned,
+// bounded so that a session that never leaves fails rather than hangs.
+func runSession(t *testing.T, s *Session) error {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- s.Run() }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(10 * time.Second):
+		t.Fatal("the session did not leave")
+		return nil
+	}
+}
+
+// An interrupt with a line in hand abandons the line rather than the session,
+// which is what a shell does.
+//
+// The editor reports the composed line after every keystroke, so the frame
+// holds it. The frame was cleared before it was tested, which left nothing to
+// test and made every interrupt end the session whatever had been typed.
+func TestInterruptWithALineInHandAbandonsTheLine(t *testing.T) {
+	s, capture := interruptSession(t, "half a thought\x03")
+
+	if err := runSession(t, s); errors.Is(err, ErrQuit) {
+		t.Fatal("an interrupt with a line in hand ended the session")
+	}
+
+	if got := auditLastFrame(t, capture); strings.Contains(got, "> half a thought") {
+		t.Errorf("the abandoned line was sent to the model.\n%s", got)
+	}
+}
+
+// An interrupt with nothing in hand is the way out, and must still be one.
+// The two are told apart by what was in hand, so the fix for the case above
+// must not swallow this one.
+func TestInterruptWithNoLineInHandEndsTheSession(t *testing.T) {
+	s, _ := interruptSession(t, "\x03")
+
+	if err := runSession(t, s); !errors.Is(err, ErrQuit) {
+		t.Errorf("an interrupt with no line in hand returned %v, want ErrQuit", err)
 	}
 }
