@@ -166,6 +166,14 @@ func (s *Session) AdoptCognito() error {
 	}
 
 	s.cognito = true
+	// The conversation is marked in the same step as the flag, since the mode is
+	// reported as in force from the next note onwards. A session that adopted
+	// the marker and went on recording would keep work the reader was told was
+	// being discarded.
+	s.conv.setEphemeral()
+	if s.mainConv != nil && s.mainConv != s.conv {
+		s.mainConv.setEphemeral()
+	}
 	if st.crash {
 		s.Note("cognito mode was left on by a session that did not exit cleanly. " +
 			"It is on, and nothing will be recorded.")
