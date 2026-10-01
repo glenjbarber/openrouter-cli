@@ -192,6 +192,12 @@ const (
 // fill the screen.
 const maxPasteRows = 5
 
+// headerRowCount is the height of the header above the reply pane: the title, a
+// rule, and the status bar. It is a constant rather than a local so that the
+// renderer and the search agree on how tall the pane is, since a jump that
+// placed a match under the prompt would be worse than not jumping at all.
+const headerRowCount = 3
+
 // Frame is the whole interface at one moment.
 type Frame struct {
 	// Title is the heading shown at the top of the reply pane.
@@ -297,7 +303,7 @@ func Render(f Frame, height, width int) []string {
 	// status bar carries the figures worth keeping. A frame that runs past
 	// the bottom pushes the prompt off the screen, which leaves no way to type
 	// a next message, so something in the header has to yield.
-	headerRows := 3
+	headerRows := headerRowCount
 	if height < headerRows+inputRows+1 {
 		headerRows = maxInt(1, height-inputRows)
 	}

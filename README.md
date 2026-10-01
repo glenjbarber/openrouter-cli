@@ -253,6 +253,7 @@ model:
 | `/connect`       | Test the connection and report the key.              |
 | `/key`           | Report the usage against the key.                    |
 | `/models`        | List the models, filtered as it is typed.           |
+| `/search`        | Search the conversation, filtered as it is typed.   |
 | `/freemodels`    | List the models that cost nothing to call.          |
 | `/model NAME`    | Choose the model. Without an argument, report it.    |
 | `/info`          | Report the model, the endpoint, and whether a key is set. |
@@ -274,6 +275,12 @@ separate submit. Escape leaves the listing and Enter chooses what the filter
 names. `/freemodels` is the same listing narrowed to the models that cost nothing,
 which are the ones whose quoted prompt and completion prices are both zero. A
 model whose price is not reported is not treated as free.
+
+`/search` filters the conversation as the query is typed, without a separate
+submit. Each line carrying the word is listed with the column the match fell
+at, and nothing is highlighted, so a selection copied out of the pane is plain
+text. Enter moves the view to the newest match and leaves the search open, and
+Escape closes it and puts the view back where it was.
 
 `/connect` contacts the key endpoint rather than running a completion, since it
 is cheap and it distinguishes a rejected key from a rejected model, which is the
