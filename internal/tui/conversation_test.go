@@ -83,17 +83,46 @@ func TestSeedIgnoresEmpty(t *testing.T) {
 	}
 }
 
-// A multi-line reply occupies one row per line, so it cannot push the frame
-// down the screen.
-func TestAppendLinesSplitsOnNewlines(t *testing.T) {
+// A reply is stored whole rather than split per line, since a fenced code
+// block spans lines and splitting first leaves each fence marker on its own.
+// The renderer folds what it is given, so what it is given has to carry the
+// whole reply for a code block to be recognisable.
+func TestAppendLinesKeepsReplyWhole(t *testing.T) {
 	s := &Session{conv: NewConversation()}
 	s.appendLines("one\ntwo\nthree")
 
-	if len(s.frame.Reply) != 3 {
-		t.Fatalf("len(Reply) = %d, want 3", len(s.frame.Reply))
+	if len(s.frame.Reply) != 1 {
+		t.Fatalf("len(Reply) = %d, want 1", len(s.frame.Reply))
 	}
-	if s.frame.Reply[1] != "two" {
-		t.Errorf("Reply[1] = %q, want %q", s.frame.Reply[1], "two")
+}
+
+// A fenced block survives being stored whole, which is the reason for storing
+// it whole.
+func TestAppendLinesKeepsFenceIntact(t *testing.T) {
+	s := &Session{conv: NewConversation()}
+	s.appendLines("text\n```go\ncode()\n```\nmore")
+
+	if len(s.frame.Reply) != 1 {
+		t.Fatalf("len(Reply) = %d, want 1", len(s.frame.Reply))
+	}
+	if !strings.Contains(s.frame.Reply[0], "```go") ||
+		!strings.Contains(s.frame.Reply[0], "\n```\n") {
+		t.Errorf("entry = %q, want both fences intact", s.frame.Reply[0])
+	}
+}
+
+// A multi-line reply still fills the pane correctly, since the renderer splits
+// it on fold.
+func TestAppendLinesRendersEveryRow(t *testing.T) {
+	s := &Session{conv: NewConversation()}
+	s.appendLines("one\ntwo\nthree")
+
+	lines := Render(s.frame, 10, 40)
+	joined := strings.Join(lines, "\n")
+	for _, want := range []string{"one", "two", "three"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("frame is missing %q", want)
+		}
 	}
 }
 

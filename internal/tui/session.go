@@ -100,14 +100,19 @@ func (s *Session) Close() {
 	s.screen.Close()
 }
 
-// appendLines adds text to the reply pane, splitting it on newlines so that a
-// multi-line reply occupies one row per line rather than being written over a
-// single row with embedded newlines, which would push the rest of the frame
-// down the screen.
+// appendLines adds text to the reply pane, one entry per line.
+//
+// The split happens here rather than at render time because a fenced code
+// block spans lines. Splitting first leaves each fence marker on its own, so
+// the renderer sees no block and folds code that must not be folded. The
+// renderer folds what it is given, so what it is given has to carry the whole
+// reply.
 func (s *Session) appendLines(text string) {
-	for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
-		s.frame.Reply = append(s.frame.Reply, line)
+	text = strings.TrimRight(text, "\n")
+	if text == "" {
+		return
 	}
+	s.frame.Reply = append(s.frame.Reply, text)
 }
 
 // Note adds a line to the reply pane, for a message the client generates such
