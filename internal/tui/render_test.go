@@ -174,12 +174,19 @@ func TestRenderFitsHeight(t *testing.T) {
 	}
 }
 
-// A very small terminal must not panic or produce an empty frame.
+// A very small terminal must not panic, and must give back no more rows than
+// it has.
+//
+// The frame is cut to the height rather than padded up to some minimum. A
+// frame of rows the terminal does not have is written off the bottom, and a
+// writer that then placed its caret against the last of those rows would put
+// the caret somewhere the reader cannot see it.
 func TestRenderTinyTerminal(t *testing.T) {
 	for _, size := range [][2]int{{1, 1}, {2, 5}, {3, 10}, {0, 0}} {
 		lines := Render(Frame{Input: "hi"}, size[0], size[1])
-		if len(lines) < 3 {
-			t.Errorf("size %v: len(lines) = %d, want at least 3", size, len(lines))
+		if len(lines) > size[0] {
+			t.Errorf("size %v: len(lines) = %d, want at most %d",
+				size, len(lines), size[0])
 		}
 	}
 }
