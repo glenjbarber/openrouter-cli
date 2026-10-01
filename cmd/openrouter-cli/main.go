@@ -164,12 +164,16 @@ Options:
   -help              Print this message and exit.
 
 Commands, typed inside the interface:
-  /help              List the commands.
-  /clear             Clear the reply pane.
+  /connect           Test the connection and report the key.
+  /key               Report the usage against the key.
+  /models            List the models the endpoint offers.
+  /model NAME        Choose the model to send to.
+  /info              Report the session settings.
+  /new               Clear the conversation.
+  /clear             Clear the pane.
   /quit, /exit       Leave the interface.
 
 Ctrl-C abandons the line being composed, or leaves the interface when the line
-is empty. Ctrl-D leaves when the line is empty. The model is not yet connected,
-so a message is echoed back rather than answered.
+is empty. Ctrl-D leaves when the line is empty.
 `)
 }

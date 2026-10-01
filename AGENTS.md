@@ -192,6 +192,36 @@ so that a later change does not silently reverse it.
 - An ephemeral chat is not persisted and is not carried into a later chat.
 - Backgrounded chats are retained within the running session.
 
+### API
+
+- The API is spoken over REST with `net/http`. No dependency is used for it.
+- A completion is `POST /chat/completions` with a bearer credential. The
+  credential is sent as a header and is never written to a log or a diagnostic.
+- A reply is read as a server-sent event stream. The terminating `[DONE]` marker
+  is required rather than assumed, since a stream that ends without it was cut
+  short and must not be presented as a complete reply. The text received before
+  a failure is kept, because it is usually more useful than an error alone.
+- A comment line in the stream is a keep-alive and carries no payload.
+- The response body on success is the stream itself, so the status is examined
+  without reading it. Reading it would consume the reply before the parser saw
+  it.
+- `/connect` calls the key endpoint rather than a completion, since it is cheap
+  and it distinguishes a rejected key from a rejected model.
+- A missing key is not a startup failure. The interface opens and reports the
+  absence, because refusing to open would leave nothing on screen explaining
+  why. A file that cannot be parsed remains a failure.
+- The bootstrap document is applied as a system turn, so it governs every request
+  in the session rather than one.
+- A user turn travels with the request but is not recorded until a reply arrives,
+  so a failed request leaves no half exchange for the next one to replay.
+- `/new` clears the conversation and keeps the bootstrap document, since losing
+  it would silently change how the model behaves.
+- A multi-line reply occupies one pane row per line, since a reply carrying
+  embedded newlines would otherwise push the frame down the screen.
+- Each pane row is cleared before it is written. Without that, a repaint shorter
+  than the frame before it leaves the tail of the longer one visible, so a
+  reply appears twice.
+
 ### Usage meter
 
 - The usage and quota meter is native to the application and is rendered
@@ -266,8 +296,6 @@ These are unsettled. Each is listed so that it is not mistaken for a decision.
   `name`, and `description`, such as tool permissions or a model preference.
   Three fields were written on the assumption that instructions are the only
   thing a bootstrap document needs to express.
-- The final status bar field set, its order, and whether the order is
-  configurable.
 - The first release scope, and the split between interactive and scripted use.
 - The minimum supported Go version, currently stated as 1.26 in the README and
   taken from the host toolchain rather than decided.

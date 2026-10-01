@@ -118,21 +118,36 @@ A field with no value yet is shown as a dash, and when the terminal is too
 narrow the fields are dropped from the end of the bar rather than allowed to
 wrap. A dropped field means the bar is narrow, not that the value is missing.
 
-The model is not yet connected, so a message is echoed back rather than
-answered. The line editor works now, and the keys it acts on are listed under
-[Terminal behavior](#terminal-behavior).
-
 The interface requires both stdout and stdin to be a terminal. A redirected run
-reports that and stops rather than writing escape sequences into the capture.
+reports that and stops rather than writing escape sequences into the capture. A
+missing API key is not a reason to refuse to open: the interface opens and
+reports the absence, so that the cause is on screen.
 
 Commands are typed inside the interface and begin with a slash, so that they do
 not collide with text sent to the model:
 
-| Command         | Effect                     |
-| --------------- | -------------------------- |
-| `/help`         | List the commands.         |
-| `/clear`        | Clear the reply pane.      |
-| `/quit`, `/exit`| Leave the interface.       |
+| Command          | Effect                                                |
+| ---------------- | ----------------------------------------------------- |
+| `/connect`       | Test the connection and report the key.              |
+| `/key`           | Report the usage against the key.                    |
+| `/models`        | List the models the endpoint offers.                 |
+| `/model NAME`    | Choose the model. Without an argument, report it.    |
+| `/info`          | Report the model, the endpoint, and whether a key is set. |
+| `/new`           | Clear the conversation, keeping the bootstrap document. |
+| `/clear`         | Clear the pane.                                      |
+| `/help`          | List the commands.                                   |
+| `/quit`, `/exit` | Leave the interface.                                 |
+
+`/connect` contacts the key endpoint rather than running a completion, since it
+is cheap and it distinguishes a rejected key from a rejected model, which is the
+first thing worth knowing when nothing works.
+
+A reply streams into the pane a token at a time rather than appearing all at
+once, so that a slow model does not look idle. A stream that fails partway keeps
+the text received before the failure and reports the error beneath it.
+
+`/new` clears the conversation but keeps the bootstrap document in force, since
+losing it would silently change how the model behaves.
 
 ### Bootstrap documents
 
