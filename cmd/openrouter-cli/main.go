@@ -152,6 +152,13 @@ Options:
   -version           Print the version and exit.
   -help              Print this message and exit.
 
-The interactive interface is not yet implemented.
+Commands, typed inside the interface:
+  /help              List the commands.
+  /clear             Clear the reply pane.
+  /quit, /exit       Leave the interface.
+
+Ctrl-C abandons the line being composed, or leaves the interface when the line
+is empty. Ctrl-D leaves when the line is empty. The model is not yet connected,
+so a message is echoed back rather than answered.
 `)
 }

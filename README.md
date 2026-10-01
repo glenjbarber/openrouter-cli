@@ -65,6 +65,26 @@ runtime, and are not build dependencies.
 
 Installation instructions are pending and are added once a release is published.
 
+### Terminal behavior
+
+The terminal is driven through `syscall` rather than through a terminal library,
+so that the alternate screen, the cursor, and the input mode are under direct
+control. No third-party dependency is introduced.
+
+The keys the line editor acts on are:
+
+| Key       | Effect                                                    |
+| --------- | --------------------------------------------------------- |
+| `Enter`   | Submit the line.                                          |
+| `Backspace`, `Delete` | Remove the character before the cursor.          |
+| `Ctrl-U`  | Clear the whole line.                                     |
+| `Ctrl-W`  | Clear the word before the cursor.                         |
+| `Ctrl-C`  | Abandon the line, or leave the interface if it is empty.  |
+| `Ctrl-D`  | Leave the interface when the line is empty.               |
+
+A multibyte character arriving one byte at a time is held until the sequence is
+complete, so a character is never committed half written.
+
 A binary is built from a checkout with the Makefile, which is written in the
 syntax common to BSD make and GNU make:
 
@@ -81,6 +101,38 @@ The build is stamped with the version through the linker, so `make build`
 followed by `openrouter-cli -version` reports the port version.
 
 ## Usage
+
+Running the client with no options opens the interactive interface:
+
+```sh
+openrouter-cli
+```
+
+The interface draws a frame on the alternate screen, so the shell history and
+whatever was on the screen before are left untouched and restored on exit. The
+reply pane holds the conversation, the status bar sits above the input line, and
+the fields are Provider, Model, Reasoning, Branch, Status, Approval, Context,
+tokens in, and tokens out, followed by the hostname.
+
+A field with no value yet is shown as a dash, and when the terminal is too
+narrow the fields are dropped from the end of the bar rather than allowed to
+wrap. A dropped field means the bar is narrow, not that the value is missing.
+
+The model is not yet connected, so a message is echoed back rather than
+answered. The line editor works now, and the keys it acts on are listed under
+[Terminal behavior](#terminal-behavior).
+
+The interface requires both stdout and stdin to be a terminal. A redirected run
+reports that and stops rather than writing escape sequences into the capture.
+
+Commands are typed inside the interface and begin with a slash, so that they do
+not collide with text sent to the model:
+
+| Command         | Effect                     |
+| --------------- | -------------------------- |
+| `/help`         | List the commands.         |
+| `/clear`        | Clear the reply pane.      |
+| `/quit`, `/exit`| Leave the interface.       |
 
 ### Bootstrap documents
 

@@ -151,6 +151,31 @@ so that a later change does not silently reverse it.
 
 - The interface is a terminal application in the manner of Codex, ChatGPT,
   Claude, and Perplexity.
+- No terminal library is used. The terminal is driven through `syscall` on
+  FreeBSD, using `TCGETA` and `TCSETA` for termios, `TIOCGWINSZ` for the size,
+  and escape sequences for the alternate screen and the cursor. This closes the
+  open decision below, and it was taken because the copyable-text requirement
+  needs direct control of mouse reporting, which the higher-level candidates
+  take by default.
+- The alternate screen is used, so the interface does not scroll the shell
+  history and the previous contents are restored on exit.
+- A terminal is detected by a termios read rather than by a stat on the mode,
+  since a stat cannot tell a character device that is a terminal from one that
+  is not.
+- The interface is entered only when both stdout and stdin are a terminal. A
+  redirected run reports why and stops, since escape sequences written into a
+  pipe or a file are noise in the capture.
+- Raw mode is required because keys are read as they are pressed. The prior
+  terminal state is saved and restored on exit, and a signal handler restores it
+  before the process leaves, so that a crash cannot leave the terminal with no
+  echo and no line discipline.
+- The status bar order is fixed rather than configurable, because a bar that
+  reorders itself between runs cannot be read at a glance.
+- A status field with no value yet is rendered as a dash rather than being
+  hidden, so the layout does not shift as values arrive and a missing value is
+  visible rather than ambiguous.
+- When the bar is too narrow, fields are dropped from the end rather than
+  allowed to wrap, since a wrapped bar pushes the input line off the screen.
 - The status bar shows Provider, Model, Reasoning, Branch, Status, Approval
   Method, Context used, Tokens used in and out, and hostname.
 - Commands and configuration options are completed with the Tab key.
@@ -244,8 +269,6 @@ These are unsettled. Each is listed so that it is not mistaken for a decision.
 - The final status bar field set, its order, and whether the order is
   configurable.
 - The first release scope, and the split between interactive and scripted use.
-- The terminal library, which is the largest remaining dependency decision and
-  governs mouse, tmux, and alternate-screen handling.
 - The minimum supported Go version, currently stated as 1.26 in the README and
   taken from the host toolchain rather than decided.
 
