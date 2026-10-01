@@ -166,6 +166,7 @@ model:
 | `/model NAME`    | Choose the model. Without an argument, report it.    |
 | `/info`          | Report the model, the endpoint, and whether a key is set. |
 | `/new`           | Clear the conversation, keeping the bootstrap document. |
+| `/compact`       | Summarise the conversation and carry on from the summary. |
 | `/clear`         | Clear the pane.                                      |
 | `/help`          | List the commands.                                   |
 | `/quit`, `/exit` | Leave the interface.                                 |
@@ -180,6 +181,18 @@ the text received before the failure and reports the error beneath it.
 
 `/new` clears the conversation but keeps the bootstrap document in force, since
 losing it would silently change how the model behaves.
+
+A long conversation is compacted automatically. Once it passes 75% of the
+model's window, the next message triggers a summarisation before the request is
+sent, since a request past the window is refused outright and the turn is lost.
+The summary replaces the earlier turns as a system turn, so it governs every
+later request, and the opening instructions are kept. `/compact` runs the same
+work on demand.
+
+Conversation size is estimated at four characters per token rather than counted,
+since exact counting needs the model tokenizer. The estimate is deliberately
+generous, so compaction begins before a request would fail rather than after.
+A model whose window the endpoint does not report falls back to a common one.
 
 ### Bootstrap documents
 

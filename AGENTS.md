@@ -273,6 +273,43 @@ so that a later change does not silently reverse it.
   indication that plain text is the message and that a model must be selected
   first.
 
+### Compaction
+
+- A long conversation is summarised and replaced before the request that would
+  exceed the window is sent. Checking beforehand matters, since a request past
+  the window is refused outright and the turn is lost with it.
+- `/compact` runs a compaction on demand, regardless of size. Asking for it is
+  the point.
+- The threshold is 75% of the window. Compaction costs a request of its own,
+  and leaving only a small remainder would compact again immediately after the
+  next exchange, so the work starts while there is still room to do it.
+- The window is the context length reported by the model list, cached per model.
+  Fetching it per request would add a call to every message for a value that
+  does not change.
+- A model the list does not carry falls back to a common window rather than to
+  an unbounded one, which would disable compaction entirely.
+- Conversation size is estimated at four characters per token rather than
+  counted, since counting exactly needs the model tokenizer. The estimate is
+  deliberately generous so that compaction starts before a request would fail.
+- A conversation too short to gain from compacting is left alone. Summarising
+  two turns produces something no shorter than itself, which costs a request to
+  achieve nothing.
+- The summary is a system turn, so it governs every later request. It carries a
+  marker, and a second compaction replaces it rather than summarising a
+  summary, which would compound the loss on every pass.
+- The opening instructions survive a compaction. Losing them would change how
+  the model behaves without anything saying so. The instructions are also held
+  out of the summary request, since a summary of them would compete with the
+  original rather than add to it.
+- The most recent two turns are held out of the summary request, so the model
+  answering next still has the immediate context rather than only a description
+  of it.
+- The summarisation asks for decisions, constraints, identifiers, and what is
+  unresolved, rather than for prose. A summary that paraphrases the intent is
+  useless for continuing the work.
+- The conversation is left untouched when a summary fails, since a
+  half-summarised history is worse than a long one.
+
 ### Echo
 
 - The terminal is in raw mode with echo disabled, so the composed line is drawn

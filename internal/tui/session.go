@@ -23,6 +23,9 @@ type Session struct {
 	// can be used for composition before a key is configured.
 	client *openrouter.Client
 	conv   *Conversation
+	// windows caches the context length of each model seen, so that the
+	// threshold can be evaluated without a call per message.
+	windows *contextLength
 
 	// ctx is cancelled when the session leaves, so that an in-flight request
 	// is abandoned rather than left to finish against a terminal that is no
@@ -58,11 +61,12 @@ func Start(out, in *os.File, title string) (*Session, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Session{
-		screen: screen,
-		editor: NewLineEditor(in),
-		conv:   NewConversation(),
-		ctx:    ctx,
-		cancel: cancel,
+		screen:  screen,
+		editor:  NewLineEditor(in),
+		conv:    NewConversation(),
+		windows: newContextLength(),
+		ctx:     ctx,
+		cancel:  cancel,
 		frame: Frame{
 			Title: title,
 			Status: Status{
@@ -204,6 +208,8 @@ func (s *Session) command(line string) bool {
 		s.conv.Reset()
 		s.frame.Reply = nil
 		s.Note("conversation cleared")
+	case "/compact":
+		s.compact(true)
 	case "/info":
 		s.showInfo()
 	default:
@@ -221,6 +227,7 @@ func helpText() string {
 		"/models            list the models the endpoint offers",
 		"/model [NAME]      show or choose the model, without an argument to list",
 		"/new               clear the conversation",
+		"/compact           summarise the conversation and start again",
 		"/clear             clear the pane",
 		"/info              report the session settings",
 		"/quit, /exit       leave the interface",
@@ -385,6 +392,10 @@ func (s *Session) send(line string) {
 	s.frame.Reply = append(s.frame.Reply, "> "+line)
 	s.updateStatus()
 	s.draw()
+
+	// The check runs before the request is sent, since a request past the
+	// window is refused outright and the turn is lost with it.
+	s.maybeCompact()
 
 	var reply strings.Builder
 	// The streaming fields are cleared on every exit from the request,

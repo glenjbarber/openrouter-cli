@@ -172,6 +172,7 @@ Commands, typed inside the interface:
   /model NAME        Choose the model to send to.
   /info              Report the session settings.
   /new               Clear the conversation.
+  /compact           Summarise the conversation and carry on.
   /clear             Clear the pane.
   /quit, /exit       Leave the interface.
 
