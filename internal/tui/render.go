@@ -499,7 +499,53 @@ func Render(f Frame, height, width int) []string {
 	// placed with a budget, but a terminal shorter than the prompt block
 	// leaves nothing to cut, and a frame past the bottom pushes the prompt
 	// off the screen and leaves the reader unable to continue.
-	return body[:minInt(len(body), height)]
+	rows := body[:minInt(len(body), height)]
+	// The rows leave here as plain text. A reply is written by a model, and a
+	// model passes on whatever it was given, so a row can carry a byte the
+	// terminal would act on rather than show. Render is the last place the
+	// frame is whole, and it is the boundary between text from elsewhere and
+	// the terminal, so it is where such a byte is dropped.
+	for i, row := range rows {
+		rows[i] = plainRow(row)
+	}
+	return rows
+}
+
+// plainRow removes the bytes a terminal would act on from a row.
+//
+// The frame is plain text, and a selection taken out of the pane is copied as
+// whatever is on the screen. An escape written into a row would move the
+// cursor, restyle the rest of the frame, or retitle the window, and would be
+// copied out along with the prose around it. A carriage return left at the end
+// of a line, which is what a reply written with Windows line endings carries,
+// is the same kind of byte: the terminal acts on it and the selection keeps
+// it.
+//
+// A tab is kept. It is a column of space rather than a sequence, nothing acts
+// on it, and dropping it would fold a line that was laid out with one.
+func plainRow(s string) string {
+	if !strings.ContainsFunc(s, isShownByte) {
+		return s
+	}
+	return strings.Map(func(r rune) rune {
+		if isShownByte(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// isShownByte reports whether a byte is one the frame is allowed to carry.
+//
+// The range is the control characters and the two blocks that are treated as
+// controls: the C0 set at the start of the byte range, and the C1 set at the
+// end of Latin-1. Everything else is text, including the box-drawing and
+// braille figures the interface draws with.
+func isShownByte(r rune) bool {
+	if r == '\t' {
+		return false
+	}
+	return r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f)
 }
 
 // indent returns a row carrying a marker, a body, and a prefix, fitted to the
