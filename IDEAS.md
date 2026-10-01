@@ -11,17 +11,17 @@ itself.
 
 ## Last updated
 
-At `main` commit `fc065a7`, twelve commits ahead of `origin/main` and not
-pushed.
+At `main` commit `5dcf254`, sixty-eight commits ahead of `origin/main` and not
+pushed. None of the audit work is pushed; the user handles every push.
 
 The eight commits were rewritten once, before the audit, to add a missing
 `Co-Authored-By: Space Bunny Alpha` trailer to the completion and markdown
 merge commits. Nothing was pushed before that, so nothing was rewritten on a
 remote. The merge hashes named below are the rewritten ones.
 
-The audit is under way and is recorded at the end of this file. Two areas have
-landed. A third piece of work was taken back off `main` and is recorded under
-The withdrawn file upload.
+The audit is done, all six areas merged and gated. It is recorded at the end of
+this file, along with what it found and did not fix. A piece of work was taken
+back off `main` during it and is recorded under The withdrawn file upload.
 
 Tab completion, markdown rendering, and the key hint row have landed, each
 merged with `--no-ff` behind `make lint`, `make check`, and `make crossbuild`,
@@ -71,7 +71,11 @@ Merged into `main`.
 | Markdown rendering | `4152bf7` | Headings, lists, and emphasis, rendered as plain text. |
 | Key hint row | `ccef2b0` | Names the keys that act, on one row above the prompt. |
 | Session audit | `ddfb756` | The frozen reply, and five further defects in the same files. |
-| Rendering audit | `408fa3c` | Widths in columns, control bytes dropped, four frame-bound defects. |
+| Rendering audit | `a153b45` | Widths in columns, control bytes dropped, four frame-bound defects. |
+| API audit | `0cfb59b` | The credential filter on every path, the stream parser, body closure. |
+| Configuration audit | `9e8cbab` | XDG honoured, a blank key read as unset, the loader covered. |
+| Input audit | `d669b05` | Sequences read from their shape rather than a table of lengths. |
+| Conversation audit | `aa149ac` | Four races, the cognito marker, and a summary that outlived `/new`. |
 
 ## In progress
 
@@ -388,21 +392,84 @@ reason command arguments are not completed.
 
 ### The code review and audit
 
-In progress. The audit is delegated one area at a time, with a worktree per
-area and no two workers owning the same file.
+Done. Six areas, one worktree each, no two workers owning the same file. Every
+merge was gated on `make lint`, `make check` and `make crossbuild` after it
+landed rather than before.
 
-| Area | Files | State |
+| Area | Files | Merge |
 | --- | --- | --- |
-| Session | `internal/tui/session.go` | Merged, `ddfb756`. |
-| Rendering | `internal/tui/render.go`, `screen.go`, `wrap.go`, `markdown.go`, termios | Merged, `408fa3c`. |
-| Conversation | `conversation.go`, `compact.go`, `cognito.go`, `btw.go`, `delegate.go`, `threshold.go`, `verbose.go`, `bell.go`, `spinner.go` | Running. |
-| Input | `line.go`, `keys.go`, `paste.go`, `mouse.go`, `hintrow.go` | Running. |
-| Configuration | `internal/config`, `internal/bootstrap`, `cmd/openrouter-cli` | Running. |
-| API | `internal/openrouter` | Running. |
+| Session | `internal/tui/session.go` | `ddfb756` |
+| Rendering | `render.go`, `screen.go`, `wrap.go`, `markdown.go`, termios | `a153b45` |
+| API | `internal/openrouter` | `0cfb59b` |
+| Configuration | `internal/config`, `internal/bootstrap`, `cmd/openrouter-cli` | `9e8cbab` |
+| Input | `line.go`, `keys.go`, `paste.go`, `mouse.go`, `hintrow.go` | `d669b05` |
+| Conversation | `conversation.go`, `compact.go`, `cognito.go`, `btw.go`, `delegate.go`, `threshold.go`, `verbose.go`, `bell.go`, `spinner.go` | `aa149ac` |
 
-The instruction is to fix and land what comes up, and to land nothing that does
-not have a resolution. Each area is gated on `make lint`, `make check` and
-`make crossbuild` after its merge, not before.
+The serious ones, in the order a reader is most likely to hit them:
+
+- **Every interrupt ended the session.** `Run` cleared the frame before testing
+  it, so the test was always true, and a half-typed message was a way out
+  rather than a way of changing your mind.
+- **The in-cognito marker was never read back.** `/cognito` wrote it and nothing
+  adopted it, so a reader who turned the mode on and left recorded every
+  exchange of the next session. Found by the conversation audit as a deferred
+  finding, since the function was correct and had no call site.
+- **`XDG_CONFIG_HOME` did nothing.** The search passed the override a
+  home-qualified path against a relative name, so it never matched and a reader
+  keeping their file under XDG lost it to a default written under the home
+  directory. It passed no test, because the test written alongside it used the
+  wrong filename.
+- **A reply arriving and never being drawn.** Recorded under Notes above, and
+  fixed.
+- **Four data races**, each reported by the detector rather than reasoned about:
+  the compaction, the thread and the in-cognito toggle appended to the pane
+  without the lock the paint path reads it under; the delegate goroutine read
+  the model and the client while the input goroutine replaced them; the twiddle
+  goroutine advanced its frame index unlocked.
+- **Widths counted in characters where a terminal counts columns**, so a wide
+  character overflowed the pane and pushed everything below it down.
+- **The key sequence reader matched a fixed table of lengths**, so a modified
+  key such as an alt-held arrow was not understood and its parameter bytes were
+  read as keys.
+- **A stream cut short painted the reply twice** and recorded the exchange, so a
+  truncated answer was replayed to the next request as though it were whole.
+- **The header took its rows before the prompt**, so a terminal too short to
+  hold both lost the prompt and with it any way to type a next message.
+
+### What the audit found and did not fix
+
+Recorded rather than landed, since each is the maintainers to decide:
+
+- **The credential follows a same-host redirect, including an `https` to `http`
+  downgrade**, which would put it on the wire in cleartext. Whether to refuse a
+  downgrade, or any redirect, is a policy the record does not cover.
+- **The loader stats the file, stats it again for the mode, and reads it.** The
+  file can be swapped between the check and the read. Closing the gap means
+  opening the file and stat-ing the descriptor, which changes the diagnostic for
+  a missing file and so changes what a reader sees.
+- **The two turns held out of the summary request are then dropped** by the
+  compaction that replaces the conversation, so the stated reason for holding
+  them out is not achieved. `AGENTS.md` contradicts itself here: it says the
+  conversation is summarised and replaced, and it says the recent exchange is
+  held out so the model answering next still has it.
+- **A failing model-list call is not cached**, so the fallback window is
+  recomputed and the network tried again on every repaint.
+- **A whole-request timeout of ten minutes cuts a reply still streaming**, and
+  whether the bound should be on the whole request or on the headers alone is a
+  decision.
+- **A skipped setup is recorded in a field nothing reads.** Whether a skipped
+  configuration should differ in behaviour from a missing key is the open
+  decision the field names, and the audit left it alone rather than answering it.
+- **`ChatRequest.Stream` was removed** by the API audit as behaviour-neutral,
+  since nothing set it. It was the scripted path switch, and AGENTS.md lists the
+  first release scope, and the split between interactive and scripted use, as
+  open.
+- **A second delegate is not refused** while one is running, so two partial
+  answers contend for the single delegate field.
+- **No test can observe the bell or the twiddle placement on this host**, since
+  `ringBell` writes only to a terminal and the pty helper is FreeBSD only. The
+  bell firing after the reply rather than after the request is therefore not
+  covered by a test anywhere.
 
 ## The withdrawn file upload
 
