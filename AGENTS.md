@@ -536,6 +536,25 @@ so that a later change does not silently reverse it.
   in whatever case the user happens to use.
 - A filter matching nothing says so rather than showing an empty pane.
 - The listing is cut with the remainder reported rather than silently dropped.
+- Tab completes the filter to a model identifier. Each Tab after it advances
+  through what the filter matched, wrapping at the end, since a catalogue is
+  easier to walk than to retype.
+- The candidates are generated from the filter as it was typed rather than from
+  the filter as it has been completed. A whole identifier matches only itself, so
+  completing against the completed filter would make the cycle one Tab long.
+- A cycle ends as soon as the filter is changed for any other reason, so a Tab
+  after a keystroke begins a new set from what is now typed rather than
+  resuming a set the reader has moved on from.
+- The cycle covers the models the pane shows rather than the whole catalogue.
+  A candidate that was never on the screen is one the reader cannot tell from
+  another.
+- The place in the cycle is stated in the heading rather than marked against a
+  row. The filter already holds the identifier that is selected, so a marker
+  would repeat it, while the heading says which of the set it is.
+- Tab on a filter matching nothing changes nothing. The listing already reports
+  that nothing matches, so there is nothing to complete and nothing to say.
+- Tab reaches the filter rather than the line editor behind it, since the filter
+  takes every key while it is open.
 - Escape closes the listing and restores the pane. Enter chooses what the filter
   names, which saves typing an identifier that is already on screen.
 
@@ -730,9 +749,9 @@ so that a later change does not silently reverse it.
 - The overlay is derived at paint time from flags that are already guarded,
   rather than recorded at each site that opens or closes one, since six call
   sites would be six chances to leave one of them out.
-- Tab is not named in the model filter. The filter reads a byte at a time and
-  takes characters only, so naming a completion key there would promise
-  something that does not happen.
+- Tab is named in the model filter, since the filter completes on it, and is not
+  named in the pane search, which takes characters only. A key is named where it
+  acts and nowhere else, and the search has no completion to name.
 - `PROVISIONAL` The wording of the entries, and the two-space separator between
   them, are the implementer's. Nothing in the record specifies them.
 
