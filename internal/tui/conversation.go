@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/glenjbarber/openrouter-cli/internal/openrouter"
+	"github.com/glenjbarber/openrouter-cli/internal/saved"
 )
 
 // Conversation holds the turns exchanged in a session.
@@ -75,6 +76,38 @@ func (c *Conversation) Seed(instructions string) {
 		Role:    openrouter.RoleSystem,
 		Content: instructions,
 	})
+}
+
+// Messages returns a copy of the turns recorded so far.
+//
+// The copy is what makes a save possible: the turns are written by the request
+// goroutine, and a caller that held the slice would see it change under them.
+func (c *Conversation) Messages() []openrouter.Message {
+	return append([]openrouter.Message(nil), c.messages...)
+}
+
+// Load replaces the conversation with a saved one.
+//
+// The model is adopted only where none has been chosen, so that a model the
+// reader picked still wins over the one a saved session was carried by. The
+// counters come back as they were, since they described this conversation and
+// a resumed one carrying figures from a session the reader never had would
+// report spend that was not theirs.
+//
+// The ephemeral flag is not taken from the file. It is what the reader asked
+// for in this session, and a file that could turn recording off on load would
+// be a file that could defeat the mode from somewhere the reader never looked.
+func (c *Conversation) Load(s *saved.Session) {
+	if s == nil {
+		return
+	}
+	c.messages = append([]openrouter.Message(nil), s.Messages...)
+	c.usage = s.Usage
+	c.tokensIn = s.TokensIn
+	c.tokensOut = s.TokensOut
+	if c.model == "" {
+		c.SetModel(s.Model)
+	}
 }
 
 // Pending returns the turns to send for a new user message.
