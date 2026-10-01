@@ -165,12 +165,11 @@ func (e *Ephemeral) ReturnToMain() {
 // recovered, which is the point of it being ephemeral.
 func (s *Session) beginThread() {
 	if s.thread != nil {
-		s.frame.Reply = append(s.frame.Reply,
-			"already in a thread: /main returns before starting another")
+		s.addReply("already in a thread: /main returns before starting another")
 		return
 	}
 	if s.conv.Model() == "" {
-		s.frame.Reply = append(s.frame.Reply, "no model is selected: /model NAME")
+		s.addReply("no model is selected: /model NAME")
 		return
 	}
 
@@ -188,7 +187,7 @@ func (s *Session) beginThread() {
 // recorded in the thread is dropped rather than carried over.
 func (s *Session) endThread() {
 	if s.thread == nil {
-		s.frame.Reply = append(s.frame.Reply, "not in a thread")
+		s.addReply("not in a thread")
 		return
 	}
 

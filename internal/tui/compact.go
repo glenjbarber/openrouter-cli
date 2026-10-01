@@ -148,11 +148,11 @@ func (c *Conversation) HasSummary() bool {
 // cannot cost the user their history.
 func (s *Session) compact(manual bool) {
 	if msg := s.credentialProblem(); msg != "" {
-		s.frame.Reply = append(s.frame.Reply, msg)
+		s.addReply(msg)
 		return
 	}
 	if s.conv.Model() == "" {
-		s.frame.Reply = append(s.frame.Reply, "no model is selected: /model NAME")
+		s.addReply("no model is selected: /model NAME")
 		return
 	}
 	if !manual && !s.conv.HasSummary() && s.conv.Turns() < minCompactionTurns {
@@ -162,26 +162,25 @@ func (s *Session) compact(manual bool) {
 	toSummarise := s.conv.forSummary()
 	if len(toSummarise) == 0 {
 		if manual {
-			s.frame.Reply = append(s.frame.Reply, "there is nothing to compact")
+			s.addReply("there is nothing to compact")
 		}
 		return
 	}
 
 	before := s.conv.EstimatedTokens()
 	s.frame.Status.State = stateWorking
-	s.frame.Reply = append(s.frame.Reply, "compacting the conversation...")
+	s.addReply("compacting the conversation...")
 	s.draw()
 
 	summary, err := Summarise(s.ctx, s.client, s.conv.Model(), toSummarise)
 	s.frame.Status.State = stateIdle
 	if err != nil {
-		s.frame.Reply = append(s.frame.Reply, "(error) "+err.Error())
+		s.addReply("(error) " + err.Error())
 		return
 	}
 
 	s.conv.Compact(summary)
-	s.frame.Reply = append(s.frame.Reply,
-		compactionNotice(before, s.conv.EstimatedTokens()))
+	s.addReply(compactionNotice(before, s.conv.EstimatedTokens()))
 }
 
 // maybeCompact runs a compaction when the conversation has grown too large.

@@ -121,7 +121,7 @@ func setCognito(on bool) error {
 func (s *Session) toggleCognito() {
 	if s.cognito {
 		if err := setCognito(false); err != nil {
-			s.frame.Reply = append(s.frame.Reply, "(error) "+err.Error())
+			s.addReply("(error) " + err.Error())
 			return
 		}
 		s.cognito = false
@@ -134,14 +134,13 @@ func (s *Session) toggleCognito() {
 		// Restoring recording while keeping that history would leave the model
 		// still carrying it, which is what the mode was meant to prevent.
 		dropped := s.conv.DiscardRecorded()
-		s.frame.Reply = append(s.frame.Reply,
-			fmt.Sprintf("cognito mode off: recording again, %s discarded",
-				dropped))
+		s.addReply(fmt.Sprintf("cognito mode off: recording again, %s discarded",
+			dropped))
 		return
 	}
 
 	if err := setCognito(true); err != nil {
-		s.frame.Reply = append(s.frame.Reply, "(error) "+err.Error())
+		s.addReply("(error) " + err.Error())
 		return
 	}
 	s.cognito = true
@@ -157,12 +156,11 @@ func (s *Session) toggleCognito() {
 	// A thread is already unrecorded, so saying so avoids the impression that
 	// the mode changed anything while it is in one.
 	if s.thread != nil {
-		s.frame.Reply = append(s.frame.Reply,
-			"cognito mode on: nothing is recorded. The thread already records nothing.")
+		s.addReply("cognito mode on: nothing is recorded. " +
+			"The thread already records nothing.")
 		return
 	}
-	s.frame.Reply = append(s.frame.Reply,
-		"cognito mode on: nothing is recorded from now on")
+	s.addReply("cognito mode on: nothing is recorded from now on")
 }
 
 // AdoptCognito reports whether a session should start in the mode.
