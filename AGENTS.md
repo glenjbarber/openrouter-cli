@@ -324,6 +324,30 @@ so that a later change does not silently reverse it.
 - The conversation is left untouched when a summary fails, since a
   half-summarised history is worse than a long one.
 
+### Wrapping
+
+- A reply longer than the pane is folded rather than cut. Cutting loses
+  whatever fell past the edge, which for prose is most of a paragraph.
+- A word wider than the pane is moved whole onto a line of its own, since a URL
+  or a path split across two rows is neither readable nor copyable.
+- A fenced code block is not folded. Reflowing code changes what it means, so a
+  block keeps its own line breaks and a line inside one that is overlong is cut
+  with an ellipsis, which shows the reader it continues rather than letting it
+  wrap and push the frame down.
+- A fence marker is recognised anywhere on a line, not only at the start,
+  because a model writes prose and an opening marker on the same line often
+  enough that requiring it to lead would leave the block unfenced and its code
+  folded. Text before the marker is folded as prose, since it is prose.
+- The info string after an opening marker belongs to the fence, so it is taken
+  with it rather than becoming the first line inside the block.
+- Indentation in front of a marker is layout rather than content, and is
+  trimmed, so that laying a block out does not add a blank row.
+- A reply is stored whole and folded at render time, rather than being split
+  into lines as it arrives. Splitting first leaves each fence marker on its own,
+  so the renderer sees no block and folds code that must not be folded.
+- A reply that is still arriving is folded the same way a finished one is, even
+  though it is not yet known to contain a fence.
+
 ### Progress
 
 - A twiddle is shown while work is in progress: a request, a compaction, or a

@@ -185,12 +185,24 @@ func Render(f Frame, height, width int) []string {
 	}
 	body = append(body, truncate(title, width))
 
-	reply := f.Reply
+	// Every reply entry is folded before the pane is filled, since folding
+	// changes how many rows a reply occupies. Truncating instead would lose
+	// whatever fell past the edge, which for prose is most of a paragraph.
+	//
+	// An entry may itself span several lines, since a reply is stored whole so
+	// that a fenced code block stays recognisable.
+	reply := make([]string, 0, len(f.Reply)*2)
+	for _, entry := range f.Reply {
+		reply = append(reply, WrapBlock(entry, width)...)
+	}
+
 	if f.Partial != "" {
-		// A reply that is still arriving occupies the last line, so the
-		// partial text is drawn there rather than appended as a new line for
-		// every token.
-		reply = append(append([]string{}, reply...), f.Partial)
+		// A reply that is still arriving occupies the rows below the pane, so
+		// it is folded the same way a finished reply is. Folding it here as
+		// well matters for a code block: an unfinished reply is not yet known
+		// to contain a fence, so folding it separately would reflow code that
+		// must keep its own lines.
+		reply = append(reply, WrapBlock(f.Partial, width)...)
 	}
 	if f.Spinner != "" {
 		// The twiddle leads the line it belongs to. It is placed before the
@@ -209,6 +221,9 @@ func Render(f Frame, height, width int) []string {
 		if i := len(body) - 1; i < len(reply) {
 			line = reply[i]
 		}
+		// A folded line already fits. One that came from a code block may
+		// not, and is cut rather than allowed to wrap, since a wrapped code
+		// line would push the rest of the frame down.
 		body = append(body, truncate(line, width))
 	}
 

@@ -65,6 +65,17 @@ runtime, and are not build dependencies.
 
 Installation instructions are pending and are added once a release is published.
 
+### Wrapping
+
+A reply wider than the terminal is folded to fit rather than cut, so nothing is
+lost past the edge. A word too wide to fold, such as a long URL, is placed on a
+line of its own instead of being split.
+
+A fenced code block is left unwrapped. Code keeps its own line breaks, since
+reflowing it changes what it means. A code line too wide for the terminal is cut
+with an ellipsis, so it is clear that it continues past the edge rather than
+having ended there.
+
 ### Terminal behavior
 
 The terminal is driven through `syscall` rather than through a terminal library,
