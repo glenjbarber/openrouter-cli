@@ -9,6 +9,12 @@ Research notes on features to consider live outside the repository, at
 `~/openrouter-cli-worktrees/ideas/`. What is here is the state of the work
 itself.
 
+## Last updated
+
+At `main` commit `f8ecbac`, with a clean working tree. Work in progress is
+`hintrow` and `instructions`; `completion` and `markdown` hold written but
+untested work; four worktrees are stale. The audit has not started.
+
 ## Ground rules
 
 - Feature work happens in a git worktree under `~/openrouter-cli-worktrees`, one
@@ -54,6 +60,9 @@ The layout question that has to be settled first: the row sits below the prompt,
 so it competes with the pasted rows and with the pane for the same height. The
 frame bounds work landed since then and already owns that budget.
 
+The worktree has been rebased onto `ccf34c1`, so the renderer it is merging into
+is current. Only the renderer side is missing, not the base.
+
 ### The instruction file search
 
 Worktree `~/openrouter-cli-worktrees/instructions`, branch
@@ -71,7 +80,15 @@ line.
 So there are two possible pieces of work and they are not the same: build the
 search the documentation describes, or correct the documentation to match the
 code. An `/update` command has nothing to re-read until one of those is done.
-The maintainer decides which.
+
+**Recommendation: build the search.** The documentation reads as designed
+behaviour rather than a stray paragraph, and `internal/bootstrap/resolve.go`
+already implements the cross-device symlink rule the section describes, so the
+helper was written with this search in mind and nothing calls it. The convention
+is live in practice: a session in a repository holding an `AGENTS.md` has that
+file loaded as instructions, and a client that does not read it is misleading.
+The decision is recorded under Open decisions in `AGENTS.md` and is the
+maintainers to confirm.
 
 ## Not started
 
@@ -94,7 +111,9 @@ discrepancy it is blocked on needs an answer before it becomes work.
 lines with no test file at all. `markdown` is 297 lines, unwired, also untested.
 Both need a rebase before they can land, and both need tests written.
 
-The four others hold no changes and are stale checkouts.
+`cmdqueue`, `mfilterfix`, `noninteractive`, and `stopcancel` hold no changes and
+are stale checkouts at `cd761d5`. `instructions` is empty but is listed above,
+since it is blocked rather than abandoned.
 
 ## Notes
 
