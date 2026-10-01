@@ -117,7 +117,7 @@ func TestAppendLinesRendersEveryRow(t *testing.T) {
 	s := &Session{conv: NewConversation()}
 	s.appendLines("one\ntwo\nthree")
 
-	lines := Render(s.frame, 10, 40)
+	lines := Render(s.frame, 14, 40)
 	joined := strings.Join(lines, "\n")
 	for _, want := range []string{"one", "two", "three"} {
 		if !strings.Contains(joined, want) {
@@ -136,7 +136,7 @@ func TestAppendLinesTrimsTrailingNewline(t *testing.T) {
 
 // A partial reply is shown in place of the pane rather than appended per token.
 func TestRenderShowsPartial(t *testing.T) {
-	lines := Render(Frame{Reply: []string{"> hi"}, Partial: "typing"}, 8, 40)
+	lines := Render(Frame{Reply: []string{"> hi"}, Partial: "typing"}, 12, 40)
 	body := strings.Join(lines, "\n")
 	if !strings.Contains(body, "typing") {
 		t.Errorf("frame = %q, want the partial text", body)

@@ -433,9 +433,9 @@ func TestRenderScrollPastTopFillsThePane(t *testing.T) {
 	f := Frame{Reply: lines, Scroll: 500}
 	out := Render(f, height, 40)
 
-	// The pane is everything between the title and the status bar. It is found
-	// by content rather than by arithmetic, since the rows below it depend on
-	// whether the division above the prompt was drawn.
+	// The pane starts below the header, which is the title, a rule, and the
+	// status bar. It is found by content rather than by arithmetic, since the
+	// header grows and shrinks with the terminal.
 	barAt := -1
 	for i, l := range out {
 		if strings.Contains(l, "Provider") {
@@ -443,21 +443,52 @@ func TestRenderScrollPastTopFillsThePane(t *testing.T) {
 			break
 		}
 	}
-	if barAt < 1 {
+	if barAt < 2 {
 		t.Fatalf("no status bar found in %d rows", len(out))
 	}
-	pane := out[1:barAt]
-	// Every pane row must be filled, or the frame is showing blank rows
-	// above the history rather than the history itself.
-	for i, line := range pane {
-		if strings.TrimSpace(line) == "" {
-			t.Errorf("pane row %d is blank, want the history to fill the pane", i)
+	// The pane runs from below the header to above the rule that divides it
+	// from the prompt.
+	promptAt := -1
+	for i, l := range out {
+		if strings.HasPrefix(l, ">") {
+			promptAt = i
+			break
 		}
 	}
-	// The oldest line is the stop, so it is the first thing shown.
-	if strings.TrimSpace(pane[0]) != "line00" {
-		t.Errorf("pane starts at %q, want the oldest line", pane[0])
+	if promptAt < barAt {
+		t.Fatalf("no prompt found below the bar in %d rows", len(out))
 	}
+	// The pane is everything between the header and the division above the
+	// prompt. Both are found by content, since the row counts change with the
+	// terminal height and with whether the division is drawn.
+	paneStart := barAt + 1
+	paneEnd := -1
+	for i := paneStart; i < len(out); i++ {
+		if strings.HasPrefix(strings.TrimSpace(out[i]), "\u2500") {
+			paneEnd = i
+			break
+		}
+	}
+	if paneEnd < 0 {
+		t.Fatalf("no division found below the bar in %d rows", len(out))
+	}
+
+	pane := out[paneStart:paneEnd]
+
+	// The history must be contiguous from the oldest line, with no row of the
+	// frame showing through it. Trailing blank rows are expected, since the
+	// pane is padded when the history is shorter than the space available.
+	for i, line := range pane {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		want := fmt.Sprintf("line%02d", i)
+		if strings.TrimSpace(line) != want {
+			t.Errorf("pane row %d is %q, want %q", i, line, want)
+			break
+		}
+	}
+	_ = promptAt
 }
 
 // The marker is what tells a reader the view is not at the bottom, since

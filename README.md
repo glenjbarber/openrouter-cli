@@ -171,6 +171,20 @@ openrouter-cli
 The interface draws a frame on the alternate screen, so the shell history and
 whatever was on the screen before are left untouched and restored on exit.
 
+The frame opens with a header: the title, a rule, then the status bar. The bar
+lives at the top rather than the foot because it sits outside the scrolled
+slice, so the credits, the context share, and the token counts stay in view while
+reading earlier output. At the foot they scrolled away at exactly the moment
+they were wanted.
+
+```
+openrouter-cli
+──────────────────────────────────────────────────────────────────────────
+Provider: openrouter.ai | Model: stealth/space-bunny-alpha | Status: idle | Context: 12% | In: 1.2k | Out: 5.7k
+
+> what does this project do?
+```
+
 `--mouse` turns on mouse reporting for the run, so the wheel scrolls the reply
 pane. It is off by default, since a terminal that reports the mouse cannot also
 be dragged to select text. See [Scrollback](#scrollback).

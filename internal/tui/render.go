@@ -250,13 +250,21 @@ func Render(f Frame, height, width int) []string {
 		inputRows = inputRowsDivided
 	}
 
-	paneHeight := height - 1 - inputRows
+	// The header is the model name, a rule, and the status bar. It is drawn
+	// above the conversation and outside the scrolled slice, so it stays put
+	// while the reader scrolls back through earlier output. At the foot it
+	// scrolled away at exactly the moment the figures in it were wanted.
+	headerRows := 3
+
+	paneHeight := height - headerRows - inputRows
 	if paneHeight < 1 {
 		paneHeight = 1
 	}
 
 	body := make([]string, 0, height)
 	body = append(body, titleLine(f.Title, width, f.scrolled()))
+	body = append(body, rule(width))
+	body = append(body, StatusLine(f.Status, width))
 
 	// Every reply entry is folded before the pane is filled, since folding
 	// changes how many rows a reply occupies. Truncating instead would lose
@@ -300,8 +308,17 @@ func Render(f Frame, height, width int) []string {
 	// an otherwise empty pane, whereas scrolling to the top should settle on
 	// the oldest lines there are and fill the pane with them. The oldest line
 	// is the stop rather than the end, so it is always kept.
-	if maxScroll := len(reply) - minInt(paneHeight, len(reply)); f.Scroll > maxScroll {
+	// The scroll is clamped so that a full pane of history remains, or all of
+	// it when there is less than that. Clamping to the pane height alone stops
+	// short when the history is longer, and clamping to the whole history
+	// alone leaves a single line at the top of an empty pane. Settling on the
+	// oldest lines and filling the pane is what a reader who has scrolled to
+	// the top expects.
+	if maxScroll := len(reply) - paneHeight; maxScroll > 0 && f.Scroll > maxScroll {
 		f.Scroll = maxScroll
+	}
+	if f.Scroll > len(reply) {
+		f.Scroll = len(reply)
 	}
 	if f.Scroll > 0 {
 		reply = reply[:len(reply)-f.Scroll]
@@ -309,9 +326,9 @@ func Render(f Frame, height, width int) []string {
 	if len(reply) > paneHeight {
 		reply = reply[len(reply)-paneHeight:]
 	}
-	for len(body) < 1+paneHeight {
+	for len(body) < headerRows+paneHeight {
 		var line string
-		if i := len(body) - 1; i < len(reply) {
+		if i := len(body) - headerRows; i < len(reply) {
 			line = reply[i]
 		}
 		// A folded line already fits. One that came from a code block may
@@ -319,8 +336,6 @@ func Render(f Frame, height, width int) []string {
 		// line would push the rest of the frame down.
 		body = append(body, truncate(line, width))
 	}
-
-	body = append(body, StatusLine(f.Status, width))
 
 	// The input box is separated from the conversation by a blank row and a
 	// rule. Without them the prompt sits directly under the last line of a
@@ -353,6 +368,12 @@ func Render(f Frame, height, width int) []string {
 		body = append(body, "  "+truncate(line, maxInt(0, width-4)))
 	}
 	body = append(body, "> "+truncate(f.Input, maxInt(0, width-2)))
+
+	// The row below the prompt is added only when the frame has not already
+	// filled the height, so a short terminal is not pushed one row over.
+	if len(body) < height {
+		body = append(body, "")
+	}
 	return body
 }
 
