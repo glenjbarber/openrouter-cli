@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,12 +14,17 @@ import (
 )
 
 // blockingSession returns a session whose server answers the model list at
-// once and then holds a completion open until the test releases it, so that
-// work in progress can be looked at while it is still running.
+// once and then holds the first completion open until the test releases it, so
+// that work in progress can be looked at while it is still running.
+//
+// Only the first completion is held, so that work the test starts after the
+// held one is answered rather than queued behind it.
 func blockingSession(t *testing.T, body string,
 	reached chan<- struct{}, release <-chan struct{}) *Session {
 	t.Helper()
 
+	var mu sync.Mutex
+	blocked := false
 	srv := httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/models" {
@@ -26,8 +32,14 @@ func blockingSession(t *testing.T, body string,
 					`{"data":[{"id":"test/model","context_length":8192}]}`)
 				return
 			}
-			reached <- struct{}{}
-			<-release
+			mu.Lock()
+			first := !blocked
+			blocked = true
+			mu.Unlock()
+			if first {
+				reached <- struct{}{}
+				<-release
+			}
 			io.WriteString(w, body)
 		}))
 	t.Cleanup(srv.Close)
