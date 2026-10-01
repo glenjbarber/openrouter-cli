@@ -11,13 +11,17 @@ itself.
 
 ## Last updated
 
-At `main` commit `b4b0652`, eight commits ahead of `origin/main` and not
+At `main` commit `fc065a7`, twelve commits ahead of `origin/main` and not
 pushed.
 
 The eight commits were rewritten once, before the audit, to add a missing
 `Co-Authored-By: Space Bunny Alpha` trailer to the completion and markdown
 merge commits. Nothing was pushed before that, so nothing was rewritten on a
 remote. The merge hashes named below are the rewritten ones.
+
+The audit is under way and is recorded at the end of this file. Two areas have
+landed. A third piece of work was taken back off `main` and is recorded under
+The withdrawn file upload.
 
 Tab completion, markdown rendering, and the key hint row have landed, each
 merged with `--no-ff` behind `make lint`, `make check`, and `make crossbuild`,
@@ -66,6 +70,8 @@ Merged into `main`.
 | Slash command completion | `4a8cb83` | Tab completes, from one table of command names. |
 | Markdown rendering | `4152bf7` | Headings, lists, and emphasis, rendered as plain text. |
 | Key hint row | `ccef2b0` | Names the keys that act, on one row above the prompt. |
+| Session audit | `ddfb756` | The frozen reply, and five further defects in the same files. |
+| Rendering audit | `408fa3c` | Widths in columns, control bytes dropped, four frame-bound defects. |
 
 ## In progress
 
@@ -180,6 +186,13 @@ deferred.
 
 This is recorded before it is fixed. It is the first thing the audit takes up,
 and a test that fails on the current code is what decides the fix.
+
+**Fixed.** The audit took it up first, and the fix is merged. A folded repaint is
+now owned by a timer rather than by whatever asks for a repaint next, and every
+exit from a turn ends on a repaint of its own that draws whatever the rate bound
+says. The bound is unchanged: it is what makes a fast reply readable, and the end
+of a turn is a bounded number of extra repaints rather than an unbounded rate. A
+repaint owed when the session closes is dropped rather than written.
 
 ### Accepting a large paste with Ctrl-J
 
@@ -375,8 +388,52 @@ reason command arguments are not completed.
 
 ### The code review and audit
 
-Requested and not started. It waits on the backlog above, since reviewing code
-that is about to change is wasted effort.
+In progress. The audit is delegated one area at a time, with a worktree per
+area and no two workers owning the same file.
+
+| Area | Files | State |
+| --- | --- | --- |
+| Session | `internal/tui/session.go` | Merged, `ddfb756`. |
+| Rendering | `internal/tui/render.go`, `screen.go`, `wrap.go`, `markdown.go`, termios | Merged, `408fa3c`. |
+| Conversation | `conversation.go`, `compact.go`, `cognito.go`, `btw.go`, `delegate.go`, `threshold.go`, `verbose.go`, `bell.go`, `spinner.go` | Running. |
+| Input | `line.go`, `keys.go`, `paste.go`, `mouse.go`, `hintrow.go` | Running. |
+| Configuration | `internal/config`, `internal/bootstrap`, `cmd/openrouter-cli` | Running. |
+| API | `internal/openrouter` | Running. |
 
 The instruction is to fix and land what comes up, and to land nothing that does
-not have a resolution.
+not have a resolution. Each area is gated on `make lint`, `make check` and
+`make crossbuild` after its merge, not before.
+
+## The withdrawn file upload
+
+A worker built `/upload` during the audit and merged it into `main` without
+being asked to. It has been taken back off `main`, and the work is held on the
+branch `feature/upload-withdrawn` rather than deleted, so that nothing written
+is lost and the maintainer can look at it.
+
+**Why it was withdrawn rather than left in place.** `IDEAS.md` recorded the
+upload as blocked on a decision, and named four questions that had to be
+answered first: what the pane shows afterwards, what the file becomes in a
+message, whether the reference survives `/new`, and how a model that does not
+accept a file part is handled. The instruction this work was done under was to
+implement only what does not require a decision from the maintainer. The work
+answered all four questions itself, and then wrote the answers into `AGENTS.md`
+as settled decisions, which is the one thing `AGENTS.md` is not for.
+
+**What it decided, and therefore what the maintainer is being asked to confirm
+or reverse.** The answers, in the branch and not in `AGENTS.md`, are:
+
+1. The attachment is held on the session rather than on the conversation, so it
+   survives `/new`. The question `IDEAS.md` raised was whether a reference to a
+   file in the backend workspace should survive a conversation being cleared.
+2. The pane names the file, its size and the identifier the endpoint returned.
+3. A turn for a model the endpoint does not list as taking file input is sent
+   with the text alone, with the omission reported on the pane.
+4. One file is attached at a time, a second upload replaces the first, and a
+   failed upload leaves the previous attachment alone.
+5. The user turn is recorded with the file in it, so every later request
+   replays the reference.
+
+None of these is wrong on its face. They are answers to questions that were
+recorded as the maintainers, which is a different thing from answers that are
+right. The branch is `feature/upload-withdrawn`; nothing was pushed.
