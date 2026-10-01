@@ -483,6 +483,27 @@ so that a later change does not silently reverse it.
 - A reply that is still arriving is folded the same way a finished one is, even
   though it is not yet known to contain a fence.
 
+### Input box
+
+- The prompt is separated from the conversation by a blank row, a rule, and
+  another blank row. Without them the prompt sits directly under the last line of
+  a reply and the two are read as one block.
+- The rule is a box-drawing character rather than a run of dashes, since dashes
+  read as text and a rule reads as a rule.
+- The blank row below the rule matters as much as the one above it. A rule
+  touching the prompt reads as a border of the prompt rather than a division of
+  the screen.
+- The rows below the pane depend on whether the division is drawn, so the pane is
+  given what remains. A frame taller than the terminal pushes the status bar off
+  the screen, and a status bar that cannot be seen is worse than a missing rule.
+- On a terminal too short to hold the division it is dropped rather than drawn,
+  for the same reason.
+- A test that checks the frame fits must count columns rather than bytes, since
+  the rule is a multibyte character and a byte count reports it as three times
+  too wide.
+- A test that finds the status bar must do so by content rather than by
+  position, since the division now sits between it and the prompt.
+
 ### Progress
 
 - A twiddle is shown while work is in progress: a request, a compaction, or a

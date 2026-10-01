@@ -135,6 +135,17 @@ func truncate(s string, width int) string {
 	return s[:width-3] + "..."
 }
 
+// minHeightForDivision is the shortest terminal that still has room for the
+// rows around the rule, once the pane and the prompt have taken theirs.
+const minHeightForDivision = 8
+
+// The rows below the pane are the status bar, the pasted rows, and the prompt.
+// The division adds a blank, a rule, and another blank when it is drawn.
+const (
+	inputRowsBare    = 2
+	inputRowsDivided = 5
+)
+
 // Frame is the whole interface at one moment.
 type Frame struct {
 	// Title is the heading shown at the top of the reply pane.
@@ -212,9 +223,22 @@ func Render(f Frame, height, width int) []string {
 		width = 1
 	}
 
-	// One line for the title, one for the bar, one for the input, and one
-	// blank between the title and the reply.
-	paneHeight := height - 3
+	// The rows below the pane are the status bar, a blank, the rule, the
+	// pasted rows, the prompt, and a blank. The pane is given what remains, so
+	// that adding the division does not make the frame taller than the
+	// terminal and push the status bar off the screen.
+	divided := height >= minHeightForDivision
+
+	// The rows the input block takes depend on whether the division is drawn.
+	// A frame on a short terminal therefore gives more of itself to the
+	// conversation rather than to decoration, since a pane with no rows is not
+	// a pane.
+	inputRows := inputRowsBare
+	if divided {
+		inputRows = inputRowsDivided
+	}
+
+	paneHeight := height - 1 - inputRows
 	if paneHeight < 1 {
 		paneHeight = 1
 	}
@@ -268,7 +292,7 @@ func Render(f Frame, height, width int) []string {
 	if len(reply) > paneHeight {
 		reply = reply[len(reply)-paneHeight:]
 	}
-	for len(body) < height-2 {
+	for len(body) < 1+paneHeight {
 		var line string
 		if i := len(body) - 1; i < len(reply) {
 			line = reply[i]
@@ -280,6 +304,25 @@ func Render(f Frame, height, width int) []string {
 	}
 
 	body = append(body, StatusLine(f.Status, width))
+
+	// The input box is separated from the conversation by a blank row and a
+	// rule. Without them the prompt sits directly under the last line of a
+	// reply, and the two are read as one block: a reply ending mid-sentence
+	// above a prompt reads as a single run of text rather than as an exchange.
+	//
+	// On a terminal too short to hold the division it is dropped rather than
+	// drawn, since a frame taller than the screen pushes the status bar off the
+	// top of it, and a status bar that cannot be seen is worse than a missing
+	// rule.
+	if divided {
+		// The blank row above the rule gives it air, and the blank row below
+		// it separates the rule from the prompt it belongs to. A rule touching
+		// the prompt reads as a border of the prompt rather than as a
+		// division of the screen.
+		body = append(body, "")
+		body = append(body, rule(width))
+		body = append(body, "")
+	}
 
 	// A paste occupies the rows above the prompt. They are appended after the
 	// pane is filled, so the pane gives up the rows rather than the frame
@@ -294,6 +337,23 @@ func Render(f Frame, height, width int) []string {
 	}
 	body = append(body, "> "+truncate(f.Input, maxInt(0, width-2)))
 	return body
+}
+
+// ruleRune is the character a rule is drawn with. It is a box-drawing
+// character rather than an ASCII dash, since a run of dashes reads as text and
+// a rule reads as a rule.
+const ruleRune = "─"
+
+// rule draws a horizontal rule across the width.
+//
+// A light shade is used rather than a heavy one, since the rule divides the
+// screen and a heavy line reads as an object in its own right rather than as
+// a division.
+func rule(width int) string {
+	if width < 1 {
+		return ""
+	}
+	return strings.Repeat(ruleRune, width)
 }
 
 // maxInt returns the larger of two ints.

@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestRenderFrameShape(t *testing.T) {
@@ -12,15 +13,24 @@ func TestRenderFrameShape(t *testing.T) {
 		Status: Status{Host: "host.example"},
 		Input:  "hi",
 	}
-	lines := Render(f, 10, 60)
-	if len(lines) != 10 {
-		t.Errorf("len(lines) = %d, want 10", len(lines))
+	lines := Render(f, 12, 60)
+	if len(lines) != 12 {
+		t.Errorf("len(lines) = %d, want 12", len(lines))
 	}
 	if !strings.HasPrefix(lines[len(lines)-1], "> ") {
 		t.Errorf("last line = %q, want the input prompt", lines[len(lines)-1])
 	}
-	if !strings.Contains(lines[len(lines)-2], "Provider") {
-		t.Errorf("bar = %q, want it to carry the status fields", lines[len(lines)-2])
+
+	// The status bar is found by content rather than by position, since the
+	// division now sits between it and the prompt.
+	var bar string
+	for _, l := range lines {
+		if strings.Contains(l, "Provider") {
+			bar = l
+		}
+	}
+	if bar == "" {
+		t.Error("no status bar in the frame")
 	}
 }
 
@@ -85,10 +95,67 @@ func TestRenderKeepsNewestReply(t *testing.T) {
 
 func TestRenderTruncatesLongInput(t *testing.T) {
 	f := Frame{Input: strings.Repeat("x", 200)}
-	lines := Render(f, 8, 20)
+	lines := Render(f, 12, 20)
 	for i, l := range lines {
-		if len(l) > 20 {
-			t.Errorf("line %d is %d wide, want at most 20", i, len(l))
+		// Runes rather than bytes, since the rule is a multibyte character and
+		// a byte count would report it as three times too wide.
+		if n := utf8.RuneCountInString(l); n > 20 {
+			t.Errorf("line %d is %d columns, want at most 20: %q", i, n, l)
+		}
+	}
+}
+
+// The rule must divide the screen at the full width, since a rule that stops
+// short reads as a broken border rather than a division.
+func TestRuleSpansWidth(t *testing.T) {
+	if got := rule(20); utf8.RuneCountInString(got) != 20 {
+		t.Errorf("rule(20) is %d columns, want 20", utf8.RuneCountInString(got))
+	}
+	if rule(0) != "" {
+		t.Error("rule(0) is not empty")
+	}
+}
+
+// The prompt must be separated from the conversation, so that a reply ending
+// above it is not read as part of it.
+func TestRenderSeparatesInputFromOutput(t *testing.T) {
+	lines := Render(Frame{Reply: []string{"a reply"}, Input: "typing"}, 14, 30)
+
+	ruleAt, promptAt := -1, -1
+	for i, l := range lines {
+		if l == strings.Repeat(ruleRune, 30) && ruleAt < 0 {
+			ruleAt = i
+		}
+		if strings.HasPrefix(l, "> typing") {
+			promptAt = i
+		}
+	}
+	if ruleAt < 0 {
+		t.Fatal("no rule in the frame")
+	}
+	if promptAt < 0 {
+		t.Fatal("no prompt in the frame")
+	}
+
+	// A blank row above the rule, and one below it before the prompt.
+	if lines[ruleAt-1] != "" {
+		t.Errorf("the row above the rule is %q, want it blank", lines[ruleAt-1])
+	}
+	if lines[ruleAt+1] != "" {
+		t.Errorf("the row below the rule is %q, want it blank", lines[ruleAt+1])
+	}
+	if lines[promptAt-1] != "" {
+		t.Errorf("the row above the prompt is %q, want it blank", lines[promptAt-1])
+	}
+}
+
+// The frame must never exceed the height it was given, or the status bar is
+// pushed off the screen.
+func TestRenderFitsHeight(t *testing.T) {
+	for h := 6; h <= 30; h++ {
+		lines := Render(Frame{Reply: []string{"a"}, Input: "b"}, h, 40)
+		if len(lines) > h {
+			t.Errorf("height %d produced %d rows", h, len(lines))
 		}
 	}
 }

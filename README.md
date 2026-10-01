@@ -88,6 +88,24 @@ A terminal without bracketed paste support still works: the text is taken as
 typed, which means a multi-line paste from such a terminal is submitted line by
 line.
 
+### Input box
+
+The prompt sits in its own box at the foot of the screen, separated from the
+conversation by a full-width rule with a blank row either side:
+
+```
+Provider: openrouter.ai | Model: stealth/space-bunny-alpha | Status: idle | Credits: 0.42/5
+
+────────────────────────────────────────────────
+
+> what does this project do?
+```
+
+The rule keeps a reply and the prompt from reading as one block, which they do
+when a reply ends mid-sentence directly above the prompt. On a terminal too
+short to hold the rule, it is dropped rather than drawn, since a frame taller
+than the screen would push the status bar off it.
+
 ### Wrapping
 
 A reply wider than the terminal is folded to fit rather than cut, so nothing is
