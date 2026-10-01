@@ -77,3 +77,41 @@ func TestAuditReadByteDiscardsASequence(t *testing.T) {
 		t.Errorf("pendingKeys = %v, want the sequence discarded", le.pendingKeys)
 	}
 }
+
+// A sequence at the end of a read is acted on before the end of the input is
+// handled. A block whose last bytes are a sequence is followed by the end of
+// the input rather than by a further byte, so handling the error first would
+// leave the key with no effect at all.
+func TestAuditSequenceAtTheEndOfAReadIsActedOn(t *testing.T) {
+	le := NewLineEditor(strings.NewReader("one\r\x1b[A"))
+
+	got := readLines(t, le, 1)
+	if got[0] != "one" {
+		t.Errorf("got %q, want the line submitted", got[0])
+	}
+
+	// The arrow is still acted on even though the input ended with it, so the
+	// remembered line is what the read returns.
+	line, err := le.ReadLine()
+	if err == nil {
+		t.Fatal("err = nil, want the end of the input reported")
+	}
+	if line != "one" {
+		t.Errorf("line = %q, want the sequence acted on before the end of the input", line)
+	}
+}
+
+// A sequence that begins like a mouse report is left alone, since taking it as
+// an unknown sequence would leave the rest of the report to be read as keys.
+func TestAuditSequenceBeginningLikeAMouseReportIsLeftAlone(t *testing.T) {
+	for _, buf := range [][]byte{
+		[]byte("\x1b[<64;1;1M"),
+		[]byte("\x1b[<64"),
+		[]byte("\x1b[M"),
+		[]byte("\x1b[M\x60\x20\x20"),
+	} {
+		if _, _, ok := takeSequence(buf); ok {
+			t.Errorf("%q was taken as a key sequence", buf)
+		}
+	}
+}
