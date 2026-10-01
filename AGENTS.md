@@ -526,6 +526,47 @@ so that a later change does not silently reverse it.
 - Escape closes the listing and restores the pane. Enter chooses what the filter
   names, which saves typing an identifier that is already on screen.
 
+### Pane search
+
+- `/search` takes the pane over and filters it as the query is typed, in the
+  manner of the model filter, since a conversation is long enough that narrowing
+  it beats scrolling it.
+- The search is folded the way the renderer folds it before it is matched. A
+  match on a line the reader cannot see is not a match.
+- The columns reported are columns of the screen rather than of the stored
+  entry, so the column shown is the one the match fell at on screen.
+- The comparison ignores case, since a word is recalled in whatever case it
+  happens to be typed.
+- The first match on a line is the one reported. The line is shown once, and
+  marking every occurrence would need delimiters that would be copied out along
+  with the text.
+- The match is shown by the column it starts at, set in the margin, and by the
+  query in the heading. Nothing is inverted or coloured, since a selection is
+  taken out of the pane as plain text and an escape sequence drawn around the
+  match would be copied along with it.
+- The margin is dropped rather than pushing the text off the edge on a pane too
+  narrow for it, since the line is the part the reader came for.
+- The search records nothing. The listing is pane content, not a turn.
+- Enter jumps to the newest match rather than closing, so that a reader who has
+  found what they were after leaves with the escape they already know rather
+  than learning a second key to leave with.
+- The jump moves the offset rather than scrolling the terminal, so the view
+  stays inside the pane and the wheel remains the one thing that otherwise moves
+  it.
+- The newest match is the one chosen, since the pane grows downward and the
+  last match is the most recently written.
+- A jump leaves a pane height below the match, so that a match on the last row
+  is not the only thing on screen.
+- The offset is restored when the search closes. The search moved the view only
+  to show what it found, and a view left elsewhere would put the reader
+  somewhere they did not choose.
+- The pane as it stood is held aside rather than rebuilt from the
+  conversation, since the conversation is folded at render time and so cannot
+  be turned back into the lines that were on screen.
+- A pane height is stated once, as a constant the renderer and the search both
+  read. A jump that placed a match under the prompt would be worse than not
+  jumping at all.
+
 ### In-cognito mode
 
 - The mode is recorded by a marker file in the home directory rather than by a

@@ -50,6 +50,21 @@ type Session struct {
 	// modelKeep narrows the catalogue before the filter is applied, which is
 	// how the free-model listing is the same code as the full one.
 	modelKeep func(openrouter.Model) bool
+	// searchOpen reports whether the pane search is open. A flag is held rather
+	// than inferred from the query, since an empty query is the state the search
+	// starts in and would otherwise close it.
+	searchOpen bool
+	// search is what has been typed into the pane search.
+	search string
+	// searchReply is the pane as it stood when the search was opened. The
+	// listing replaces it while the search is open, so a copy is kept to
+	// restore rather than rebuilding from the conversation, which is folded
+	// at render time and so cannot be turned back into lines here.
+	searchReply []string
+	// searchScroll is the offset the reader held before the search moved the
+	// view. It is restored when the search closes, since a search that leaves
+	// the reader somewhere else would move the view out from under them.
+	searchScroll int
 	// repaint serialises the writes to the terminal, so that two requests for
 	// a repaint cannot interleave their output into the same row.
 	repaint sync.Mutex
@@ -277,6 +292,12 @@ func (s *Session) Seed(path string) error {
 func (s *Session) Run() error {
 	s.draw()
 	for {
+		if s.searching() {
+			// The search takes every key while it is open, so that typing does
+			// not reach the line editor behind it.
+			s.searchKey()
+			continue
+		}
 		if s.filtering() {
 			// The filter takes every key while it is open, so that typing does
 			// not reach the line editor behind it.
@@ -340,6 +361,8 @@ func (s *Session) command(line string) bool {
 		s.connect()
 	case "/key":
 		s.showUsage()
+	case "/search":
+		s.beginSearch()
 	case "/models":
 		s.beginModelList(nil)
 	case "/freemodels":
@@ -398,6 +421,7 @@ func helpText() string {
 		"/help              this list",
 		"/connect           test the connection and report the key",
 		"/key               report the usage against the key",
+		"/search            search the pane, filtered as it is typed",
 		"/models            list the models, filtered as it is typed",
 		"/freemodels        list the models that cost nothing, filtered as typed",
 		"/model [NAME]      show or choose the model, without an argument to list",
