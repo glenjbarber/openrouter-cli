@@ -523,9 +523,25 @@ so that a later change does not silently reverse it.
 - The blank row below the rule matters as much as the one above it. A rule
   touching the prompt reads as a border of the prompt rather than a division of
   the screen.
-- The rows below the pane depend on whether the division is drawn, so the pane is
-  given what remains. A frame taller than the terminal pushes the status bar off
-  the screen, and a status bar that cannot be seen is worse than a missing rule.
+- The status bar sits in a header at the top: the title, a rule, then the bar.
+  It is drawn outside the scrolled slice, so it stays put while the reader scrolls
+  back through earlier output. At the foot it scrolled away at exactly the moment
+  the figures in it were wanted.
+- The header costs three rows, so the pane is given what is left. A frame taller
+  than the terminal pushes rows off the screen, so the pane shrinks rather than
+  the frame growing.
+- The scroll is clamped so that a full pane of history remains, or all of it when
+  there is less than that. Clamping to the pane height alone stops short of the
+  oldest lines, and clamping to the whole history leaves a single line at the top
+  of an empty pane.
+- A pane shorter than its history is padded with blank rows, so a blank row at
+  the foot of the pane is expected rather than a gap. The history itself must be
+  contiguous from the oldest line.
+- The row below the prompt is added only when the frame has not already filled
+  the height, so a short terminal is not pushed one row over.
+- A test that finds a region of the frame must do so by content rather than by
+  an offset, since the header grows and the division comes and goes with the
+  terminal height.
 - On a terminal too short to hold the division it is dropped rather than drawn,
   for the same reason.
 - A test that checks the frame fits must count columns rather than bytes, since

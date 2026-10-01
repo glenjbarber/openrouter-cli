@@ -6,6 +6,16 @@ import (
 	"unicode/utf8"
 )
 
+// lastContent returns the last row of the frame that is not blank.
+func lastContent(lines []string) string {
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) != "" {
+			return lines[i]
+		}
+	}
+	return ""
+}
+
 func TestRenderFrameShape(t *testing.T) {
 	f := Frame{
 		Title:  "openrouter-cli",
@@ -17,12 +27,15 @@ func TestRenderFrameShape(t *testing.T) {
 	if len(lines) != 12 {
 		t.Errorf("len(lines) = %d, want 12", len(lines))
 	}
-	if !strings.HasPrefix(lines[len(lines)-1], "> ") {
-		t.Errorf("last line = %q, want the input prompt", lines[len(lines)-1])
+	// The prompt is the last row carrying content, since a blank row sits
+	// below it so that the prompt is not flush against the foot of the screen.
+	prompt := lastContent(lines)
+	if !strings.HasPrefix(prompt, "> ") {
+		t.Errorf("prompt row = %q, want the input prompt", prompt)
 	}
 
-	// The status bar is found by content rather than by position, since the
-	// division now sits between it and the prompt.
+	// The status bar is found by content rather than by position, since it sits
+	// above the conversation rather than below it.
 	var bar string
 	for _, l := range lines {
 		if strings.Contains(l, "Provider") {
@@ -137,15 +150,16 @@ func TestRenderSeparatesInputFromOutput(t *testing.T) {
 		t.Fatal("no prompt in the frame")
 	}
 
-	// A blank row above the rule, and one below it before the prompt.
-	if lines[ruleAt-1] != "" {
-		t.Errorf("the row above the rule is %q, want it blank", lines[ruleAt-1])
-	}
-	if lines[ruleAt+1] != "" {
-		t.Errorf("the row below the rule is %q, want it blank", lines[ruleAt+1])
-	}
+	// The rule above the prompt is separated from it by a blank row, so that
+	// the rule reads as a division of the screen rather than a border of the
+	// prompt.
 	if lines[promptAt-1] != "" {
 		t.Errorf("the row above the prompt is %q, want it blank", lines[promptAt-1])
+	}
+	// A reply must not sit directly against the prompt.
+	if lines[promptAt-2] == "" || strings.HasPrefix(lines[promptAt-2], ">") {
+		t.Errorf("the row before the blank is %q, want the conversation",
+			lines[promptAt-2])
 	}
 }
 
