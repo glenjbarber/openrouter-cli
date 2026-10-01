@@ -214,6 +214,33 @@ func (le *LineEditor) readKey() (byte, error) {
 				}
 				continue
 			}
+			// Bytes at the front that could still become a report or a pasted
+			// block are held rather than returned as keys. A reader is free
+			// to return a short block, and over a slow link a report arrives
+			// one byte at a time. Returning the leading escape as a key would
+			// end the line and leave the session, which is a crash rather
+			// than a misread.
+			//
+			// The hold is taken before the sequence is, since the opening
+			// marker of a paste has the shape of a key sequence itself. Taken
+			// first it would leave the body of the paste to be read as typing,
+			// which submits the line at its first newline.
+			//
+			// A prefix too short to tell from anything else is still held,
+			// since the rest of it may be in the next read. A lone escape
+			// is held on the same terms and is handed back as a key once
+			// the hold times out, which is what lets it interrupt.
+			if le.holdable() && (mousePrefix(le.buf) || pastePrefix(le.buf)) {
+				if err := le.fillHeld(); err != nil {
+					// Nothing more arrived before the deadline, so the
+					// prefix was never a report. The bytes are handed back
+					// as keys below, which makes a lone escape interrupt
+					// and an arrow reach the key handler, rather than either
+					// being reported as the end of the input.
+					break
+				}
+				continue
+			}
 			if seq, rest, ok := takeMouseSequence(le.buf); ok {
 				le.buf = rest
 				le.mouse(seq)
@@ -227,32 +254,13 @@ func (le *LineEditor) readKey() (byte, error) {
 				le.pendingKeys = append(le.pendingKeys, final)
 				continue
 			}
-			// Bytes at the front that could still become a report are held
-			// rather than returned as keys. A reader is free to return a
-			// short block, and over a slow link a report arrives one byte at
-			// a time. Returning the leading escape as a key would end the line
-			// and leave the session, which is a crash rather than a misread.
-			//
-			// A lone escape does not look like a report prefix, so it is
-			// still returned at once.
-			if mousePrefix(le.buf) && le.holdable() {
-				if err := le.fillHeld(); err != nil {
-					// Nothing more arrived before the deadline, so the
-					// prefix was never a report. The bytes are handed back
-					// as keys below, which makes a lone escape interrupt
-					// and an arrow reach the key handler, rather than either
-					// being reported as the end of the input.
-					break
-				}
-				continue
-			}
 			b := le.buf[0]
 			le.buf = le.buf[1:]
 			return b, nil
 		}
 		// The buffer holds a prefix that was not completed. The bytes are
 		// handed back as keys, which is what a lone escape and an arrow are.
-		if mousePrefix(le.buf) {
+		if mousePrefix(le.buf) || pastePrefix(le.buf) {
 			b := le.buf[0]
 			le.buf = le.buf[1:]
 			le.held = false
@@ -310,6 +318,18 @@ func (le *LineEditor) notify(out *strings.Builder) {
 func (le *LineEditor) ReadLine() (string, error) {
 	var out strings.Builder
 	var pending []byte
+
+	// A paste that has landed belongs to the line it landed in. Every path
+	// out of this loop other than a submit abandons it, so that text the
+	// reader discarded with a control character is not prepended to whatever
+	// they type next. The submit path takes the paste out of the editor
+	// itself and sets the flag, so the two cannot disagree.
+	submitted := false
+	defer func() {
+		if !submitted {
+			le.pasted = nil
+		}
+	}()
 
 	for {
 		b, err := le.readKey()
@@ -380,11 +400,13 @@ func (le *LineEditor) ReadLine() (string, error) {
 			if len(le.pasted) > 0 {
 				lines := le.pasted
 				le.pasted = nil
+				submitted = true
 				if typed := out.String(); typed != "" {
 					lines = append(lines, typed)
 				}
 				return strings.Join(lines, "\n"), nil
 			}
+			submitted = true
 			return out.String(), nil
 		case keyTab:
 			// A control key abandons a rune that has not arrived whole, so

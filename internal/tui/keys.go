@@ -9,91 +9,76 @@ import "strings"
 // leaves its opening escape to be read as a key, and a lone escape ends the
 // line: pressing an arrow would close the session.
 
-// sequenceKinds are the final bytes of the sequences the reader understands.
+// keyFinals are the final bytes of the sequences this reader acts on.
 //
-// The sequences are the ones in common use by terminal emulators. A sequence
-// ending in any other byte is not one this reader acts on, so it is consumed
-// and discarded rather than being read as keys.
+// The sequences are the ones in common use by terminal emulators: the four
+// arrows and the two ends of the line. A sequence ending in any other byte is
+// consumed and discarded rather than being read as keys, so the home and end
+// keys, which a terminal writes the same way as an arrow, need no constant of
+// their own.
 const (
 	keyUp    = 'A'
 	keyDown  = 'B'
 	keyRight = 'C'
 	keyLeft  = 'D'
-	keyHome  = 'H'
-	keyEnd   = 'F'
-	keyDel   = '~'
 )
 
-// sequenceLengths maps the byte that ends a sequence to how long that sequence
-// is, for the forms whose length is fixed.
-//
-// The cursor and home keys are three bytes: an escape, a bracket, and a final
-// byte. Delete may be written either as the three-byte bracket form or as a
-// four-byte form with a number, which is why it carries its own length.
-var sequenceLengths = map[byte]int{
-	keyUp:    3,
-	keyDown:  3,
-	keyRight: 3,
-	keyLeft:  3,
-	keyHome:  3,
-	keyEnd:   3,
-	keyDel:   3,
-}
+// csiParamLo and csiParamHi bound the parameter bytes of a control sequence,
+// which are the digits and the separators between them.
+const (
+	csiParamLo = 0x30
+	csiParamHi = 0x3F
+)
+
+// csiFinalLo and csiFinalHi bound the final byte of a control sequence, which is
+// the byte that ends it and is what identifies the key.
+const (
+	csiFinalLo = 0x40
+	csiFinalHi = 0x7E
+)
 
 // takeSequence extracts a complete key sequence from the front of buf.
 //
 // It reports the final byte of the sequence, which is what identifies it. A
 // sequence that has not arrived whole is left in place, since the rest of it may
 // be in the next read.
+//
+// The length is read from the shape of the sequence rather than from a table of
+// the forms this reader acts on. A terminal writes a modified key with a
+// parameter in front of the final byte, as in ESC [ 1 ; 5 A for an alt-held
+// up arrow, and a table of fixed lengths does not cover those. A form that is
+// not recognised is consumed just the same, since leaving its bytes to be read
+// as keys would put a bare escape and a bracket into the message.
 func takeSequence(buf []byte) (final byte, rest []byte, ok bool) {
 	if len(buf) < 2 || buf[0] != keyEscape || buf[1] != '[' {
 		return 0, buf, false
 	}
-	if len(buf) < 3 {
-		return 0, buf, false
-	}
-
-	final = buf[2]
-
-	// The four-byte forms carry a number before the final byte, such as the
-	// delete key. They are recognised by a digit or a semicolon after the
-	// bracket.
 	// The two introducers that belong to a mouse report are left alone. A
 	// report arriving in pieces would otherwise be taken as an unknown key
 	// sequence and the rest of it read as keys.
-	if buf[2] == '<' || buf[2] == 'M' {
+	if len(buf) >= 3 && (buf[2] == '<' || buf[2] == 'M') {
 		return 0, buf, false
 	}
 
-	// A digit where a key letter would be marks one of the longer forms, whose
-	// number precedes the final byte.
-	if buf[2] >= '0' && buf[2] <= '9' {
-		for i := 2; i < len(buf); i++ {
-			if buf[i] == '~' {
-				// Everything up to and including the tilde is consumed, so
-				// the tilde is not left to be read as a key of its own.
-				return buf[2], buf[i+1:], true
-			}
-			if buf[i] < '0' || buf[i] > '9' {
-				return 0, buf, false
-			}
+	// A control sequence runs to its first byte in the final range. Everything
+	// before it is a parameter, which is why the digit forms and the modified
+	// forms are taken by the same walk rather than by two rules.
+	for i := 2; i < len(buf); i++ {
+		c := buf[i]
+		if c >= csiFinalLo && c <= csiFinalHi {
+			// Everything up to and including the final byte is consumed, so
+			// the final byte is not left to be read as a key of its own.
+			return c, buf[i+1:], true
 		}
-		// The number has not arrived whole, so the sequence is left for the
-		// next read rather than being cut in half.
-		return 0, buf, false
+		if c < 0x20 || c > csiParamHi {
+			// Neither a parameter nor a final byte, so these bytes are not a
+			// control sequence and are left alone.
+			return 0, buf, false
+		}
 	}
-
-	n, known := sequenceLengths[final]
-	if !known {
-		// An unknown final byte is still consumed. It is a sequence this
-		// reader does not act on, and leaving its bytes to be read as keys
-		// would put a bare escape and a bracket into the line.
-		return final, buf[3:], true
-	}
-	if len(buf) < n {
-		return 0, buf, false
-	}
-	return final, buf[n:], true
+	// The sequence has not arrived whole, so it is left for the next read
+	// rather than being cut in half.
+	return 0, buf, false
 }
 
 // key reports a special key to the caller.
@@ -123,18 +108,12 @@ func (le *LineEditor) key(final byte, out *strings.Builder) {
 	}
 }
 
-// recall replaces the composed line with a remembered one.
-//
-// The builder is the line being composed, which belongs to the read loop
-// maxHistory is how many submitted lines are remembered.
-
-// recall walks the history and returns the line to compose.
-//
-// The up arrow walks back and the down arrow walks forward. At the ends it does
-// nothing rather than wrapping, since wrapping makes it impossible to tell
-// which end one is at. Walking past the newest restores the line that was being
 // applyRecall replaces the composed line with a remembered one, when there is
 // one to recall.
+//
+// The composition is not overwritten here, since the walk holds it aside and
+// walking back out restores it. Only the remembered line is reported, so that
+// the frame shows what the reader asked for.
 //
 // With nothing to recall the key has no action at all, and the line being
 // composed is left exactly as it is. The builder belongs to the read loop
@@ -149,14 +128,16 @@ func (le *LineEditor) applyRecall(back bool, out *strings.Builder) {
 
 	out.Reset()
 	out.WriteString(line)
-	// The composition follows the recall, so that a later recall knows where
-	// in the walk the user is rather than treating every key as a new start.
-	le.composing = line
 	if le.OnChange != nil {
 		le.OnChange(line)
 	}
 }
 
+// walkHistory moves through the history and returns the line to compose.
+//
+// The up arrow walks back and the down arrow walks forward. At the ends it does
+// nothing rather than wrapping, since wrapping makes it impossible to tell
+// which end one is at. Walking past the newest restores the line that was being
 // composed rather than losing it.
 func (le *LineEditor) walkHistory(back bool) (string, bool) {
 	if len(le.history) == 0 {
@@ -169,7 +150,13 @@ func (le *LineEditor) walkHistory(back bool) (string, bool) {
 		if le.historyAt == 0 {
 			return "", false
 		}
-
+		if le.historyAt == len(le.history) {
+			// The walk is leaving the line being composed, so it is kept
+			// aside for the walk back out. Taking the composition from here
+			// rather than from the recalled line is what makes walking
+			// forward past the newest resume it.
+			le.recalled = le.composing
+		}
 		le.historyAt--
 		return le.history[le.historyAt], true
 	}
@@ -183,6 +170,7 @@ func (le *LineEditor) walkHistory(back bool) (string, bool) {
 		// and the composition resumes.
 		line := le.recalled
 		le.recalled = ""
+		le.composing = line
 		return line, true
 	}
 	return le.history[le.historyAt], true
@@ -208,16 +196,22 @@ const maxHistory = 100
 //
 // The model filter is typed into rather than submitted, so it reads keys
 // directly instead of going through the line editor. A key sequence is consumed
-// and ignored, since the filter takes characters only.
+// and discarded, since the filter takes characters only.
+//
+// The discard happens before the error is reported, as the line editor acts on
+// its own sequences before it handles the end of the input. Leaving one queued
+// would hand it to the line editor afterwards, where it would act on a key
+// pressed while the filter was open.
+//
+// A pasted block that lands here is discarded as well. The filter takes
+// characters only and its enter chooses from a listing rather than sending a
+// message, so a block left in the editor could never be delivered by the
+// filter, and would instead be prepended to whatever was composed next.
 func (le *LineEditor) ReadByte() (byte, error) {
-	for {
-		b, err := le.readKey()
-		if err != nil {
-			return 0, err
-		}
-		if len(le.pendingKeys) > 0 {
-			le.pendingKeys = le.pendingKeys[:0]
-		}
-		return b, nil
+	b, err := le.readKey()
+	if len(le.pendingKeys) > 0 {
+		le.pendingKeys = le.pendingKeys[:0]
 	}
+	le.pasted = nil
+	return b, err
 }
