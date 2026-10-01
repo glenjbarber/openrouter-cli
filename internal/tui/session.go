@@ -43,6 +43,15 @@ type Session struct {
 	// leaving a thread restores it without a snapshot being taken here.
 	thread   *Ephemeral
 	mainConv *Conversation
+	// repaint serialises the writes to the terminal, so that two requests for
+	// a repaint cannot interleave their output into the same row.
+	repaint sync.Mutex
+	// lastPaint is when the frame was last written to the terminal, used to
+	// hold the rate down.
+	lastPaint time.Time
+	// paintPending records that a repaint was asked for during the interval and
+	// is owed once it passes.
+	paintPending bool
 	// delegates are the background questions still running. They are tracked so
 	// that leaving does not leave one writing to a frame nobody is drawing on,
 	// and so that the count can be reported.
@@ -616,10 +625,14 @@ func (s *Session) send(line string) {
 // line, so that the reply grows in place the way a terminal conversation is
 // normally read.
 func (s *Session) stream(partial string) {
+	s.mu.Lock()
 	s.frame.Busy = true
 	s.frame.Status.State = stateWorking
 	s.frame.Partial = partial
-	s.draw()
+	s.mu.Unlock()
+
+	s.paintDue()
+	s.paint()
 }
 
 // updateStatus refreshes the fields the client knows.
@@ -690,6 +703,63 @@ func (s *Session) endWork() {
 
 // draw repaints the frame.
 func (s *Session) draw() {
+	s.paint()
+}
+
+// paint renders the frame, coalescing the requests.
+//
+// A reply arrives a token at a time and the twiddle turns on its own clock, so
+// without coalescing the frame is redrawn many times a second and the text
+// visibly jumps. Requests that arrive within the interval are folded into one
+// repaint at the end of it, which bounds the rate at which the screen changes
+// however fast the input arrives.
+//
+// A repaint that is asked for while one is pending serves both callers, so the
+// last state drawn is always the most recent one.
+func (s *Session) paint() {
+	s.repaint.Lock()
+	defer s.repaint.Unlock()
+
+	// A repaint within the interval is deferred rather than refused, so the
+	// state drawn at the end of it is the most recent one and nothing is lost.
+	if since := time.Since(s.lastPaint); since < minPaintInterval {
+		s.paintPending = true
+		return
+	}
+
+	s.paintNow()
+	s.lastPaint = time.Now()
+}
+
+// paintDue runs a deferred repaint once the interval has passed.
+//
+// It is called from the same place a fresh repaint would be, so a reply that
+// keeps arriving continues to be drawn at the bounded rate rather than falling
+// behind.
+func (s *Session) paintDue() {
+	s.repaint.Lock()
+	defer s.repaint.Unlock()
+
+	if !s.paintPending {
+		return
+	}
+	if since := time.Since(s.lastPaint); since < minPaintInterval {
+		return
+	}
+	s.paintPending = false
+	s.paintNow()
+	s.lastPaint = time.Now()
+}
+
+// minPaintInterval is the shortest time between two repaints.
+//
+// The figure is chosen so that a fast reply reads as text arriving rather than
+// as a flickering block. A terminal repaints far faster than the eye resolves,
+// so drawing every token only produces movement that cannot be read.
+const minPaintInterval = 40 * time.Millisecond
+
+// paintNow renders the frame without coalescing.
+func (s *Session) paintNow() {
 	s.mu.Lock()
 	// The pane carries a hint only while it is empty. Once a conversation has
 	// started the hint is in the way, and the opening instructions are what

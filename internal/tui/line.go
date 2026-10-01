@@ -75,10 +75,35 @@ type LineEditor struct {
 	// mode with echo disabled and so does not draw it. A nil callback draws
 	// nothing, which is the correct behaviour for a non-interactive reader.
 	OnChange func(string)
+	// pendingKeys holds the final bytes of the special key sequences read since
+	// the last keypress, oldest first. They are acted on by the read loop, which
+	// holds the line being composed, rather than by the reader, which does not.
+	//
+	// A queue rather than a single slot, since one read block can hold several
+	// sequences and a second would overwrite the first.
+	pendingKeys []byte
+	// composing is the line being composed, kept so that walking into the
+	// history can restore it when the user walks back out.
+	composing string
+	// history holds the submitted lines, newest last, so that the up and down
+	// arrows walk through what has already been sent. It is not written
+	// anywhere, so it lasts only as long as the session.
+	history []string
+	// historyAt is where in the history the cursor is, len(history) meaning
+	// the line being composed rather than a remembered one.
+	historyAt int
+	// recalled is the line being composed when the user first walked back into
+	// the history, so that walking forward past the newest restores it rather
+	// than losing it. Zero once the walk has finished, since a later walk
+	// captures a fresh composition.
+	recalled string
 	// pasted holds the lines of a paste that has landed, kept out of the
 	// typed line so that a multi-line paste is one input rather than one
 	// message per line.
 	pasted []string
+	// OnKey is called with the final byte of each special key sequence, such as
+	// an arrow. It is nil when the caller does not act on them.
+	OnKey func(final byte)
 	// OnMouse is called with the wheel direction of each mouse report read
 	// alongside the keys. It is what lets the view be scrolled without
 	// ending the line, since a report shares the input stream with the keys
@@ -185,6 +210,14 @@ func (le *LineEditor) readKey() (byte, error) {
 				le.mouse(seq)
 				continue
 			}
+			// A key sequence is consumed whole. Left to be read as keys, its
+			// opening escape would end the line and leave the session, which
+			// is what pressing an arrow used to do.
+			if final, rest, ok := takeSequence(le.buf); ok {
+				le.buf = rest
+				le.pendingKeys = append(le.pendingKeys, final)
+				continue
+			}
 			// Bytes at the front that could still become a report are held
 			// rather than returned as keys. A reader is free to return a
 			// short block, and over a slow link a report arrives one byte at
@@ -253,8 +286,9 @@ func (le *LineEditor) mouse(seq []byte) {
 
 // notify reports the current line.
 func (le *LineEditor) notify(out *strings.Builder) {
+	le.composing = out.String()
 	if le.OnChange != nil {
-		le.OnChange(out.String())
+		le.OnChange(le.composing)
 	}
 }
 
@@ -270,6 +304,22 @@ func (le *LineEditor) ReadLine() (string, error) {
 
 	for {
 		b, err := le.readKey()
+
+		// Every special key read on the way to this byte is acted on before
+		// the byte is handled, so that an arrow sharing a read block with a
+		// submit is seen before the submit is processed. All are drained,
+		// since one read block may hold several sequences.
+		//
+		// The drain comes before the error check, because a sequence at the
+		// end of a block is followed by the end of the input rather than by a
+		// further byte, and acting on it after the error was handled would
+		// leave the key with no effect at all.
+		for len(le.pendingKeys) > 0 {
+			key := le.pendingKeys[0]
+			le.pendingKeys = le.pendingKeys[1:]
+			le.key(key, &out)
+		}
+
 		if err != nil {
 			if len(pending) == 0 && out.Len() == 0 {
 				return "", ErrEndOfInput
@@ -310,6 +360,14 @@ func (le *LineEditor) ReadLine() (string, error) {
 			// that a multi-line paste reaches the model whole. It is joined
 			// with newlines rather than sent as several messages, since the
 			// user pasted one thing.
+			// A submitted line joins the history, and the composition is
+			// cleared, since that line is no longer being composed and the
+			// next recall would otherwise save it joined to the next.
+			if line := out.String(); line != "" {
+				le.remember(line)
+			}
+			le.composing = ""
+
 			if len(le.pasted) > 0 {
 				lines := le.pasted
 				le.pasted = nil
