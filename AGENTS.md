@@ -273,6 +273,20 @@ so that a later change does not silently reverse it.
   indication that plain text is the message and that a model must be selected
   first.
 
+### Worktrees
+
+- Feature and bug work is done in a git worktree under
+  `~/openrouter-cli-worktrees`, one directory per piece of work, named for it.
+  Work is merged into `main` after it is implemented and tested.
+- The main checkout is left on `main` and is not edited directly for a feature.
+  A worktree keeps an unfinished change from sitting on `main`, where it would
+  be pushed by anything that pushes the branch.
+- The worktree is created from `main` and its branch is merged back with
+  `--no-ff`, so that the work is visible as a unit rather than as a row of
+  commits indistinguishable from the rest.
+- A worktree is removed after the merge, and the branch is deleted with it. A
+  stale worktree holds a whole checkout of disk that nothing refers to.
+
 ### Compaction
 
 - A long conversation is summarised and replaced before the request that would
