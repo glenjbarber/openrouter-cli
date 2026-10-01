@@ -1,5 +1,19 @@
 # openrouter-cli
 
+![OS](https://img.shields.io/badge/OS-FreeBSD-red.svg?logo=freebsd&logoColor=white)
+
+![Architecture](https://img.shields.io/badge/arch-amd64-blue)
+![Architecture](https://img.shields.io/badge/arch-arm64-blue)
+![Architecture](https://img.shields.io/badge/arch-aarch64-blue)
+
+[![License](https://img.shields.io/github/license/glenjbarber/openrouter-cli?color=blue)](LICENSE)
+
+![Go Version](https://img.shields.io/github/go-mod/go-version/glenjbarber/openrouter-cli)
+[![Go Reference](https://pkg.go.dev/badge/github.com/glenjbarber/openrouter-cli.svg)](https://pkg.go.dev/github.com/glenjbarber/openrouter-cli)
+
+![Last Commit](https://img.shields.io/github/last-commit/glenjbarber/openrouter-cli)
+[![Go CI](https://github.com/glenjbarber/openrouter-cli/actions/workflows/go-ci.yml/badge.svg?branch=main)](https://github.com/glenjbarber/openrouter-cli/actions/workflows/go-ci.yml)
+
 A command-line client for the OpenRouter.AI API, written in Go.
 
 `openrouter-cli` provides an interactive terminal interface in the style of Codex,
