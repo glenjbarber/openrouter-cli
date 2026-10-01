@@ -191,7 +191,20 @@ func TestRenderTinyTerminal(t *testing.T) {
 	}
 }
 
-func TestTruncateMarksTheCut(t *testing.T) {
+// A row is cut in characters rather than in bytes. A reply carries multibyte
+// text, and a cut at a byte boundary would leave half a character on the row
+// and count it as wider than it is.
+func TestTruncateCountsColumns(t *testing.T) {
+	got := truncate("héllo wörld ünter", 8)
+	if got != "héllo..." {
+		t.Errorf("truncate = %q, want the cut taken in characters", got)
+	}
+	if strings.ContainsRune(got, 0xFFFD) {
+		t.Errorf("truncate = %q, want no replacement character", got)
+	}
+}
+
+func TestTruncateAsciiUnchanged(t *testing.T) {
 	if got := truncate("abcdefghij", 5); got != "ab..." {
 		t.Errorf("truncate = %q, want %q", got, "ab...")
 	}
