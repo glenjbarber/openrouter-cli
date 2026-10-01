@@ -255,8 +255,8 @@ func TestDecodeFailuresPassThroughTheCredentialFilter(t *testing.T) {
 			},
 		},
 		{
-			name: "an allowance whose figure is not a figure",
-			body: `{"data":{"usage":"a lot"}}`,
+			name: "an allowance whose data is not an allowance",
+			body: `{"data":"none"}`,
 			call: func(c *Client) error {
 				_, err := c.KeyUsage(context.Background())
 				return err

@@ -112,6 +112,23 @@ func scalarText(raw json.RawMessage) string {
 	return strings.TrimSpace(string(raw))
 }
 
+// scalarFloat reads a figure the endpoint may quote as a number or as text.
+//
+// A figure that cannot be read is zero rather than an error. The figure is a
+// number a reader shows, and one it cannot read is a figure it has none of,
+// which is what a zero already says.
+func scalarFloat(raw json.RawMessage) float64 {
+	text := scalarText(raw)
+	if text == "" {
+		return 0
+	}
+	v, err := strconv.ParseFloat(text, 64)
+	if err != nil {
+		return 0
+	}
+	return v
+}
+
 // The bounds an int is clamped to. They are computed rather than written down,
 // since the platform maximum differs between a 32-bit and a 64-bit build.
 var (

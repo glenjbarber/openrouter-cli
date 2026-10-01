@@ -143,32 +143,99 @@ func TestModelsReportABodyThatIsNotACatalogue(t *testing.T) {
 	}
 }
 
-// The allowance is a figure against a limit, not the conversation context, and
-// a limit of zero is reported as zero rather than being turned into a share
-// against nothing.
+// The allowance is a figure against a limit, not the conversation context. A
+// limit of zero reaches the caller as the zero it was reported as rather than
+// being turned into a share against nothing. The guard against a share against
+// nothing belongs to whatever renders the figure, which is internal/tui, and
+// this holds the client to the part that is its own: the reported figure
+// survives the decode as it arrived, whatever notation it arrived in, and a
+// limit is not confused with the usage beside it.
 func TestKeyUsageReportsALimitOfZero(t *testing.T) {
+	for _, tc := range []struct {
+		body       string
+		usage      float64
+		limit      float64
+		wantAbsent bool
+	}{
+		{body: `{"data":{"usage":12.5,"limit":0}}`, usage: 12.5, limit: 0},
+		{body: `{"data":{"usage":12.5,"limit":0.0}}`, usage: 12.5, limit: 0},
+		{body: `{"data":{"usage":12.5,"limit":"0"}}`, usage: 12.5, limit: 0},
+		{body: `{"data":{"usage":0,"limit":0}}`, usage: 0, limit: 0},
+		{body: `{"data":{}}`, usage: 0, limit: 0, wantAbsent: true},
+		// A limit above zero is read as itself, which is what a decoder that
+		// dropped the figure when it was zero would not do.
+		{body: `{"data":{"usage":12.5,"limit":100}}`, usage: 12.5, limit: 100},
+	} {
+		c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, tc.body)
+		})
+		usage, err := c.KeyUsage(context.Background())
+		if err != nil {
+			t.Errorf("KeyUsage(%s) = %v, want the figures decoded", tc.body, err)
+			continue
+		}
+		if usage.Usage != tc.usage || usage.Limit != tc.limit {
+			t.Errorf("KeyUsage(%s) = %v/%v, want %v/%v",
+				tc.body, usage.Usage, usage.Limit, tc.usage, tc.limit)
+		}
+		if tc.wantAbsent && usage.FreeModelRequests != nil {
+			t.Errorf("KeyUsage(%s) = %+v, want no free allowance", tc.body, usage.FreeModelRequests)
+		}
+	}
+}
+
+// A figure the endpoint writes as text is read rather than refused, since the
+// figures are quoted as numbers in practice and a refusal takes the whole
+// allowance with it, including the paid figures that were perfectly readable.
+func TestKeyUsageReadsFiguresQuotedAsText(t *testing.T) {
 	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{"data":{"usage":12.5,"limit":0}}`)
+		io.WriteString(w, `{"data":{"usage":"1.5","limit":"2",`+
+			`"free_model_daily_requests":{"used":"3","limit":"1000"}}}`)
 	})
+
 	usage, err := c.KeyUsage(context.Background())
 	if err != nil {
 		t.Fatalf("KeyUsage: %v", err)
 	}
-	if usage.Limit != 0 {
-		t.Errorf("limit = %v, want the reported zero kept", usage.Limit)
+	if usage.Usage != 1.5 || usage.Limit != 2 {
+		t.Errorf("usage = %v/%v, want 1.5/2", usage.Usage, usage.Limit)
 	}
-	if usage.Usage != 12.5 {
-		t.Errorf("usage = %v, want 12.5", usage.Usage)
+	if usage.FreeModelRequests == nil {
+		t.Fatal("the free allowance was not decoded")
 	}
-	// The struct carries the figures. Dividing one by the other is the
-	// caller decision, and a zero limit must be visible to it rather than
-	// hidden behind a missing field.
-	data, err := json.Marshal(usage)
-	if err != nil {
-		t.Fatalf("marshalling the usage: %v", err)
+	if usage.FreeModelRequests.Used != 3 || usage.FreeModelRequests.Limit != 1000 {
+		t.Errorf("free allowance = %+v, want 3/1000", *usage.FreeModelRequests)
 	}
-	if !strings.Contains(string(data), `"limit":0`) {
-		t.Errorf("usage = %s, want the zero limit reported", data)
+}
+
+// The free allowance is optional, so one that is present but is not an object
+// leaves the paid figures alone rather than failing the whole read.
+func TestKeyUsageLeavesAMalformedFreeAllowanceAbsent(t *testing.T) {
+	for _, tc := range []struct {
+		body     string
+		wantFree bool
+	}{
+		{body: `{"data":{"usage":1,"limit":2,"free_model_daily_requests":3}}`},
+		{body: `{"data":{"usage":1,"limit":2,"free_model_daily_requests":"none"}}`},
+		{body: `{"data":{"usage":1,"limit":2,"free_model_daily_requests":null}}`},
+		{body: `{"data":{"usage":1,"limit":2,` +
+			`"free_model_daily_requests":{"used":3,"limit":1000}}}`, wantFree: true},
+	} {
+		c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, tc.body)
+		})
+		usage, err := c.KeyUsage(context.Background())
+		if err != nil {
+			t.Errorf("KeyUsage(%s) = %v, want the paid figures read", tc.body, err)
+			continue
+		}
+		if usage.Usage != 1 || usage.Limit != 2 {
+			t.Errorf("KeyUsage(%s) = %v/%v, want 1/2", tc.body, usage.Usage, usage.Limit)
+		}
+		if got := usage.FreeModelRequests != nil; got != tc.wantFree {
+			t.Errorf("KeyUsage(%s) carried a free allowance = %v, want %v",
+				tc.body, got, tc.wantFree)
+		}
 	}
 }
 
