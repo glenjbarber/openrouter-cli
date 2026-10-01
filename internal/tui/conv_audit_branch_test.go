@@ -189,8 +189,8 @@ func TestLeavingAThreadRestoresTheConversationExactly(t *testing.T) {
 	if s.thread == nil {
 		t.Fatal("beginThread did not start a thread")
 	}
-	s.send("a question asked in the thread")
-	s.send("another one")
+	s.send(s.ctx, s.conv, "a question asked in the thread")
+	s.send(s.ctx, s.conv, "another one")
 
 	if s.conv == s.mainConv {
 		t.Fatal("the thread did not take over the conversation")
@@ -226,7 +226,7 @@ func TestExchangesInAThreadDoNotReachTheMainConversation(t *testing.T) {
 
 	s.endThread()
 	for i := 0; i < 20; i++ {
-		s.send(fmt.Sprintf("question %d", i))
+		s.send(s.ctx, s.conv, fmt.Sprintf("question %d", i))
 	}
 
 	if got := s.conv.Turns(); got != 42 {
@@ -255,7 +255,7 @@ func TestDelegateDoesNotDisturbTheConversation(t *testing.T) {
 	}
 
 	for i := 0; i < 20; i++ {
-		s.send(fmt.Sprintf("question %d", i))
+		s.send(s.ctx, s.conv, fmt.Sprintf("question %d", i))
 	}
 	close(release)
 

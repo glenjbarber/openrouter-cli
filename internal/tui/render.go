@@ -334,10 +334,11 @@ const (
 	inputRowsDivided = 5
 )
 
-// maxPasteRows is how many lines of a pasted block are shown before the rest
-// are reported as a count instead. A paste of a thousand lines would otherwise
-// fill the screen.
-const maxPasteRows = 5
+// maxBlockRows is how many lines of a block above the prompt are shown before
+// the rest are reported as a count instead. A paste of a thousand lines, or a
+// queue that has grown while a slow model works, would otherwise fill the
+// screen.
+const maxBlockRows = 5
 
 // headerRowCount is the height of the header above the reply pane: the title, a
 // rule, and the status bar. It is a constant rather than a local so that the
@@ -376,6 +377,12 @@ type Frame struct {
 	// cannot be shown on one row and a prompt that silently swallowed it
 	// would read as a lost paste.
 	Pasted []string
+	// Queued holds the lines committed while a model was working, which are
+	// waiting for that request to end. They take their own rows above the
+	// prompt, since a line the reader has sent and cannot see is a line they
+	// would send again, and since the decision to stop a model with them
+	// cannot be made against a queue that is not shown.
+	Queued []string
 	// Hints are the keys that do something in the current state, shown on one
 	// row above the prompt. Only keys that act are named, so the row never
 	// promises a key that does nothing. It is a list rather than a finished
@@ -448,12 +455,17 @@ func Render(f Frame, height, width int) []string {
 	if divided {
 		inputRows = inputRowsDivided
 	}
-	// The rows a paste takes are held onto, rather than recomputed at the
-	// point where it is drawn. The budget is what keeps the block from
-	// pushing the prompt off the bottom of the screen, so the drawing has to
-	// be held to the same figure the budget came to.
-	pasteBudget := pasteRows(f.Pasted, height-inputRows)
+	// The rows a block above the prompt takes are held onto, rather than
+	// recomputed at the point where it is drawn. The budget is what keeps the
+	// block from pushing the prompt off the bottom of the screen, so the
+	// drawing has to be held to the same figure the budget came to.
+	pasteBudget := blockRows(len(f.Pasted), height-inputRows)
 	inputRows += pasteBudget
+	// The queue is budgeted after the paste. A paste has landed and is in
+	// front of the reader, while the queue is what the reader is about to
+	// decide about, and either order leaves the prompt where it belongs.
+	queueBudget := blockRows(len(f.Queued), height-inputRows)
+	inputRows += queueBudget
 	// The hint row is budgeted after the paste, so that a paste which has
 	// landed is still reported. A paste the reader cannot see reads as a lost
 	// paste, while a missing hint costs nothing beyond the row it was on.
@@ -605,7 +617,7 @@ func Render(f Frame, height, width int) []string {
 	// room to spare, and on one without it the block took rows the prompt
 	// needed, so a paste of any size could push the prompt off the bottom and
 	// leave the reader with no way to write a next message.
-	pasteShown, pasteNotice := pasteLayout(len(f.Pasted), pasteBudget)
+	pasteShown, pasteNotice := blockLayout(len(f.Pasted), pasteBudget)
 	for i := 0; i < pasteShown; i++ {
 		// The lines are indented the same way as the notice that counts the
 		// rest, so that the block reads as one thing rather than as a message.
@@ -614,6 +626,19 @@ func Render(f Frame, height, width int) []string {
 	if pasteNotice {
 		body = append(body, indent("", "  ", fmt.Sprintf(
 			"... %d more pasted lines", len(f.Pasted)-pasteShown), width))
+	}
+
+	// A queued message takes its own rows above the prompt, below the paste it
+	// arrived with. Each is drawn as it was committed rather than folded into one
+	// line, since the decision to stop a model with them is made against what
+	// they say.
+	queueShown, queueNotice := blockLayout(len(f.Queued), queueBudget)
+	for i := 0; i < queueShown; i++ {
+		body = append(body, indent(queuedMarker, "  ", f.Queued[i], width))
+	}
+	if queueNotice {
+		body = append(body, indent("", "  ", fmt.Sprintf(
+			"... %d more queued messages", len(f.Queued)-queueShown), width))
 	}
 
 	// The hint row sits above the prompt, so the prompt stays the last row of
@@ -720,6 +745,14 @@ func indent(marker, prefix, body string, width int) string {
 	return truncate(marker+prefix+fit, width)
 }
 
+// queuedMarker leads a row holding a message waiting for the model to finish.
+//
+// The marker is a word rather than a decoration, since a row is plain text a
+// terminal selection copies out. A reader who selects the block above the
+// prompt should get the message back marked as queued rather than as
+// something the model was asked.
+const queuedMarker = "queued "
+
 // ruleRune is the character a rule is drawn with. It is a box-drawing
 // character rather than an ASCII dash, since a run of dashes reads as text and
 // a rule reads as a rule.
@@ -745,26 +778,30 @@ func maxInt(a, b int) int {
 	return b
 }
 
-// pasteRows returns how many rows a pasted block will occupy, which is the
-// lines shown plus the row reporting anything cut.
+// blockRows returns how many rows a block above the prompt will occupy, which
+// is the lines shown plus the row reporting anything cut.
+//
+// The block is a paste that has landed or a queue of messages waiting on a
+// model. Both are held to the same budget, since both would otherwise take
+// the rows the prompt needs.
 //
 // The count is bounded by the room left after the prompt, since the prompt is
-// what a reader needs in order to type the next message. A paste that cannot
+// what a reader needs in order to type the next message. A block that cannot
 // fit is cut and reported rather than allowed to push the prompt off the
 // bottom of the screen, which would leave no way to continue the session.
-func pasteRows(pasted []string, room int) int {
-	if len(pasted) == 0 || room < 1 {
+func blockRows(n, room int) int {
+	if n == 0 || room < 1 {
 		return 0
 	}
-	rows := minInt(len(pasted), maxPasteRows)
-	if len(pasted) > rows {
+	rows := minInt(n, maxBlockRows)
+	if n > rows {
 		rows++
 	}
 	return minInt(rows, maxInt(0, room))
 }
 
-// pasteLayout decides how many lines of a pasted block are drawn and whether
-// the rest of it are reported.
+// blockLayout decides how many lines of a block above the prompt are drawn and
+// whether the rest of it are reported.
 //
 // The lines shown are bounded by the rows the budget allowed as well as by the
 // fixed maximum, since the maximum says what a terminal with room to spare
@@ -773,15 +810,15 @@ func pasteRows(pasted []string, room int) int {
 // would come out of the prompt.
 //
 // The overflow is reported whenever a row is left to report it in, since a
-// block cut without saying so reads as a paste that arrived short. A row spent
-// on the notice is a line of the block given up for it, which is the right
-// trade: a reader told a paste was cut can ask for the rest, while a reader
-// told nothing cannot know anything was lost.
-func pasteLayout(n, budget int) (shown int, notice bool) {
+// block cut without saying so reads as one that arrived short. A row spent on
+// the notice is a line of the block given up for it, which is the right trade:
+// a reader told a block was cut can ask for the rest, while a reader told
+// nothing cannot know anything was lost.
+func blockLayout(n, budget int) (shown int, notice bool) {
 	if n <= 0 || budget < 1 {
 		return 0, false
 	}
-	shown = minInt(minInt(n, maxPasteRows), budget)
+	shown = minInt(minInt(n, maxBlockRows), budget)
 	if n <= shown {
 		return shown, false
 	}

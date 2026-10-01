@@ -447,9 +447,15 @@ func (le *LineEditor) ReadLine() (string, error) {
 		case keyEscape:
 			// A lone escape is a key rather than the start of a sequence,
 			// since no escape sequence is read as input here.
-			if out.Len() == 0 {
-				return "", ErrInterrupt
-			}
+			//
+			// It interrupts whether or not there is a line in hand. It was
+			// answered only on an empty line, which left the key doing
+			// nothing at all while a message was being composed, and a reader
+			// pressing it to abandon what they had typed had no way to say
+			// so. What the session does with the interrupt is decided there,
+			// since escape abandons a line on an idle prompt and stops a
+			// model with it while one is working.
+			return "", ErrInterrupt
 		default:
 			// Another control key, ignored rather than inserted. Tab is not
 			// among them, since it has a case of its own above.

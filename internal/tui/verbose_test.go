@@ -164,7 +164,7 @@ func TestSendReportsStreamShapeWhenVerbose(t *testing.T) {
 	s := verboseSession(t, verboseStream)
 	s.verbose = true
 
-	s.send("hi")
+	s.send(s.ctx, s.conv, "hi")
 
 	joined := strings.Join(s.frame.Reply, "\n")
 	if !strings.Contains(joined, "[stream]") {
@@ -182,11 +182,11 @@ func TestSendReportsStreamShapeWhenVerbose(t *testing.T) {
 func TestSendUnchangedWhenVerboseOff(t *testing.T) {
 	on := verboseSession(t, verboseStream)
 	on.verbose = true
-	on.send("hi")
+	on.send(on.ctx, on.conv, "hi")
 	withVerbose := append([]string{}, on.frame.Reply...)
 
 	off := verboseSession(t, verboseStream)
-	off.send("hi")
+	off.send(off.ctx, off.conv, "hi")
 	withoutVerbose := append([]string{}, off.frame.Reply...)
 
 	if strings.Join(withVerbose, "\n") == strings.Join(withoutVerbose, "\n") {
@@ -227,11 +227,11 @@ func TestStreamDetailDoesNotGrowThePane(t *testing.T) {
 
 	small := verboseSession(t, few)
 	small.verbose = true
-	small.send("hi")
+	small.send(small.ctx, small.conv, "hi")
 
 	large := verboseSession(t, many)
 	large.verbose = true
-	large.send("hi")
+	large.send(large.ctx, large.conv, "hi")
 
 	// One reply line, the question, the reply, and the single detail line,
 	// so the rows differ by the reply length alone rather than by the number

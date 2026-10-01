@@ -26,7 +26,7 @@ import (
 func TestReplyIsPaintedWhenTheTurnEnds(t *testing.T) {
 	s, capture := auditSession(t, auditStream)
 
-	s.send("hello")
+	s.send(s.ctx, s.conv, "hello")
 
 	frame := auditLastFrame(t, capture)
 	if !strings.Contains(frame, "Hello") {
@@ -76,7 +76,7 @@ func TestRefusedTurnIsPainted(t *testing.T) {
 	s, capture := auditSession(t, auditStream)
 	s.client = nil
 
-	s.send("hello")
+	s.send(s.ctx, s.conv, "hello")
 
 	frame := auditLastFrame(t, capture)
 	if !strings.Contains(frame, "no API key is configured") {
@@ -90,7 +90,7 @@ func TestTurnWithNoModelIsPainted(t *testing.T) {
 	s, capture := auditSession(t, auditStream)
 	s.conv.SetModel("")
 
-	s.send("hello")
+	s.send(s.ctx, s.conv, "hello")
 
 	frame := auditLastFrame(t, capture)
 	if !strings.Contains(frame, "no model is selected") {
@@ -104,7 +104,7 @@ func TestTurnWithNoModelIsPainted(t *testing.T) {
 func TestFailedTurnIsPainted(t *testing.T) {
 	s, capture := auditSession(t, "")
 
-	s.send("hello")
+	s.send(s.ctx, s.conv, "hello")
 
 	frame := auditLastFrame(t, capture)
 	if !strings.Contains(frame, "(error)") {

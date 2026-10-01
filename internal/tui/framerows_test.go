@@ -6,27 +6,39 @@ import (
 )
 
 // The frame must never be taller than the terminal, at any width and at any
-// number of pasted lines. A frame that runs past the bottom pushes the prompt
-// off the screen, and the reader loses the ability to type a next message.
+// number of pasted lines or queued messages. A frame that runs past the bottom
+// pushes the prompt off the screen, and the reader loses the ability to type a
+// next message.
+//
+// The two blocks are varied together, since a queue arrives while a paste may
+// still be on the screen and the budget is spent on the paste first.
 func TestFrameNeverExceedsHeight(t *testing.T) {
-	var pasted []string
+	var blocks []string
 	for i := 0; i < 40; i++ {
-		pasted = append(pasted, "pasted line")
+		blocks = append(blocks, "a block line")
 	}
 
 	for _, height := range []int{1, 2, 5, 8, 12, 20, 30, 60} {
 		for _, width := range []int{1, 2, 3, 5, 10, 40, 200} {
-			for n := 0; n <= len(pasted); n++ {
+			for n := 0; n <= len(blocks); n++ {
 				f := Frame{
 					Title:  "a title",
 					Reply:  []string{"a reply line", "another reply line"},
 					Input:  "some input text",
-					Pasted: pasted[:n],
+					Pasted: blocks[:n],
 				}
 				lines := Render(f, height, width)
 				if len(lines) > height {
 					t.Errorf("height=%d width=%d pasted=%d: frame is %d rows",
 						height, width, n, len(lines))
+				}
+				for q := 0; q <= len(blocks); q += 7 {
+					f.Queued = blocks[:q]
+					lines := Render(f, height, width)
+					if len(lines) > height {
+						t.Errorf("height=%d width=%d queued=%d: frame is %d rows",
+							height, width, q, len(lines))
+					}
 				}
 			}
 		}
@@ -75,18 +87,44 @@ func TestPromptFitsNarrowTerminal(t *testing.T) {
 	}
 }
 
-// A pasted paste must not cost the reader the prompt. The pane gives up rows
-// rather than the frame overflowing, so a paste and a prompt both remain.
-func TestPasteDoesNotCostThePrompt(t *testing.T) {
-	var pasted []string
+// A block above the prompt must not cost the reader the prompt. The pane gives
+// up rows rather than the frame overflowing, so the block and the prompt both
+// remain. A reader who cannot see the prompt cannot answer the model, which is
+// the same failure whether the rows were taken by a paste or by a queue.
+func TestABlockAboveThePromptDoesNotCostThePrompt(t *testing.T) {
+	var blocks []string
 	for i := 0; i < 20; i++ {
-		pasted = append(pasted, "pasted line")
+		blocks = append(blocks, "a block line")
 	}
-	f := Frame{Pasted: pasted, Input: "hi"}
-	lines := Render(f, 24, 40)
-	joined := strings.Join(lines, "\n")
-	if !strings.Contains(joined, "> hi") {
-		t.Errorf("the prompt was pushed off the screen:\n%s", joined)
+	for _, tc := range []struct {
+		name string
+		f    Frame
+	}{
+		{"a paste", Frame{Pasted: blocks, Input: "hi"}},
+		{"a queue", Frame{Queued: blocks, Input: "hi"}},
+		{"a paste under a queue", Frame{Pasted: blocks, Queued: blocks, Input: "hi"}},
+	} {
+		lines := Render(tc.f, 24, 40)
+		joined := strings.Join(lines, "\n")
+		if !strings.Contains(joined, "> hi") {
+			t.Errorf("%s pushed the prompt off the screen:\n%s", tc.name, joined)
+		}
+	}
+}
+
+// A queue too long for the rows it was given is cut and the remainder reported,
+// since a queue cut without saying so reads as one that was never made.
+func TestALongQueueIsCutAndReported(t *testing.T) {
+	var queued []string
+	for i := 0; i < 12; i++ {
+		queued = append(queued, "a queued message")
+	}
+	joined := strings.Join(Render(Frame{Queued: queued, Input: "hi"}, 24, 40), "\n")
+	if !strings.Contains(joined, "more queued messages") {
+		t.Errorf("the queue was cut without saying so:\n%s", joined)
+	}
+	if strings.Count(joined, "a queued message") > maxBlockRows {
+		t.Errorf("the queue was drawn past the rows it was given:\n%s", joined)
 	}
 }
 
@@ -110,6 +148,7 @@ func TestFrameShapeHoldsAtEverySize(t *testing.T) {
 						Reply:  reply,
 						Input:  "some input",
 						Pasted: pasted[:n],
+						Queued: pasted[:n/2],
 						Scroll: scroll,
 					}
 					lines := Render(f, height, width)

@@ -47,7 +47,7 @@ func failedStreamSession(t *testing.T) *Session {
 // saw the same paragraph above and below the error.
 func TestCutStreamDoesNotPaintTheReplyTwice(t *testing.T) {
 	s := failedStreamSession(t)
-	s.send("hi")
+	s.send(s.ctx, s.conv, "hi")
 
 	const answer = "the answer so far"
 	n := 0
@@ -65,7 +65,7 @@ func TestCutStreamDoesNotPaintTheReplyTwice(t *testing.T) {
 // than replacing it.
 func TestCutStreamKeepsTheTextBeforeTheFailure(t *testing.T) {
 	s := failedStreamSession(t)
-	s.send("hi")
+	s.send(s.ctx, s.conv, "hi")
 
 	joined := strings.Join(s.frame.Reply, "\n")
 	if !strings.Contains(joined, "the answer so far") {
@@ -82,7 +82,7 @@ func TestCutStreamKeepsTheTextBeforeTheFailure(t *testing.T) {
 // exchange the record refuses to keep.
 func TestCutStreamRecordsNoExchange(t *testing.T) {
 	s := failedStreamSession(t)
-	s.send("hi")
+	s.send(s.ctx, s.conv, "hi")
 
 	// Pending carries the recorded turns and then the question it was given,
 	// so the trailing user turn is the probe and everything before it is what

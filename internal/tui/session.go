@@ -81,6 +81,15 @@ type Session struct {
 	// view. It is restored when the search closes, since a search that leaves
 	// the reader somewhere else would move the view out from under them.
 	searchScroll int
+	// turn is the request in flight, nil while no model is working. It is
+	// guarded by mu, since the input goroutine stops a turn the request
+	// goroutine owns.
+	turn *turnState
+	// queued holds the lines committed while a model was working, which go
+	// out when that request ends. It is guarded by mu and drawn above the
+	// prompt, since a line the reader has sent and cannot see is a line they
+	// would send again.
+	queued []string
 	// repaint serialises the writes to the terminal, so that two requests for
 	// a repaint cannot interleave their output into the same row.
 	repaint sync.Mutex
@@ -298,6 +307,18 @@ func (s *Session) Close() {
 	s.spinner.Stop()
 	s.cancel()
 
+	// The turn in flight is waited for on the same terms as a delegate. The
+	// cancellation above reaches it, since a turn takes its context from the
+	// session, and it unwinds by settling the pane, the counters and the
+	// twiddle. Nothing is drawn, because closed is already set, but the
+	// write is the reason to wait rather than to race.
+	s.mu.Lock()
+	turn := s.turn
+	s.mu.Unlock()
+	if turn != nil {
+		<-turn.done
+	}
+
 	// The delegates are waited for before the terminal is put back. The
 	// cancellation above reaches them, since they are made from the session
 	// context, and each one unwinds by writing its answer to the frame and
@@ -432,6 +453,14 @@ func (s *Session) Run() error {
 		case errors.Is(err, ErrEndOfInput):
 			return nil
 		case errors.Is(err, ErrInterrupt):
+			// An interrupt while a model is working stops it and sends what is
+			// in hand, rather than leaving the session. The line is the update
+			// the model was working from, so it is sent rather than abandoned.
+			if s.working() {
+				s.stopTurn(composed)
+				s.draw()
+				continue
+			}
 			if composed == "" {
 				return ErrQuit
 			}
@@ -465,8 +494,14 @@ func (s *Session) Run() error {
 			if quit := s.command(trimmed); quit {
 				return ErrQuit
 			}
+		case s.working():
+			// A line sent while the model is working is held rather than
+			// refused. Enter queues it and the model carries on, and the line
+			// goes out as an update to the request if the reader stops it, or
+			// as a question of its own once the request has been answered.
+			s.queueLine(trimmed)
 		default:
-			s.send(line)
+			s.startTurn(line, s.conv)
 		}
 		s.draw()
 	}
@@ -488,6 +523,11 @@ type command struct {
 	// description is the one-line summary shown in the help and beside a
 	// candidate when a prefix matches more than one.
 	description string
+	// idleOnly refuses the command while a model is working, since it changes
+	// the conversation the request in flight is holding. A turn records its
+	// answer into the conversation it was asked in, so a conversation cleared
+	// underneath one would collect an exchange nobody asked it to keep.
+	idleOnly bool
 	// run performs the command with the words that follow it, and reports
 	// whether the session should end.
 	run func(s *Session, args []string) bool
@@ -516,16 +556,16 @@ func init() {
 		{names: []string{"/models"}, description: "list the models, filtered as it is typed", run: (*Session).cmdModels},
 		{names: []string{"/freemodels"}, description: "list the models that cost nothing, filtered as typed", run: (*Session).cmdFreeModels},
 		{names: []string{"/model"}, usage: "/model [NAME]", description: "show or choose the model, without an argument to list", run: (*Session).cmdModel},
-		{names: []string{"/new"}, description: "clear the conversation", run: (*Session).cmdNew},
+		{names: []string{"/new"}, description: "clear the conversation", run: (*Session).cmdNew, idleOnly: true},
 		{names: []string{"/bell"}, description: "ring the terminal bell on reply, on or off", run: (*Session).cmdBell},
 		{names: []string{"/cognito"}, description: "record nothing, on or off", run: (*Session).cmdCognito},
 		{names: []string{"/verbose"}, description: "report the shape of each streamed turn, on or off", run: (*Session).cmdVerbose},
 		{names: []string{"/delegate"}, usage: "/delegate QUESTION", description: "ask a question alongside, without recording it", run: (*Session).cmdDelegate},
-		{names: []string{"/btw"}, description: "start a thread branched from this conversation", run: (*Session).cmdBtw},
-		{names: []string{"/main"}, description: "leave the thread and return to the conversation", run: (*Session).cmdMain},
-		{names: []string{"/compact"}, description: "summarise the conversation and start again", run: (*Session).cmdCompact},
+		{names: []string{"/btw"}, description: "start a thread branched from this conversation", run: (*Session).cmdBtw, idleOnly: true},
+		{names: []string{"/main"}, description: "leave the thread and return to the conversation", run: (*Session).cmdMain, idleOnly: true},
+		{names: []string{"/compact"}, description: "summarise the conversation and start again", run: (*Session).cmdCompact, idleOnly: true},
 		{names: []string{"/mouse"}, description: "turn mouse reporting on or off, for wheel scrolling", run: (*Session).cmdMouse},
-		{names: []string{"/clear"}, description: "clear the pane", run: (*Session).cmdClear},
+		{names: []string{"/clear"}, description: "clear the pane", run: (*Session).cmdClear, idleOnly: true},
 		{names: []string{"/info"}, description: "report the session settings", run: (*Session).cmdInfo},
 		{names: []string{"/quit", "/exit"}, description: "leave the interface", run: (*Session).cmdQuit},
 	}
@@ -542,6 +582,13 @@ func (s *Session) command(line string) bool {
 	name := args[0]
 
 	if c := lookupCommand(name); c != nil {
+		if c.idleOnly && s.working() {
+			// The refusal says what to do about it, since a command that
+			// answered nothing would read as the interface having swallowed
+			// the line.
+			s.addReply("(" + name + " is refused while the model is working, press Esc to stop it first)")
+			return false
+		}
 		return c.run(s, args[1:])
 	}
 	s.addReply("unknown command: " + name)
@@ -1170,11 +1217,182 @@ func (s *Session) endpoint() string {
 	return s.client.BaseURL()
 }
 
+// turnState is one request in flight.
+//
+// A turn carries its own context, so that stopping a model stops that request
+// rather than the session, and its own done channel, so that the input loop can
+// wait for the request to settle before sending an update to it. The
+// conversation and the request text are taken when the turn is started, since
+// an answer belongs to the conversation the question was asked in, and a
+// follow-up amends the text as it was sent rather than whatever it has since
+// become.
+type turnState struct {
+	// ctx is cancelled to stop the request.
+	ctx    context.Context
+	cancel context.CancelFunc
+	// done is closed once the request has settled, after the pane, the
+	// counters and the twiddle have been left in the state the turn ended in.
+	done chan struct{}
+	// line is the request text as it was sent.
+	line string
+	// conv is the conversation the request was made from.
+	conv *Conversation
+	// stopped records that the reader took this turn over with an update. It
+	// is written under mu, which is the same lock that registers a turn, so
+	// that a turn ended by the reader and a turn ended by the model cannot
+	// both act on what was queued behind it.
+	stopped bool
+}
+
+// startTurn sends the line to the model and returns at once.
+//
+// The request runs on a goroutine of its own, which is what makes a message
+// queueable and a model stoppable at all: with the request on the input
+// goroutine there is nothing reading the keys while a model works, and
+// everything typed, escape included, waits for the reply to finish.
+//
+// The turn is registered before the goroutine starts, so that a reader who
+// stops it at once is stopping a turn that is already recorded rather than one
+// nobody is holding.
+func (s *Session) startTurn(line string, conv *Conversation) {
+	s.mu.Lock()
+	if s.closing {
+		// The session is on its way out, so a request begun now would be made
+		// against a terminal nothing is drawing on. A turn started during the
+		// teardown would also be a turn Close is not waiting for.
+		s.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(s.ctx)
+	t := &turnState{
+		ctx:    ctx,
+		cancel: cancel,
+		done:   make(chan struct{}),
+		line:   line,
+		conv:   conv,
+	}
+	s.turn = t
+	s.mu.Unlock()
+
+	go s.runTurn(t)
+}
+
+// runTurn carries out one request and settles it.
+//
+// The bookkeeping is deferred before the channel is closed, since the defers
+// run in the reverse order they are registered. A reader waiting to send an
+// update to this turn is waiting for it to be settled, and a turn that called
+// itself done while still writing to the pane would have the update drawn
+// underneath it.
+func (s *Session) runTurn(t *turnState) {
+	defer close(t.done)
+	defer s.settleTurn(t)
+	s.send(t.ctx, t.conv, t.line)
+}
+
+// settleTurn clears a finished turn and sends what was queued behind it.
+//
+// The queue is drained only where the turn ended on its own. A turn the reader
+// stopped sends its own update, and the stopped bit was set under the lock
+// that registered the turn, so the two cannot both claim the queue.
+func (s *Session) settleTurn(t *turnState) {
+	s.mu.Lock()
+	mine := s.turn == t
+	stopped := t.stopped
+	if mine {
+		s.turn = nil
+	}
+	var next string
+	if mine && !stopped && len(s.queued) > 0 {
+		// One queued line is sent on its own. Two are two questions, and
+		// sending them together would ask them as one.
+		next, s.queued = s.queued[0], s.queued[1:]
+	}
+	s.mu.Unlock()
+
+	if next != "" {
+		// The turn that was ahead of it has been answered, so the line that
+		// was queued behind it is a question of its own rather than an update
+		// to a request nobody is making any more.
+		s.startTurn(next, t.conv)
+	}
+}
+
+// working reports whether a model is working.
+func (s *Session) working() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.turn != nil
+}
+
+// queueLine holds a line until the request in flight has ended.
+func (s *Session) queueLine(line string) {
+	s.mu.Lock()
+	s.queued = append(s.queued, line)
+	s.mu.Unlock()
+}
+
+// stopTurn stops the model and sends what is in hand as an update to the
+// request it was answering.
+//
+// The turn is claimed under the lock, which is what settles who acts on the
+// queue. A turn that ended by itself a moment earlier would otherwise drain the
+// queue while this sent an update, and the reader would be sent the same
+// message twice. The wait is for the turn to settle rather than for the
+// request to stop, since a turn that has not finished unwinding would still be
+// writing to the pane after the update was sent.
+func (s *Session) stopTurn(update string) {
+	s.mu.Lock()
+	t := s.turn
+	if t == nil {
+		s.mu.Unlock()
+		return
+	}
+	t.stopped = true
+	// The queue goes ahead of the line being composed, since it is what was
+	// committed first.
+	parts := append([]string(nil), s.queued...)
+	s.queued = nil
+	s.mu.Unlock()
+
+	if trimmed := strings.TrimSpace(update); trimmed != "" {
+		parts = append(parts, trimmed)
+	}
+
+	t.cancel()
+	<-t.done
+
+	// Nothing in hand is a stop and nothing more. The queue is empty in that
+	// case, since the queue was taken above.
+	if len(parts) == 0 {
+		return
+	}
+	s.startTurn(amend(t.line, strings.Join(parts, "\n\n")), t.conv)
+}
+
+// amend folds a follow-up into the text of the request it updates.
+//
+// The two travel as one request rather than as a question and an answer to it,
+// since the model was asked the first and the follow-up is the correction to
+// it. A blank line separates them, which keeps the question and the correction
+// apart without marking either, since a marker would be read as part of what
+// was asked.
+func amend(line, followup string) string {
+	if strings.TrimSpace(followup) == "" {
+		return line
+	}
+	return line + "\n\n" + followup
+}
+
 // send forwards a line to the model and shows the reply.
 //
 // The reply is appended a token at a time rather than once at the end, so that
 // a slow model does not leave the interface apparently idle while it works.
-func (s *Session) send(line string) {
+//
+// The context and the conversation are the ones the turn was started with
+// rather than the session's, so that a reader can stop a turn without leaving
+// and so that the answer is recorded where the question was asked.
+func (s *Session) send(ctx context.Context, conv *Conversation, line string) {
 	// Every exit from a turn ends on a painted frame, including the two early
 	// refusals and every error path. The deferral is registered before either
 	// refusal is tested, so a turn that never reached the request is as painted
@@ -1186,7 +1404,7 @@ func (s *Session) send(line string) {
 		s.addReply("> "+line, msg)
 		return
 	}
-	if s.conv.Model() == "" {
+	if conv.Model() == "" {
 		s.addReply("> "+line, "(no model is selected: /model NAME)")
 		return
 	}
@@ -1233,9 +1451,22 @@ func (s *Session) send(line string) {
 	// recorded as though the turn had ended cleanly.
 	failed := false
 
-	err := s.client.Chat(s.ctx, openrouter.ChatRequest{
-		Model:    s.conv.Model(),
-		Messages: s.conv.Pending(line),
+	// stopReport appends what had arrived when the reader stopped the model,
+	// and says that it was stopped. The text is kept, since it is usually
+	// worth reading, and the notice is there so that a partial answer is not
+	// read as the whole of what the model said. A stream cut short by the
+	// cancellation is not a fault, and reporting it as one would tell the
+	// reader that something broke when they had asked for it.
+	stopReport := func() {
+		if reply.Len() > 0 {
+			s.addReply(strings.TrimRight(reply.String(), "\n"))
+		}
+		s.addReply("(stopped)")
+	}
+
+	err := s.client.Chat(ctx, openrouter.ChatRequest{
+		Model:    conv.Model(),
+		Messages: conv.Pending(line),
 	}, func(e openrouter.StreamEvent) {
 		report.note(e)
 		if e.Usage != nil {
@@ -1243,6 +1474,10 @@ func (s *Session) send(line string) {
 			s.updateStatus()
 		}
 		if e.Err != nil {
+			if ctx.Err() != nil {
+				stopReport()
+				return
+			}
 			// A stream that failed partway still produced text, and that text
 			// is kept: it is usually more useful than an error alone.
 			failed = true
@@ -1260,6 +1495,12 @@ func (s *Session) send(line string) {
 	})
 
 	if err != nil {
+		if ctx.Err() != nil {
+			// The request was abandoned before a reply began, which is what a
+			// reader who stopped it at once gets.
+			stopReport()
+			return
+		}
 		s.addReply("(error) " + err.Error())
 		return
 	}
@@ -1290,7 +1531,7 @@ func (s *Session) send(line string) {
 	if s.thread != nil {
 		s.thread.Note()
 	}
-	s.conv.Record(line, text)
+	conv.Record(line, text)
 }
 
 // stream shows a reply while it is arriving.
@@ -1545,6 +1786,11 @@ func (s *Session) paintNow() {
 	// is the opposite of what the spinner is for.
 	frame := s.frame
 	frame.Scroll = s.scroll
+	// The queue is copied rather than shared, since the renderer draws it
+	// after the lock is released and the input goroutine is what appends to
+	// it. A frame built from a slice being appended to would show a queue
+	// that is neither what was queued nor empty.
+	frame.Queued = append([]string(nil), s.queued...)
 	// The hint row is built here rather than at each site that changes the
 	// state, so that it cannot fall behind a state the row does not know
 	// about. The busy bit is read from the frame, which the request loop

@@ -45,8 +45,9 @@ type hintState struct {
 	// is what gives the up and down arrows an action at all. With nothing to
 	// recall they do nothing, so they are not named.
 	history bool
-	// busy reports that a request is in flight, which is what makes escape
-	// interrupt. Escape on an idle prompt does nothing, so it is not named.
+	// busy reports that a request is in flight, which is what makes Enter
+	// queue a line rather than send it and escape stop the model. Neither key
+	// does that on an idle prompt, so neither is named there.
 	busy bool
 	// mouse reports that reporting is on, which is what makes the wheel
 	// scroll. Reporting is off unless the reader asked for it, so the wheel
@@ -70,12 +71,17 @@ func (st hintState) hints() []string {
 	case hintSearch:
 		return []string{"Enter jump to match", "Esc close"}
 	}
-	h := []string{"Enter send", "Tab complete"}
+	// Enter is named for what it does in this state rather than for what it
+	// does on an idle prompt, since a line sent while a model is working is
+	// held rather than refused, and escape stops the model with it.
+	h := []string{"Enter send"}
+	if st.busy {
+		h[0] = "Enter queue"
+		h = append(h, "Esc stop and send")
+	}
+	h = append(h, "Tab complete")
 	if st.history {
 		h = append(h, "Up/Down history")
-	}
-	if st.busy {
-		h = append(h, "Esc interrupt")
 	}
 	if st.mouse {
 		h = append(h, "wheel scroll")
