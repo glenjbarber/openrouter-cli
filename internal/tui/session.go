@@ -21,6 +21,14 @@ type Session struct {
 	editor *LineEditor
 	frame  Frame
 
+	// hints is the state the hint row describes. It is guarded by mu and
+	// written by the input goroutine at the points where the keys that do
+	// something change, rather than being derived inside the paint path. The
+	// editor belongs to the input goroutine and the line editor holds no
+	// lock of its own, so reading the history from the spinner goroutine
+	// while a key is being read would be a race.
+	hints hintState
+
 	// client is nil until a connection is established, so that the interface
 	// can be used for composition before a key is configured.
 	// mu guards the frame, which the spinner goroutine writes while the
@@ -220,6 +228,12 @@ func (s *Session) resetScroll() {
 func (s *Session) setMouse(on bool) {
 	s.mouseRequested = on
 	s.screen.SetMouse(on)
+	// The hint row names the wheel only while reporting is on, since the
+	// wheel is what reporting drives. The bit is taken under the lock,
+	// because the row is also drawn from the spinner goroutine.
+	s.mu.Lock()
+	s.hints.mouse = on
+	s.mu.Unlock()
 }
 
 // SetMouse turns mouse reporting on or off.
@@ -335,6 +349,16 @@ func (s *Session) Run() error {
 		case err != nil:
 			return err
 		}
+
+		// A submitted line is remembered by the editor, which is what gives the
+		// up and down arrows an action. The bit is set from the goroutine that
+		// owns the editor rather than read out of it at paint time, since the row
+		// is also drawn from the spinner goroutine. It is only ever set: history
+		// is not forgotten within a session, so no site has to clear it and
+		// missing one cannot leave the row naming a key that does nothing.
+		s.mu.Lock()
+		s.hints.history = true
+		s.mu.Unlock()
 
 		// The view is not moved here. A reply arriving while the reader is
 		// scrolled back must not yank the view down, or the history they
@@ -1198,6 +1222,25 @@ func (s *Session) paintNow() {
 	// is the opposite of what the spinner is for.
 	frame := s.frame
 	frame.Scroll = s.scroll
+	// The hint row is built here rather than at each site that changes the
+	// state, so that it cannot fall behind a state the row does not know
+	// about. The busy bit is read from the frame, which the request loop
+	// writes under the same lock, rather than being tracked separately and
+	// risking the two disagreeing.
+	hints := s.hints
+	hints.busy = s.frame.Busy
+	// The overlay is derived here rather than recorded at each site that
+	// opens or closes one, since the flags are already guarded and six call
+	// sites would be six chances to leave one of them out.
+	switch {
+	case s.searchOpen:
+		hints.overlay = hintSearch
+	case s.modelList != nil:
+		hints.overlay = hintListing
+	default:
+		hints.overlay = hintCompose
+	}
+	frame.Hints = hints.hints()
 	s.mu.Unlock()
 
 	height, width := s.screen.Size()

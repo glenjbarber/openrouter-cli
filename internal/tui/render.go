@@ -234,6 +234,12 @@ type Frame struct {
 	// cannot be shown on one row and a prompt that silently swallowed it
 	// would read as a lost paste.
 	Pasted []string
+	// Hints are the keys that do something in the current state, shown on one
+	// row above the prompt. Only keys that act are named, so the row never
+	// promises a key that does nothing. It is a list rather than a finished
+	// string so that entries can be dropped whole when the row is too narrow,
+	// which a single string could not be without being cut.
+	Hints []string
 	// Scroll is how many lines the pane is scrolled up from the newest
 	// output. Zero means the view is following the bottom, which is the only
 	// behaviour the pane had before scrolling existed.
@@ -281,6 +287,10 @@ func Render(f Frame, height, width int) []string {
 		width = 1
 	}
 
+	// The hint row is rendered once, before the budget is made, so that the
+	// budget reserves a row only when a row will actually be drawn.
+	hints := hintLine(f.Hints, width)
+
 	// The rows below the pane are the status bar, a blank, the rule, the
 	// pasted rows, the prompt, and a blank. The pane is given what remains, so
 	// that adding the division does not make the frame taller than the
@@ -297,6 +307,10 @@ func Render(f Frame, height, width int) []string {
 		inputRows = inputRowsDivided
 	}
 	inputRows += pasteRows(f.Pasted, height-inputRows)
+	// The hint row is budgeted after the paste, so that a paste which has
+	// landed is still reported. A paste the reader cannot see reads as a lost
+	// paste, while a missing hint costs nothing beyond the row it was on.
+	inputRows += hintRows(hints, height-inputRows)
 
 	// The header is the model name, a rule, and the status bar. It is drawn
 	// above the conversation and outside the scrolled slice, so it stays put
@@ -436,6 +450,21 @@ func Render(f Frame, height, width int) []string {
 			break
 		}
 		body = append(body, indent("", "  ", line, width))
+	}
+
+	// The hint row sits above the prompt, so the prompt stays the last row of
+	// the input block and the caret, which is placed on the last row, stays
+	// on the prompt.
+	//
+	// The row is dropped whole rather than cut when the frame cannot hold it
+	// and the prompt both. The budget above has already taken a row for it,
+	// but the pane and the header are each floored at one row, so on a short
+	// terminal the budget can still leave the frame too tall. Dropping the
+	// hint here costs the reader a row of names, where letting the trim below
+	// take the last row would cost them the prompt and with it any way to
+	// type a next message.
+	if hints != "" && len(body)+2 <= height {
+		body = append(body, hints)
 	}
 	body = append(body, indent("> ", "", f.Input, width))
 
