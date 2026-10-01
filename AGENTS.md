@@ -597,6 +597,22 @@ so that a later change does not silently reverse it.
   type, which is a different thing from being unable to carry it.
 - The opening instructions are saved as the system turn they are, so that a
   resumed session behaves as the one that was saved did.
+- The schema is at version 2, which added a column to the message table for the
+  turns a tool call makes. A file written before the column existed is still
+  read, and a file written by a later version is still refused.
+- The added column is one nullable column carrying a JSON envelope, rather than
+  a column per field. The format is a database so that a reader can open a
+  saved conversation with any SQLite tool, and role and content staying
+  readable as plain text is the whole reason for that. A column per field would
+  have made the interesting part of a file unreadable without the client that
+  wrote it.
+- An ordinary turn stores no envelope at all rather than an empty one. A reader
+  telling the two apart is what leaves room for a field added later without
+  migrating the files already written.
+- A turn is no longer comparable with `==`, since a turn can carry a slice of
+  calls. The comparison in the round-trip test is on the JSON form, which
+  compares the whole of a call rather than the fields a comparison happened to
+  remember to write down.
 - A save is refused in-cognito and inside a thread. Both record nothing, and a
   file holding the conversation would break that rather than record that it was
   broken. A refusal is the honest outcome; a flag saying recording was on would
@@ -635,6 +651,77 @@ so that a later change does not silently reverse it.
   everywhere without cgo, and was not adopted, since it costs a 12.4 MB binary
   against 2.9 MB to store two tables. An empty one loaded over a
   real one would look like a session the reader had.
+
+### Tools
+
+- The model is given tools, and a turn that calls one makes as many requests as
+  the calls need. `read_file`, `write_file` and `list_dir` reach the filesystem;
+  `git` runs read-only git commands in the repository at the working directory.
+- The filesystem is contained by `os.Root`, opened on the working directory at
+  startup. The standard library refuses `..`, a cleaned `..`, and a symlink
+  pointing out of the tree, and a prefix check on a cleaned path is defeated by
+  exactly that symlink. The containment is the open descriptor rather than a
+  string, so nothing after it can be swapped for something else.
+- The root does not move. There is no command that changes the working
+  directory, so the tree the client was opened in is the tree it reaches for the
+  whole session.
+- A root that cannot be opened is reported rather than refused, and the session
+  opens without tools, in the manner of a session with no API key. A reader
+  whose working directory has gone away still gets a working chat client.
+- A read is bounded at 1 MiB and a refusal names the limit. A model asking for a
+  two gigabyte file is told so rather than being allowed to take the client
+  down with it. Streaming the file instead was considered and rejected: the
+  model asked for a file, not for a pipeline, and the pane has nowhere to put a
+  file arriving a gigabyte at a time.
+- The git tool is an allowlist, not a blocklist. Only the named read-only
+  subcommands run, and anything else is refused by name. A blocklist would be
+  defeated by a subcommand nobody thought of, which is the whole reason the
+  tool is read-only in this pass.
+- Arguments are given to git as an array, never through a shell, since a shell
+  reads an argument as a command and these come from a model. A `--` precedes
+  any pathspec, so an argument that looks like a flag cannot become one.
+- A turn is offered tools only when its conversation is recording. That one
+  condition covers `/cognito` and `/btw`, since both mark the conversation
+  ephemeral, and a delegate never reaches the turn at all. A tool acts for the
+  reader, and a mode that promises nothing is recorded cannot hand the model a
+  hand that acts without leaving a trace.
+- The model is told so when it has no tools. `/cognito` and `/btw` each say so in
+  the notice they already print, since a reader who asks a model in such a mode
+  to read a file and is told it cannot would conclude the client is broken.
+- A turn is a loop of rounds, at most eight. A model with tools can ask for the
+  same file for ever; the cap is what stops a loop that does not converge, and
+  reaching it is reported in the pane rather than truncating the turn silently.
+- The turns a turn builds are committed to the conversation once, at the end,
+  and only when the turn ended cleanly. Buffering them is what keeps a turn the
+  reader stopped from leaving a tool result behind for the model to be told
+  about as though it had asked for one and been answered.
+- A call that failed still produces a turn. A request carrying no answer to a
+  call is refused by most providers, and a turn producing nothing at all is a
+  turn that stalls, which a reader experiences as a hang.
+- The pane gets one plain line per call and never the result. A read of a large
+  file would bury the conversation under the file, and the reader asked a
+  question rather than for a file listing. The model is given the whole result;
+  the reader is given what happened and how much of it there was. A failure is
+  drawn as the reason on the same line, since a call that failed is not a call
+  still running.
+- The update a reader composes replaces the question rather than being added
+  after it. After a round the request is the question and the answers to the
+  calls, and restating those as prose would throw away what the model has
+  already been told.
+- The compaction check runs before every request of a turn and is given the
+  turns about to be sent. A tool result is usually larger than the question
+  that asked for it, and an estimate taken once at the start of the turn would
+  not see one.
+- The calls are reassembled by the transport and delivered as one event, rather
+  than one event per delta. The transport is the one place that knows how the
+  pieces were framed, and a caller reassembling is a caller that can get it
+  wrong. A call whose name never arrived is not a call and is dropped.
+- `Message.Content` stays a plain string even though a turn carrying calls has
+  no content. A `null` decodes to the empty string, and an empty string is what
+  every provider accepts there. A pointer would mean touching every caller in
+  the tree to learn that a value is optional, which is the worse trade.
+- `/tools` reports the tools, their argument schemas and the root. It is the
+  only place a reader can find out what the client is willing to do.
 
 ### Delegates
 
@@ -993,6 +1080,11 @@ so that a later change does not silently reverse it.
   sessions. It is the one departure from the no-dependency rule the rest of the
   client is built on, and it was taken so that a saved file could be opened and
   read by any SQLite tool rather than only by this client.
+- The tools added nothing to that count. The filesystem is reached through
+  `os.Root` and git is run as a subprocess, both of which are the standard
+  library and a program already on the reader's machine. A dependency here
+  would have been a third thing to audit for a sandbox the standard library
+  already provides.
 - These tools are tracked as module tool dependencies in `go.mod` and are run
   through `go tool`: `staticcheck`, `errcheck`, `gosec`, `govulncheck`,
   `protoc-gen-go`, and `protoc-gen-go-grpc`.
@@ -1096,6 +1188,27 @@ A port also expects `distinfo` and `pkg-descr`. The `pkg-descr` is held under
 
 These are unsettled. Each is listed so that it is not mistaken for a decision.
 
+- Whether a tool call needs asking about first. Nothing is asked in this pass,
+  and the reason is recorded rather than left implicit: what is on offer is
+  contained to the working directory and the git tool is read-only, so the
+  worst a mistaken call does is write a file inside the project the reader is
+  already editing. A tool that reaches outside that needs the question answered
+  first. The `Approval` status field was removed from the bar on the grounds
+  that the client had no tools and executed nothing, so this is also the moment
+  that field would come back.
+- Whether the git tool should write. `add` and `commit` are the obvious next
+  step and are deliberately absent. A write to a repository is a different order
+  of risk from a write to a file, and it deserves its own answer rather than
+  inheriting the one given for files.
+- Which models can call tools. A model that cannot is not told, so it simply
+  answers in prose and the reader concludes the client is broken. The catalogue
+  is already fetched and cached per model, so a capability field fits it, and
+  nothing reads one yet.
+- Whether a saved session whose history contains tool turns may be resumed
+  against a model that cannot call tools. It is resumed as it stands, since the
+  turns are ordinary history and the model is not asked to have called anything.
+- The model instruction search under Interface is built or the section is
+  corrected.
 - The name of the setup-complete key, and whether a skipped configuration is
   recorded distinctly from a completed one. A skip marks setup done while storing
   no credential, so without a distinct state the client believes itself
