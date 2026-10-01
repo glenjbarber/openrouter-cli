@@ -65,6 +65,45 @@ runtime, and are not build dependencies.
 
 Installation instructions are pending and are added once a release is published.
 
+## Usage
+
+### Bootstrap documents
+
+A session may be started from a bootstrap document, which supplies the opening
+instructions for the model:
+
+```sh
+openrouter-cli --bootstrap MEMORY.md
+```
+
+The extension selects the format. A `.md` file is passed to the model as
+written, since it is already prose. A `.json` file is decoded as a structured
+document:
+
+```json
+{
+  "instructions": "Answer in the third person.",
+  "name": "third-person",
+  "description": "Short answers, no contractions."
+}
+```
+
+Only `instructions` is required. The `name` and `description` fields are
+optional. Unknown fields are ignored, so a document written for a newer version
+stays readable by an older one.
+
+The format is selected by extension alone, since the content of a file cannot be
+probed without guessing and a guess that is wrong is worse than a refusal. A
+file with any other extension is refused with a diagnostic naming the extension.
+
+An explicitly named file is treated as an assertion that it exists and can be
+read, so a missing file, an unreadable file, and content that is not valid
+UTF-8 are each reported as errors. This is stricter than the automatic
+instruction search described below, where an absent file is an ordinary outcome.
+
+A symlink is followed under the same rule as an instruction file, described
+under [Symlinks](#symlinks).
+
 ## Configuration
 
 Configuration is read from a JSON file. The file is treated as read-only input

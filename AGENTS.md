@@ -102,6 +102,33 @@ so that a later change does not silently reverse it.
   diagnostic. The final target of a chain is what is compared, and a loop is
   reported rather than followed.
 
+### Bootstrap documents
+
+- A session is started from a bootstrap document named with `--bootstrap`, as in
+  `--bootstrap MEMORY.md`.
+- The extension alone selects the format. A `.md` file is passed to the model
+  verbatim, since it is already prose. A `.json` file is decoded as a structured
+  document.
+- The JSON form carries an `instructions` field, which is required, plus
+  optional `name` and `description` fields. Unknown fields are ignored, so a
+  document written for a newer version stays readable by an older one. This
+  matches the treatment of the configuration file.
+- The content of a file is never probed to guess a format, because a guess that
+  is wrong is worse than a refusal.
+- A missing file, an unreadable file, and content that is not valid UTF-8 are
+  each errors. This is deliberately stricter than the automatic instruction
+  search, where an absent file is an ordinary outcome, because naming a file on
+  the command line is an assertion that it exists and can be read.
+- A document carrying no instructions is refused, since a session begun with
+  none would fail silently until the model behaved as though it had never been
+  told anything.
+- A symlink is resolved under the same rule as an instruction file, so the
+  device-identifier comparison and the cross-device refusal are shared rather
+  than restated.
+- The document is read once at startup rather than re-read per request.
+- The bootstrap document is loaded before the configuration, so that an
+  unreadable document is reported before any credential work is attempted.
+
 ### Interface
 
 - The interface is a terminal application in the manner of Codex, ChatGPT,
@@ -172,7 +199,12 @@ These are unsettled. Each is listed so that it is not mistaken for a decision.
   configured and fails later at the point of use.
 - Precedence between the configuration file and command-line flags. The
   environment is settled and is not consulted at all, so that question is
-  narrowed rather than open.
+  narrowed rather than open. The bootstrap document is unaffected, since it
+  carries instructions rather than configuration.
+- Whether the JSON bootstrap form should carry fields beyond `instructions`,
+  `name`, and `description`, such as tool permissions or a model preference.
+  Three fields were written on the assumption that instructions are the only
+  thing a bootstrap document needs to express.
 - The final status bar field set, its order, and whether the order is
   configurable.
 - The first release scope, and the split between interactive and scripted use.
