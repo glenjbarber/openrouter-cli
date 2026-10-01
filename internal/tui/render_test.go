@@ -285,3 +285,20 @@ func TestContextOmittedWithoutAWindow(t *testing.T) {
 		t.Errorf("Context = %q, want it empty without a window", got)
 	}
 }
+
+// A conversation shorter than the pane must not blank out when the offset runs
+// past its beginning. There is nothing above the first line to scroll to, so an
+// offset beyond the top is not a position that exists, and taking it literally
+// leaves an empty pane with the scroll marker still on the title.
+func TestRenderScrollPastShortHistoryShowsEverything(t *testing.T) {
+	f := Frame{Reply: []string{"one", "two", "three"}, Scroll: 500}
+	out := Render(f, 20, 40)
+	for _, want := range []string{"one", "two", "three"} {
+		if !containsLine(out, want) {
+			t.Errorf("frame = %q, want the line %q to be shown", out, want)
+		}
+	}
+	if strings.Contains(strings.Join(out, "\n"), scrollMarker) {
+		t.Errorf("frame = %q, want no marker when nothing is held back", out)
+	}
+}

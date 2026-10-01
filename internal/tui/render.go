@@ -333,15 +333,6 @@ func Render(f Frame, height, width int) []string {
 	}
 
 	body := make([]string, 0, height)
-	header := []string{
-		titleLine(f.Title, width, f.scrolled()),
-		rule(width),
-		StatusLine(f.Status, width),
-	}
-	if headerRows < len(header) {
-		header = header[len(header)-headerRows:]
-	}
-	body = append(body, header...)
 
 	// Every reply entry is folded before the pane is filled, since folding
 	// changes how many rows a reply occupies. Truncating instead would lose
@@ -390,18 +381,28 @@ func Render(f Frame, height, width int) []string {
 	// an otherwise empty pane, whereas scrolling to the top should settle on
 	// the oldest lines there are and fill the pane with them. The oldest line
 	// is the stop rather than the end, so it is always kept.
-	// The scroll is clamped so that a full pane of history remains, or all of
-	// it when there is less than that. Clamping to the pane height alone stops
-	// short when the history is longer, and clamping to the whole history
-	// alone leaves a single line at the top of an empty pane. Settling on the
-	// oldest lines and filling the pane is what a reader who has scrolled to
-	// the top expects.
-	if maxScroll := len(reply) - paneHeight; maxScroll > 0 && f.Scroll > maxScroll {
-		f.Scroll = maxScroll
+	//
+	// A conversation shorter than the pane clamps to zero rather than to its
+	// own length. There is nothing above the first line to scroll to, so an
+	// offset past the top is not a position that exists, and taking it literally
+	// leaves the pane blank while the title still claims the view is scrolled
+	// back from a view that is not scrolled at all.
+	if maxScroll := len(reply) - paneHeight; f.Scroll > maxScroll {
+		f.Scroll = maxInt(0, maxScroll)
 	}
-	if f.Scroll > len(reply) {
-		f.Scroll = len(reply)
+
+	// The header is drawn after the offset has been clamped, so that the
+	// marker on the title row describes the view that is on screen.
+	header := []string{
+		titleLine(f.Title, width, f.scrolled()),
+		rule(width),
+		StatusLine(f.Status, width),
 	}
+	if headerRows < len(header) {
+		header = header[len(header)-headerRows:]
+	}
+	body = append(body, header...)
+
 	if f.Scroll > 0 {
 		reply = reply[:len(reply)-f.Scroll]
 	}
