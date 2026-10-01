@@ -39,9 +39,10 @@ hint row has since been written again from its description and has landed. The
 
 The instruction search is blocked on a decision. The audit is done, so the
 backlog it recorded is the open work rather than work waiting behind it. Three
-of the findings it left unfixed are being read now, one worker each, read only:
+of the findings it left unfixed have now been read, one worker each, read only:
 the instruction search itself, the compaction contradiction, and the credential
-on a redirect.
+on a redirect. What each pass established is written down under Three findings
+read in detail, near the end of this file.
 
 This pass also corrected two statements in this file that had been left behind
 by the work landing: a paragraph still describing `completion` and `markdown` as
@@ -484,6 +485,51 @@ Recorded rather than landed, since each is the maintainers to decide:
   `ringBell` writes only to a terminal and the pty helper is FreeBSD only. The
   bell firing after the reply rather than after the request is therefore not
   covered by a test anywhere.
+
+### Three findings read in detail
+
+Three of the findings above were then read, one worker each, read only, so that
+the decision being asked for is a decision rather than a guess. Nothing was
+changed.
+
+**The instruction search.** No `.go` file mentions `AGENTS.md`, `OPENROUTER.md`,
+`RULES.md` or `SHARED.md`, and there is no partial stub and no test. What exists
+is the `--bootstrap` path, which already carries three of the rules the record
+attributes to the search: the UTF-8 check at `bootstrap.go:100`, the symlink walk
+and device comparison at `resolve.go`, and the refusal of a missing file. The
+search would need one new function holding the four names in order, one call
+site, and a decision the record does not settle: whether an automatic file is
+read once at startup, as the bootstrap document is, or before every request, as
+the record says. A read per request is in tension with two recorded decisions,
+`Conversation.Seed` replacing any earlier seed and the bootstrap document being
+read once at startup. Correcting the documentation instead means deleting the
+section, the open-decision bullet, and two comments pointing at it, at
+`bootstrap.go:80-81` and in the bootstrap bullet of `AGENTS.md`.
+
+**The compaction contradiction.** It holds. `threshold.go:106` `forSummary`
+holds the two recent turns out of the summary request and discards them, and
+`compact.go:117` `Compact` then rebuilds the conversation from its system turns
+alone, so the held-out pair goes with the rest. A test asserts that the pair is
+absent from the summary request and none asserts anything about it afterwards,
+so the behaviour is pinned in one direction only. Keeping the pair would invert
+two existing assertions and would make a later `/cognito` report one exchange
+that it previously reported as none. Correcting the record instead touches
+`AGENTS.md:386-388` and two comments repeating the false reason.
+
+**The credential on a redirect.** `client.go:47-59` sets no `CheckRedirect`, so
+the standard library follows up to ten hops, and the `Authorization` header is
+attached before `Do` is entered, so it is carried onto every hop. The strip rule
+in `net/http` is a host test that does not consider the scheme, so a same-host
+`https` to `http` downgrade carries the credential in cleartext. The base URL
+override independently permits a plain `http` endpoint on any host. No redirect
+test exists anywhere in the module. Five options were set out: refusing any
+redirect that carries the credential, refusing only a downgrade, refusing only a
+cross-host hop, withholding the credential on a downgrade and following it, and
+leaving the default. Every option but the last puts the decision in the same two
+places, `New` and a new `checkRedirect` beside `authorize`, and none of them
+needs new redaction work, since the existing diagnostic path already redacts. A
+scheme check in `resolveURLBase` is a separate and weaker guard: it stops a
+configured `http` base but not a downgrade issued by a server.
 
 ## The withdrawn file upload
 
