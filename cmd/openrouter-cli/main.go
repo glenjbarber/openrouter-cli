@@ -189,6 +189,9 @@ Commands, typed inside the interface:
   /models            List the models the endpoint offers.
   /model NAME        Choose the model to send to.
   /info              Report the session settings.
+  /cognito           Record nothing, on or off.
+  /btw               Start a thread branched from this conversation.
+  /main              Leave the thread and return to the conversation.
   /new               Clear the conversation.
   /compact           Summarise the conversation and carry on.
   /mouse             Turn mouse reporting on or off, for wheel scrolling.

@@ -371,6 +371,49 @@ so that a later change does not silently reverse it.
 - The conversation is left untouched when a summary fails, since a
   half-summarised history is worse than a long one.
 
+### Threads and retention
+
+- `/btw` starts an ephemeral thread branched from the current conversation, and
+  `/main` leaves it. A thread is not persisted and is not carried into a later
+  session.
+- A branch is a copy, not a shared slice. Sharing would let an exchange in one
+  appear in the other, which defeats branching.
+- The main conversation is held on the session throughout, so leaving a thread
+  restores it exactly and nothing from the thread is carried over.
+- A thread holds the turns it branched from, so the model has the context, but
+  records nothing that is sent in it. Keeping those turns would leave the work
+  reachable and would make the token counters report a total that is then
+  discarded.
+- Starting a second thread is refused, since nesting would leave the outer
+  thread unreachable.
+- `/cognito` records nothing, in memory as well as on disk.
+- Retention is decided in one place, on the conversation, rather than at each
+  call site that sends a message. Two places could disagree, and the
+  disagreement would be a session that appeared to record nothing while
+  keeping everything.
+- A compaction summary is a system turn, and the instructions are another. A
+  thread branched from a compacted conversation must not take the summary as
+  its instructions, so a summary is recognised by its marker.
+- The instructions are placed in front of the copied turns rather than seeded
+  over them. A seed replaces the history, and an empty seed returns without
+  doing anything at all, so seeding over a copy would discard it whenever the
+  conversation carried no instructions.
+
+### In-cognito mode
+
+- The mode is recorded by a marker file in the home directory rather than by a
+  key in the configuration file, since the configuration file holds the
+  credential and is treated as read-only outside setup.
+- The marker records the process that wrote it, so a marker left behind by a
+  crash is distinguishable from one held by a running session.
+- A marker left by a crash is reported at startup rather than honoured
+  silently. A user who believes nothing is being recorded, and is, would lose
+  work with nothing said.
+- A marker that cannot be read is an error rather than an absence. Treating it
+  as absent would record work that was meant to be discarded.
+- The marker is written at mode `0600` and holds a process identifier only. No
+  conversation text is written anywhere.
+
 ### Wrapping
 
 - A reply longer than the pane is folded rather than cut. Cutting loses

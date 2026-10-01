@@ -180,6 +180,9 @@ model:
 | `/models`        | List the models the endpoint offers.                 |
 | `/model NAME`    | Choose the model. Without an argument, report it.    |
 | `/info`          | Report the model, the endpoint, and whether a key is set. |
+| `/cognito`       | Record nothing from now on, or record again.        |
+| `/btw`           | Start a thread branched from this conversation.      |
+| `/main`          | Leave the thread and return to the conversation.    |
 | `/new`           | Clear the conversation, keeping the bootstrap document. |
 | `/compact`       | Summarise the conversation and carry on from the summary. |
 | `/mouse`         | Turn mouse reporting on or off, for wheel scrolling. |
@@ -199,6 +202,17 @@ the text received before the failure and reports the error beneath it.
 
 `/new` clears the conversation but keeps the bootstrap document in force, since
 losing it would silently change how the model behaves.
+
+`/btw` starts a thread branched from the current conversation. It begins with
+the history it branched from, so the model has the context, but records nothing
+that is said in it. `/main` leaves it and restores the conversation exactly as
+it was. A thread is not written anywhere and is not carried into a later
+session.
+
+`/cognito` records nothing at all. It is recorded by a marker file in the home
+directory holding a process identifier and nothing else, so that a marker left
+behind by a crash is noticed at the next start and reported rather than
+honoured silently.
 
 A long conversation is compacted automatically. Once it passes 75% of the
 model's window, the next message triggers a summarisation before the request is
