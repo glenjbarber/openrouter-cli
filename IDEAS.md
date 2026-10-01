@@ -11,13 +11,13 @@ itself.
 
 ## Last updated
 
-At `main` commit `2dff8e6`, seventy commits ahead of `origin/main` and not
-pushed. None of the audit work is pushed; the user handles every push.
-
-The eight commits were rewritten once, before the audit, to add a missing
-`Co-Authored-By: Space Bunny Alpha` trailer to the completion and markdown
-merge commits. Nothing was pushed before that, so nothing was rewritten on a
-remote. The merge hashes named below are the rewritten ones.
+After the completion, markdown and hint row landed, the whole of the work was
+rewritten twice before any of it was pushed: once to add a missing
+`Co-Authored-By: Space Bunny Alpha` trailer to the completion and markdown merge
+commits, and once after the audit to drop five housekeeping merges the workers
+had made to catch a feature branch up with main. Nothing was pushed before
+either, so nothing was rewritten on a remote. The merge hashes named below are
+the current ones.
 
 The audit is done, all six areas merged and gated. It is recorded at the end of
 this file, along with what it found and did not fix. A piece of work was taken
