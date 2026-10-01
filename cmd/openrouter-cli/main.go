@@ -64,9 +64,10 @@ func run(args []string) error {
 		if !errors.As(err, &keyErr) {
 			return err
 		}
-		// The model is preserved from the file even though the key is not,
-		// so that a file carrying a preference is not treated as unread.
-		cfg = config.Empty(keyErr.Model)
+		// The model and the mouse preference are preserved from the file
+		// even though the key is not, so that a file carrying a preference
+		// is not treated as unread.
+		cfg = config.EmptyMouse(keyErr.Model, keyErr.Mouse)
 	}
 	_ = cfg
 
@@ -95,6 +96,16 @@ func interface_(out, in *os.File, cfg *config.Config, opts options) error {
 	// absence as an ordinary message rather than refusing to open.
 	session.Configure(cfg.URLBase, cfg.APIKey, cfg.Model)
 
+	// Mouse reporting is not turned on unless it is asked for, because a
+	// terminal that reports events takes the drag that begins a selection
+	// away from the terminal, and text that cannot be selected is worse than
+	// a wheel that does nothing. The flag asks for it, and a session inside
+	// tmux stays off by default since the flag is a request the user can
+	// make again in a plain terminal.
+	if opts.mouse || (!tui.InTmux() && cfg.Mouse) {
+		session.SetMouse(true)
+	}
+
 	if opts.bootstrap != "" {
 		// The document is reported inside the frame rather than cleared, so
 		// that a startup message is not lost behind the first repaint.
@@ -112,6 +123,7 @@ func interface_(out, in *os.File, cfg *config.Config, opts options) error {
 // options holds the parsed command line.
 type options struct {
 	bootstrap   string
+	mouse       bool
 	showHelp    bool
 	showVersion bool
 }
@@ -127,6 +139,8 @@ func parseFlags(args []string) (options, error) {
 	fs.SetOutput(os.Stderr)
 	fs.StringVar(&opts.bootstrap, "bootstrap", "",
 		"start the session from this Markdown or JSON document")
+	fs.BoolVar(&opts.mouse, "mouse", false,
+		"turn on mouse reporting, so the wheel scrolls the reply pane")
 	fs.BoolVar(&opts.showVersion, "version", false, "print the version and exit")
 	fs.BoolVar(&opts.showHelp, "help", false, "print this message and exit")
 
@@ -162,6 +176,10 @@ Usage:
 Options:
   --bootstrap FILE   Start the session from FILE. The extension selects the
                      format: .md is used as written, .json is decoded.
+  --mouse            Turn on mouse reporting, so the wheel scrolls the reply
+                     pane. It is off by default, and off inside tmux even when
+                     the configuration asks for it, since a terminal that
+                     reports the mouse cannot also be dragged to select text.
   -version           Print the version and exit.
   -help              Print this message and exit.
 
@@ -176,6 +194,7 @@ Commands, typed inside the interface:
   /main              Leave the thread and return to the conversation.
   /new               Clear the conversation.
   /compact           Summarise the conversation and carry on.
+  /mouse             Turn mouse reporting on or off, for wheel scrolling.
   /clear             Clear the pane.
   /quit, /exit       Leave the interface.
 

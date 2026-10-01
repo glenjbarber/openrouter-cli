@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"bufio"
 	"io"
 	"strings"
 	"unicode/utf8"
@@ -37,19 +36,116 @@ type errorString string
 
 func (e errorString) Error() string { return string(e) }
 
+// readChunk is how many bytes are read from the terminal at once.
+//
+// A whole mouse report fits in one read, and a terminal writes it in one piece,
+// so reading in blocks is what lets a report be recognised before any part of
+// it is mistaken for a key. The block is larger than the longest report so
+// that a report typed alongside a keystroke is still read whole.
+const readChunk = 64
+
 // LineEditor reads a single line of text.
 type LineEditor struct {
-	r *bufio.Reader
+	r io.Reader
 	// OnChange is called with the line as it stands after each keystroke. It
 	// is what makes the composed line visible, since the terminal is in raw
 	// mode with echo disabled and so does not draw it. A nil callback draws
 	// nothing, which is the correct behaviour for a non-interactive reader.
 	OnChange func(string)
+	// OnMouse is called with the wheel direction of each mouse report read
+	// alongside the keys. It is what lets the view be scrolled without
+	// ending the line, since a report shares the input stream with the keys
+	// and has to be consumed rather than read as one.
+	//
+	// The callback runs on the reading goroutine and must not block. A nil
+	// callback discards the report, which is what a reader with no view to
+	// scroll should do.
+	OnMouse func(direction int)
+	// buf holds input read from the terminal but not yet acted on. The bytes
+	// behind a mouse report are kept here, so that a report arriving in the
+	// same read as a keystroke does not swallow the keystroke.
+	buf []byte
+	// chunk is the buffer a block is read into. It is held separately from
+	// buf, since buf is consumed a byte at a time and a read needs the whole
+	// block every time.
+	chunk []byte
 }
 
 // NewLineEditor reads lines from r.
 func NewLineEditor(r io.Reader) *LineEditor {
-	return &LineEditor{r: bufio.NewReader(r)}
+	return &LineEditor{r: r}
+}
+
+// readKey returns the next key, consuming any mouse report that comes first.
+//
+// Input is read in blocks and a report is taken from the block before the block
+// is treated as keys. A terminal writes a whole report in one piece and the
+// read returns all of it, so the report is recognised here and passed to
+// OnMouse rather than being read as a key. That is what keeps a wheel notch
+// from ending the session, since every report opens with a bare escape and a
+// lone escape is an interrupt. Reading a byte at a time would see that opening
+// escape on its own, which is exactly the failure this avoids.
+func (le *LineEditor) readKey() (byte, error) {
+	for {
+		if len(le.buf) == 0 {
+			if err := le.fill(); err != nil {
+				return 0, err
+			}
+		}
+		for len(le.buf) > 0 {
+			if seq, rest, ok := takeMouseSequence(le.buf); ok {
+				le.buf = rest
+				le.mouse(seq)
+				continue
+			}
+			// Bytes at the front that could still become a report are held
+			// rather than returned as keys. A reader is free to return a
+			// short block, and a report split across two blocks would
+			// otherwise be handed over as the escape that opens one, which
+			// ends the line. A lone escape does not look like a report
+			// prefix, so it is still returned at once.
+			if mousePrefix(le.buf) {
+				break
+			}
+			b := le.buf[0]
+			le.buf = le.buf[1:]
+			return b, nil
+		}
+		// The block held no key to return, which is what a block of mouse
+		// reports looks like. The next block is read rather than returning
+		// nothing, since an empty key would end the line.
+		if err := le.fill(); err != nil {
+			return 0, err
+		}
+		if len(le.buf) == 0 {
+			return 0, io.EOF
+		}
+	}
+}
+
+// fill reads one block of input and appends it to what is already held.
+//
+// The bytes are appended rather than replacing the buffer, since a report split
+// across two reads leaves a prefix that the next block completes. Dropping it
+// would leave the tail of the report to be read as keys, and the escape at its
+// head would end the line.
+func (le *LineEditor) fill() error {
+	if le.chunk == nil {
+		le.chunk = make([]byte, readChunk)
+	}
+	n, err := le.r.Read(le.chunk)
+	le.buf = append(le.buf, le.chunk[:n]...)
+	return err
+}
+
+// mouse reports a wheel direction to the caller.
+func (le *LineEditor) mouse(seq []byte) {
+	if le.OnMouse == nil {
+		return
+	}
+	if d := parseMouse(seq); d != mouseNone {
+		le.OnMouse(d)
+	}
 }
 
 // notify reports the current line.
@@ -70,7 +166,7 @@ func (le *LineEditor) ReadLine() (string, error) {
 	var pending []byte
 
 	for {
-		b, err := le.r.ReadByte()
+		b, err := le.readKey()
 		if err != nil {
 			if len(pending) == 0 && out.Len() == 0 {
 				return "", ErrEndOfInput

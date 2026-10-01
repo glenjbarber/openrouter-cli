@@ -61,6 +61,13 @@ so that a later change does not silently reverse it.
 - The client creates the file at `0600`.
 - `OPENROUTER_API_KEY` is required. `OPENROUTER_URL_BASE` is optional and
   overrides the default base URL of `https://openrouter.ai/api/v1`.
+- `OPENROUTER_MOUSE` is optional and asks for mouse reporting, so that the
+  wheel scrolls without `/mouse` on every run. It is a preference rather than a
+  setting, since the decision is settled per session by where the session runs
+  and by whether the reader can still select text.
+- A file that cannot be read for its key is still read, so the mouse preference
+  survives alongside the model. A file carrying a preference must not appear
+  unread merely because it holds no credential.
 - `OPENROUTER_MODEL` is optional and sets the model a session starts with, so
   that `/model NAME` is not needed on every run. The key is named after the
   model field that would otherwise be introduced, for the same reason as the
@@ -225,6 +232,46 @@ so that a later change does not silently reverse it.
   intercepts the drag that begins a selection. It is disabled inside tmux by
   default, disabled whenever output is not a terminal, and suspended for the
   duration of a selection gesture.
+- The wheel scrolls the reply pane when reporting is on. It is the only mouse
+  input that is acted on, since a drag has no meaning here and reading one would
+  only add input the interface cannot use.
+- Reporting is asked for with `/mouse` or with `--mouse`, and a file may set
+  `OPENROUTER_MOUSE`. Inside tmux the flag and the file are both ignored unless
+  the reader runs `/mouse`, because the drag that begins a selection is the
+  gesture a nested terminal is most often used for.
+- Only the button-event mode is enabled. The modes that also report a drag or
+  every pointer movement would fill the input stream while the mouse merely
+  crosses the window, and nothing here would act on what they send.
+- The offset is a count of lines back from the newest output, and zero is the
+  bottom. A line count rather than a stored history is used so that a reply
+  arriving needs no separate record of what was seen: the pane is folded at
+  render time, so the line count is the only thing that is stable across a
+  reflow.
+- A reply arriving does not move the view. A reader part way through the history
+  would have it move under them, so only scrolling down returns the view to the
+  bottom. Clearing the pane does move it, since the history it was measured
+  against is gone.
+- The offset is clamped so that a full pane of history remains. Letting it run
+  to the last line would leave one line at the top of an otherwise empty frame,
+  where scrolling to the top should settle on the oldest lines and fill the pane
+  with them.
+- A notch moves three lines. Three is small enough that one notch does not throw
+  a reader past the paragraph they are on, and large enough that the top of a
+  long conversation is not a hundred notches away.
+- The marker is on the title row rather than a row of its own. A row taken for
+  it would change the height of the pane the moment the reader scrolled, and a
+  pane that resizes under the reader is worse than no marker at all.
+- Input is read in blocks rather than a byte at a time. A terminal writes a
+  whole mouse report in one piece, so a block read returns the report complete
+  and it is recognised before it can be read as a key. Reading a byte at a time
+  would see the opening escape alone, and a lone escape is an interrupt, which
+  is the failure this avoids.
+- A report split across two blocks is held until it is whole. A reader is free
+  to return a short read, and the tail of a partial report would otherwise be
+  read as keys, with its escape ending the session.
+- A lone escape is still a key and still interrupts. It is the one byte at the
+  front of the buffer that could be a report, and it is deliberately not held,
+  since treating it as a report would swallow the interrupt it stands for.
 - A chat may be backgrounded without losing its conversation, and a new ephemeral
   chat started alongside it.
 - An ephemeral chat is not persisted and is not carried into a later chat.

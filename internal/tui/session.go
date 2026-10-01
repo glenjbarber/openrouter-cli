@@ -29,6 +29,15 @@ type Session struct {
 	conv   *Conversation
 	// spinner turns the twiddle while work is in progress.
 	spinner *Spinner
+	// scroll is how many lines the pane is scrolled up from the newest
+	// output. Zero means the view is following the bottom. It is guarded by
+	// mu rather than by a lock of its own, since it is read by the renderer
+	// and written by the input goroutine, which is the same pair of jobs mu
+	// already does for the frame.
+	scroll int
+	// mouseRequested records that the reader asked for mouse reporting, so
+	// that a request made before the terminal is ready is not lost.
+	mouseRequested bool
 	// thread is the ephemeral conversation, nil while the main one is in
 	// force. The main conversation is held in mainConv throughout, so that
 	// leaving a thread restores it without a snapshot being taken here.
@@ -101,12 +110,69 @@ func Start(out, in *os.File, title string) (*Session, error) {
 		s.frame.Input = line
 		s.draw()
 	}
+	// The wheel is read on the same goroutine as the keys, since a report
+	// arrives in the same stream. The callback moves the view and repaints,
+	// which is what makes the scroll happen while the line is still being
+	// composed rather than only after it is sent.
+	s.editor.OnMouse = func(direction int) {
+		s.scrollBy(direction)
+	}
 	return s, nil
+}
+
+// scrollBy moves the view one wheel notch in the given direction.
+//
+// The offset is held across a repaint deliberately: a new reply arriving while
+// the reader is scrolled back must not pull the view down, or the history
+// they are reading moves under them.
+func (s *Session) scrollBy(direction int) {
+	s.mu.Lock()
+	s.scroll = scrolledBy(s.scroll, direction)
+	s.mu.Unlock()
+	s.draw()
+}
+
+// scrollAtBottom reports whether the view is following the newest output.
+func (s *Session) scrollAtBottom() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.scroll == 0
+}
+
+// resetScroll returns the view to the newest output.
+//
+// It is called only where the history itself is discarded, since a view left
+// scrolled back over a pane that no longer holds what it was showing would
+// otherwise be showing an offset into nothing.
+func (s *Session) resetScroll() {
+	s.mu.Lock()
+	s.scroll = 0
+	s.mu.Unlock()
+}
+
+// setMouse turns mouse reporting on or off at the reader's request.
+func (s *Session) setMouse(on bool) {
+	s.mouseRequested = on
+	s.screen.SetMouse(on)
+}
+
+// SetMouse turns mouse reporting on or off.
+//
+// It is the way a session is started with reporting already on, for a reader
+// who wants the wheel without running /mouse first. The choice is not made
+// here, since capturing the mouse is what stops a drag from selecting text.
+func (s *Session) SetMouse(on bool) {
+	s.setMouse(on)
 }
 
 // Close restores the terminal.
 func (s *Session) Close() {
 	s.cancel()
+	// Reporting is turned off before the terminal is restored, so that a
+	// wheel notch is not delivered to a program that has stopped reading.
+	if s.screen.Mouse() {
+		s.screen.SetMouse(false)
+	}
 	s.screen.Close()
 }
 
@@ -190,6 +256,10 @@ func (s *Session) Run() error {
 			return err
 		}
 
+		// The view is not moved here. A reply arriving while the reader is
+		// scrolled back must not yank the view down, or the history they
+		// are reading moves under them, and the only thing that returns the
+		// view to the newest output is scrolling down to it.
 		trimmed := strings.TrimSpace(line)
 		switch {
 		case trimmed == "":
@@ -216,6 +286,7 @@ func (s *Session) command(line string) bool {
 	case "/clear":
 		s.conv.Reset()
 		s.frame.Reply = nil
+		s.resetScroll()
 	case "/quit", "/exit":
 		return true
 	case "/connect":
@@ -229,6 +300,7 @@ func (s *Session) command(line string) bool {
 	case "/new":
 		s.conv.Reset()
 		s.frame.Reply = nil
+		s.resetScroll()
 		s.Note("conversation cleared")
 	case "/cognito":
 		s.toggleCognito()
@@ -238,12 +310,31 @@ func (s *Session) command(line string) bool {
 		s.endThread()
 	case "/compact":
 		s.compact(true)
+	case "/mouse":
+		s.toggleMouse()
 	case "/info":
 		s.showInfo()
 	default:
 		s.frame.Reply = append(s.frame.Reply, "unknown command: "+name)
 	}
 	return false
+}
+
+// toggleMouse turns mouse reporting on or off.
+//
+// It exists because the decision cannot be made once for everyone. Capturing
+// the mouse is what makes the wheel scroll, and it is also what stops a drag
+// from selecting text, so the reader chooses.
+func (s *Session) toggleMouse() {
+	on := !s.screen.Mouse()
+	s.setMouse(on)
+	if on {
+		s.appendLines("mouse reporting is on: the wheel scrolls, and a drag " +
+			"no longer selects text. /mouse turns it off again.")
+	} else {
+		s.appendLines("mouse reporting is off: the wheel is left to the " +
+			"terminal and text is selectable again.")
+	}
 }
 
 // helpText lists the commands.
@@ -259,6 +350,7 @@ func helpText() string {
 		"/btw               start a thread branched from this conversation",
 		"/main              leave the thread and return to the conversation",
 		"/compact           summarise the conversation and start again",
+		"/mouse             turn mouse reporting on or off, for wheel scrolling",
 		"/clear             clear the pane",
 		"/info              report the session settings",
 		"/quit, /exit       leave the interface",
@@ -573,6 +665,7 @@ func (s *Session) draw() {
 	// the write would serialise the spinner against the request loop, which
 	// is the opposite of what the spinner is for.
 	frame := s.frame
+	frame.Scroll = s.scroll
 	s.mu.Unlock()
 
 	height, width := s.screen.Size()

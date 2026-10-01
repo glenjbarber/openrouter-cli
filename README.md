@@ -130,6 +130,10 @@ openrouter-cli
 The interface draws a frame on the alternate screen, so the shell history and
 whatever was on the screen before are left untouched and restored on exit.
 
+`--mouse` turns on mouse reporting for the run, so the wheel scrolls the reply
+pane. It is off by default, since a terminal that reports the mouse cannot also
+be dragged to select text. See [Scrollback](#scrollback).
+
 The status bar sits above the input line, carrying Provider, Model, Status,
 Credits, the token counters, and the hostname:
 
@@ -181,6 +185,7 @@ model:
 | `/main`          | Leave the thread and return to the conversation.    |
 | `/new`           | Clear the conversation, keeping the bootstrap document. |
 | `/compact`       | Summarise the conversation and carry on from the summary. |
+| `/mouse`         | Turn mouse reporting on or off, for wheel scrolling. |
 | `/clear`         | Clear the pane.                                      |
 | `/help`          | List the commands.                                   |
 | `/quit`, `/exit` | Leave the interface.                                 |
@@ -299,13 +304,14 @@ When the file is created by the client, it is created with mode `0600`.
 ### Format
 
 The file is JSON, which is parsed using the Go standard library and requires no
-external dependency. Two keys are recognized:
+external dependency. These keys are recognized:
 
 | Key                   | Required | Description                                                        |
 | --------------------- | -------- | ------------------------------------------------------------------ |
 | `OPENROUTER_API_KEY`  | Yes      | The API key used to authenticate against OpenRouter.AI.            |
 | `OPENROUTER_URL_BASE` | No       | The base URL of the backend.                                        |
 | `OPENROUTER_MODEL`    | No       | The model requests are sent to, such as `stealth/space-bunny-alpha`. |
+| `OPENROUTER_MOUSE`    | No       | Set to `true` to ask for mouse reporting, so the wheel scrolls.     |
 
 The keys are given in the same form as the equivalent environment variables,
 which keeps a value transferable between the file and the environment.
@@ -331,6 +337,11 @@ An example, with the key redacted:
 needed on every run. It may still be changed inside the interface, and a file
 without the key is not an error: the preference is kept even when no credential
 is present, since a session cannot reach a model without one anyway.
+
+`OPENROUTER_MOUSE` asks for the wheel to scroll the reply pane. It is ignored
+inside tmux, where the flag `--mouse` and the key are both ignored as well,
+since a terminal that reports the mouse cannot also be dragged to select text.
+Run `/mouse` inside tmux to turn reporting on anyway.
 
 JSON is used rather than YAML because Go has no standard-library YAML parser, and
 a configuration file is not a place where a dependency is worth taking. The
@@ -500,6 +511,26 @@ Commands and configuration options are completed with the Tab key.
 The interface is designed to behave correctly with a combination of terminal and
 mouse, and within tmux.
 
+### Scrollback
+
+The wheel scrolls the reply pane, so an earlier part of a conversation can be
+read after the newest output has filled the window. A notch moves three lines.
+While the view is scrolled back, the title carries a marker and a reply arriving
+does not move it, so the history being read stays where it is. Scrolling down
+returns the view to the newest output.
+
+The wheel is only read when mouse reporting is on, and reporting is off by
+default. Capturing the mouse is what makes the wheel work, and it is also what
+stops a drag from selecting text, so the choice is left to the reader:
+
+- `--mouse` turns it on for the run.
+- `/mouse` turns it on and off inside a session.
+- `OPENROUTER_MOUSE` in the configuration file asks for it on every run.
+
+Inside tmux the flag and the configuration are ignored, and reporting stays off
+until `/mouse` is run, since a nested selection is rarely intended. Run
+`/mouse` to turn it on anyway.
+
 ### Copyable text
 
 Text is selectable and copyable from the terminal with the same gesture used for
@@ -517,7 +548,8 @@ Three cases are distinguished:
 - Text is always copyable, whether or not the mouse is used for anything else.
 - Mouse reporting is not enabled inside tmux by default, because a nested
   selection inside tmux is rarely intended and a captured drag cannot be
-  recovered by the user. It can be enabled on request.
+  recovered by the user. It is enabled by `/mouse` rather than by the flag or
+  the configuration, which are ignored there.
 - Mouse reporting is not enabled when output is not a terminal, such as when the
   client is piped or redirected, and the copy path is unaffected.
 

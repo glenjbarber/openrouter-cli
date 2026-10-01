@@ -157,6 +157,42 @@ type Frame struct {
 	// idle. It is drawn beside the partial reply rather than in the status
 	// bar, so that it moves where the eye already is.
 	Spinner string
+	// Scroll is how many lines the pane is scrolled up from the newest
+	// output. Zero means the view is following the bottom, which is the only
+	// behaviour the pane had before scrolling existed.
+	Scroll int
+}
+
+// scrolled reports whether the pane is scrolled back from the newest output.
+func (f Frame) scrolled() bool { return f.Scroll > 0 }
+
+// scrollMarker is shown beside the title while the view is scrolled back.
+//
+// Without it a reader who has scrolled cannot tell whether the pane is holding
+// still or has simply run out of new output, and the only way to find out is to
+// scroll down and watch whether anything moves.
+const scrollMarker = "[scrolled back]"
+
+// titleLine renders the heading, carrying the scroll marker when the view is
+// not at the bottom.
+//
+// The marker is placed on the title row rather than on a row of its own, since
+// a row taken for it would change the height of the pane the moment the user
+// scrolled, and a pane that resizes under the reader is worse than no marker.
+func titleLine(title string, width int, scrolled bool) string {
+	if title == "" {
+		title = "openrouter-cli"
+	}
+	if !scrolled {
+		return truncate(title, width)
+	}
+	// The marker is cut from the right of the title before the title itself
+	// is, since the title is the part that names the session.
+	if width <= len(scrollMarker) {
+		return truncate(scrollMarker, width)
+	}
+	keep := width - len(scrollMarker) - 1
+	return truncate(title, keep) + " " + scrollMarker
 }
 
 // Render draws the frame and returns the lines to write.
@@ -179,11 +215,7 @@ func Render(f Frame, height, width int) []string {
 	}
 
 	body := make([]string, 0, height)
-	title := f.Title
-	if title == "" {
-		title = "openrouter-cli"
-	}
-	body = append(body, truncate(title, width))
+	body = append(body, titleLine(f.Title, width, f.scrolled()))
 
 	// Every reply entry is folded before the pane is filled, since folding
 	// changes how many rows a reply occupies. Truncating instead would lose
@@ -212,6 +244,21 @@ func Render(f Frame, height, width int) []string {
 	}
 	if len(reply) == 0 && f.Hint != "" {
 		reply = []string{f.Hint}
+	}
+	// The offset is applied before the newest lines are kept, so that
+	// scrolling reveals lines that were previously off the pane rather than
+	// blank rows above the ones already shown.
+	//
+	// The offset is clamped so that at least a full pane of history remains.
+	// Letting it run to the very end would leave a single line at the top of
+	// an otherwise empty pane, whereas scrolling to the top should settle on
+	// the oldest lines there are and fill the pane with them. The oldest line
+	// is the stop rather than the end, so it is always kept.
+	if maxScroll := len(reply) - minInt(paneHeight, len(reply)); f.Scroll > maxScroll {
+		f.Scroll = maxScroll
+	}
+	if f.Scroll > 0 {
+		reply = reply[:len(reply)-f.Scroll]
 	}
 	if len(reply) > paneHeight {
 		reply = reply[len(reply)-paneHeight:]

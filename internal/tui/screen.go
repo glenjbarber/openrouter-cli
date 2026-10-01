@@ -30,6 +30,11 @@ type Screen struct {
 	saved  syscall.Termios
 	height int
 	width  int
+	// mouse records whether the terminal was asked to report mouse events.
+	// It is tracked rather than assumed, since the interface turns reporting
+	// on and off while a session runs and the terminal has to be put back the
+	// way it was found on the way out.
+	mouse bool
 }
 
 // ANSI control sequences. Only the ones the interface actually uses are
@@ -44,6 +49,13 @@ const (
 	seqClearLine = "\x1b[K"
 	seqHome      = "\x1b[H"
 	seqResetAttr = "\x1b[0m"
+	// Mouse reporting is turned on and off with the private mode 1000, which
+	// is the button-event mode the wheel reports arrive in. The alternative
+	// modes are not used: 1002 also reports a motion drag, and 1003 reports
+	// every motion, both of which a wheel interface has no use for and both of
+	// which flood the input stream while the pointer moves.
+	seqMouseOn  = "\x1b[?1000h"
+	seqMouseOff = "\x1b[?1000l"
 )
 
 // isTerminal reports whether the file is a terminal.
@@ -126,6 +138,12 @@ func (s *Screen) enterRaw() error {
 // restore puts the terminal back the way it was found.
 func (s *Screen) restore() {
 	ioctlTermios(s.in.Fd(), ioctlSetTermios, &s.saved)
+	// Reporting is turned off first, since a terminal left reporting sends
+	// every wheel notch into a program that is no longer reading them.
+	if s.mouse {
+		s.write(seqMouseOff)
+		s.mouse = false
+	}
 	s.write(seqShowCur + seqExitAlt)
 }
 
@@ -154,6 +172,27 @@ func (s *Screen) refreshSize() error {
 	s.height, s.width = h, w
 	return nil
 }
+
+// SetMouse turns mouse reporting on or off.
+//
+// Reporting is not turned on by default. A terminal that reports events
+// delivers them to this program alone, so the drag that would otherwise begin a
+// selection does not reach the terminal any more and the text cannot be
+// selected. It is therefore offered as a choice, and the caller decides.
+func (s *Screen) SetMouse(on bool) {
+	if on == s.mouse {
+		return
+	}
+	if on {
+		s.write(seqMouseOn)
+	} else {
+		s.write(seqMouseOff)
+	}
+	s.mouse = on
+}
+
+// Mouse reports whether the terminal is being asked to report mouse events.
+func (s *Screen) Mouse() bool { return s.mouse }
 
 // Close restores the terminal and releases the screen.
 func (s *Screen) Close() {
