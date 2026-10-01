@@ -54,8 +54,9 @@ func TestStatusLineDropsHostWhenNarrow(t *testing.T) {
 
 func TestStatusLineOrderIsFixed(t *testing.T) {
 	line := StatusLine(Status{}, 400)
-	order := []string{"Provider", "Model", "Reasoning", "Branch", "Status",
-		"Approval", "Context", "In:", "Out:"}
+	// Branch, Reasoning, and Approval were removed: they have no source in
+	// this client, so a dash would be permanent rather than temporary.
+	order := []string{"Provider", "Model", "Status", "Credits", "In:", "Out:"}
 	at := -1
 	for _, label := range order {
 		i := strings.Index(line, label)
@@ -108,5 +109,32 @@ func TestTruncateMarksTheCut(t *testing.T) {
 	}
 	if got := truncate("abc", 5); got != "abc" {
 		t.Errorf("truncate = %q, want it unchanged", got)
+	}
+}
+
+// The provider is a constant rather than a derived value, and must appear.
+func TestStatusLineShowsProvider(t *testing.T) {
+	line := StatusLine(Status{Provider: providerName}, 200)
+	if !strings.Contains(line, providerName) {
+		t.Errorf("line = %q, want the provider", line)
+	}
+}
+
+// The state reads Working while a request is in flight, so a slow model is
+// visible as working rather than as idle.
+func TestStatusLineShowsWorking(t *testing.T) {
+	line := StatusLine(Status{State: stateWorking}, 200)
+	if !strings.Contains(line, stateWorking) {
+		t.Errorf("line = %q, want the working state", line)
+	}
+}
+
+// The removed fields must not reappear as permanent dashes.
+func TestStatusLineHasNoDeadFields(t *testing.T) {
+	line := StatusLine(Status{Provider: providerName}, 400)
+	for _, gone := range []string{"Reasoning", "Branch", "Approval"} {
+		if strings.Contains(line, gone) {
+			t.Errorf("line = %q, want %q removed", line, gone)
+		}
 	}
 }

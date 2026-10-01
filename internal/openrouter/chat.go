@@ -37,11 +37,24 @@ type ChatRequest struct {
 	Stream   bool      `json:"stream"`
 }
 
+// streamUsage is the token accounting reported on a streamed reply.
+//
+// It arrives on the final chunk rather than on every delta, so the field is a
+// pointer: an absent value and a reported zero are different, and a plain
+// integer could not tell them apart.
+type streamUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+}
+
 // StreamEvent is one increment of a streamed reply.
 type StreamEvent struct {
 	// Content is the text delta. It is empty on an event carrying only
 	// metadata.
 	Content string
+	// Usage is the token accounting, reported once on the final chunk. It is
+	// nil on every other event.
+	Usage *streamUsage
 	// Done reports that the stream has finished.
 	Done bool
 	// Err carries a transport or decoding failure that ended the stream.
@@ -65,7 +78,7 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest, onEvent func(StreamE
 	}
 	req.Stream = true
 
-	body, err := json.Marshal(req)
+	body, err := json.Marshal(withUsage(req))
 	if err != nil {
 		return fmt.Errorf("encoding the request: %w", err)
 	}
@@ -112,6 +125,7 @@ func (c *Client) newStreamRequest(ctx context.Context, path string, body []byte)
 // The delta is a list because the field is an array in the API even though the
 // first element carries the text in practice.
 type streamChunk struct {
+	Usage   *streamUsage `json:"usage"`
 	Choices []struct {
 		Delta struct {
 			Content string `json:"content"`
@@ -166,6 +180,9 @@ func readStream(body io.Reader, onEvent func(StreamEvent)) error {
 		if chunk.Error != nil {
 			onEvent(StreamEvent{Err: fmt.Errorf("the stream reported an error: %s", chunk.Error.Message)})
 			return nil
+		}
+		if chunk.Usage != nil {
+			onEvent(StreamEvent{Usage: chunk.Usage})
 		}
 		for _, choice := range chunk.Choices {
 			if choice.Delta.Content != "" {

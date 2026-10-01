@@ -34,6 +34,18 @@ type Session struct {
 // ErrQuit reports that the user asked to leave the session.
 var ErrQuit = errors.New("quit")
 
+// providerName is the service every request is sent to. It is a constant
+// rather than a derived value, since the endpoint is the only provider the
+// client speaks to.
+const providerName = "openrouter.ai"
+
+// The states shown in the status field. A state is a short word rather than a
+// sentence, since the bar is read at a glance while a reply is arriving.
+const (
+	stateIdle    = "idle"
+	stateWorking = "Working"
+)
+
 // Start opens the interface on the given files.
 //
 // A caller that redirects the output receives ErrNotTerminal and is expected to
@@ -52,8 +64,12 @@ func Start(out, in *os.File, title string) (*Session, error) {
 		ctx:    ctx,
 		cancel: cancel,
 		frame: Frame{
-			Title:  title,
-			Status: Status{Host: hostname()},
+			Title: title,
+			Status: Status{
+				Provider: providerName,
+				State:    stateIdle,
+				Host:     hostname(),
+			},
 		},
 	}
 	// The terminal is in raw mode with echo disabled, so the composed line is
@@ -377,13 +393,17 @@ func (s *Session) send(line string) {
 	defer func() {
 		s.frame.Busy = false
 		s.frame.Partial = ""
-		s.frame.Status.State = "idle"
+		s.frame.Status.State = stateIdle
 	}()
 
 	err := s.client.Chat(s.ctx, openrouter.ChatRequest{
 		Model:    s.conv.Model(),
 		Messages: s.conv.Pending(line),
 	}, func(e openrouter.StreamEvent) {
+		if e.Usage != nil {
+			s.conv.AddTokens(e.Usage.PromptTokens, e.Usage.CompletionTokens)
+			s.updateStatus()
+		}
 		if e.Err != nil {
 			// A stream that failed partway still produced text, and that text
 			// is kept: it is usually more useful than an error alone.
@@ -424,20 +444,27 @@ func (s *Session) send(line string) {
 // normally read.
 func (s *Session) stream(partial string) {
 	s.frame.Busy = true
-	s.frame.Status.State = "streaming"
+	s.frame.Status.State = stateWorking
 	s.frame.Partial = partial
 	s.draw()
 }
 
 // updateStatus refreshes the fields the client knows.
 func (s *Session) updateStatus() {
+	s.frame.Status.Provider = providerName
 	s.frame.Status.Model = orDash(s.conv.Model())
-	s.frame.Status.State = "idle"
+	s.frame.Status.State = stateIdle
 	s.frame.Status.Host = hostname()
 
 	u := s.conv.Usage()
 	if u.Limit > 0 {
-		s.frame.Status.Context = fmt.Sprintf("%.2f/%.0f", u.Usage, u.Limit)
+		s.frame.Status.Credits = fmt.Sprintf("%.2f/%.0f", u.Usage, u.Limit)
+	}
+	if s.conv.TokensIn() > 0 {
+		s.frame.Status.TokensIn = tokenCount(s.conv.TokensIn())
+	}
+	if s.conv.TokensOut() > 0 {
+		s.frame.Status.TokensOut = tokenCount(s.conv.TokensOut())
 	}
 }
 

@@ -185,8 +185,32 @@ so that a later change does not silently reverse it.
 - A status field with no value yet is rendered as a dash rather than being
   hidden, so the layout does not shift as values arrive and a missing value is
   visible rather than ambiguous.
-- When the bar is too narrow, fields are dropped from the end rather than
-  allowed to wrap, since a wrapped bar pushes the input line off the screen.
+- A field that has no source in this client is removed rather than shown as a
+  permanent dash. `Branch` and `Reasoning` were removed on the maintainer's
+  instruction. `Approval` was removed because it implies a permission system
+  for tool calls, and the client has no tools and executes nothing, so there
+  would be nothing to approve. A dash that can never be filled is noise.
+- The provider is a constant rather than a derived value, since the endpoint is
+  the only one the client speaks to.
+- The state reads `Working` while a request is in flight and `idle` otherwise,
+  restored on every exit including a failure.
+- The field named `Credits` carries the allowance the key endpoint reports as a
+  figure against a limit. It is not the conversation context, which is the
+  share of the model window a message occupies. The name `Context` is left free
+  for that, and is not yet filled.
+- Token accounting is requested explicitly in the request body, since an
+  endpoint that is not asked for it sends nothing and the counters would stay
+  blank. It arrives on the final chunk, so it is a pointer: a reported zero and
+  an absent value are different, and an absent value must not clear an
+  accumulated total.
+- The counters accumulate across the session rather than describing one
+  exchange.
+- When the bar is too narrow, fields are dropped rather than allowed to wrap,
+  since a wrapped bar pushes the input line off the screen. The order is by how
+  much a reader loses, not by position: the counters go before the allowance,
+  and the host goes before either, since it does not change while the session
+  runs. Dropping by position removed whichever field was last, which was the
+  token count.
 - The status bar shows Provider, Model, Reasoning, Branch, Status, Approval
   Method, Context used, Tokens used in and out, and hostname.
 - Commands and configuration options are completed with the Tab key.

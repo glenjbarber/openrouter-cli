@@ -259,3 +259,81 @@ func TestDecodesUnknownFields(t *testing.T) {
 		t.Fatalf("KeyUsage: %v", err)
 	}
 }
+
+// Token accounting must be asked for explicitly, since an endpoint that is not
+// asked sends nothing and the counters would stay blank.
+func TestChatRequestsUsage(t *testing.T) {
+	var sent map[string]any
+	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&sent)
+		io.WriteString(w, "data: [DONE]\n\n")
+	})
+
+	err := c.Chat(context.Background(), ChatRequest{
+		Model:    "test/model",
+		Messages: []Message{{Role: RoleUser, Content: "hi"}},
+	}, func(StreamEvent) {})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+
+	usage, ok := sent["usage"].(map[string]any)
+	if !ok {
+		t.Fatalf("usage = %v, want it present in the request", sent["usage"])
+	}
+	if usage["include"] != true {
+		t.Errorf("include = %v, want true", usage["include"])
+	}
+}
+
+// The final chunk carries the accounting, and it must reach the caller.
+func TestChatDeliversUsage(t *testing.T) {
+	body := `data: {"choices":[{"delta":{"content":"hi"}}],"usage":{"prompt_tokens":11,"completion_tokens":22}}` + "\n\n" +
+		"data: [DONE]\n\n"
+
+	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, body)
+	})
+
+	var got *StreamEvent
+	err := c.Chat(context.Background(), ChatRequest{
+		Model:    "test/model",
+		Messages: []Message{{Role: RoleUser, Content: "hi"}},
+	}, func(e StreamEvent) {
+		if e.Usage != nil {
+			got = &e
+		}
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if got == nil {
+		t.Fatal("no usage was delivered")
+	}
+	if got.Usage.PromptTokens != 11 || got.Usage.CompletionTokens != 22 {
+		t.Errorf("usage = %+v, want 11/22", got.Usage)
+	}
+}
+
+// A chunk with no usage must not report a zero, since a zero would clear an
+// accumulated total.
+func TestChatOmitsUsageWhenAbsent(t *testing.T) {
+	body := `data: {"choices":[{"delta":{"content":"hi"}}]}` + "\n\n" +
+		"data: [DONE]\n\n"
+
+	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, body)
+	})
+
+	err := c.Chat(context.Background(), ChatRequest{
+		Model:    "test/model",
+		Messages: []Message{{Role: RoleUser, Content: "hi"}},
+	}, func(e StreamEvent) {
+		if e.Usage != nil {
+			t.Errorf("usage = %+v, want nil when absent", e.Usage)
+		}
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}

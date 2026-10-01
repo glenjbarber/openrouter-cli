@@ -17,7 +17,27 @@ type Conversation struct {
 	model string
 	// usage accumulates the token counts reported across the session.
 	usage openrouter.Usage
+	// tokensIn and tokensOut accumulate the per-exchange counts, which the
+	// key endpoint does not report.
+	tokensIn  int
+	tokensOut int
 }
+
+// AddTokens accumulates the token counts reported for one exchange.
+func (c *Conversation) AddTokens(in, out int) {
+	if in > 0 {
+		c.tokensIn += in
+	}
+	if out > 0 {
+		c.tokensOut += out
+	}
+}
+
+// TokensIn returns the accumulated prompt tokens.
+func (c *Conversation) TokensIn() int { return c.tokensIn }
+
+// TokensOut returns the accumulated completion tokens.
+func (c *Conversation) TokensOut() int { return c.tokensOut }
 
 // NewConversation returns an empty conversation.
 func NewConversation() *Conversation {

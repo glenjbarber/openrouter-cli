@@ -136,3 +136,43 @@ func TestOrDash(t *testing.T) {
 		t.Errorf("orDash(\"x\") = %q, want it unchanged", got)
 	}
 }
+
+// The counters accumulate across the session, since a session is the unit a
+// reader cares about rather than a single exchange.
+func TestAddTokensAccumulates(t *testing.T) {
+	c := NewConversation()
+	c.AddTokens(10, 20)
+	c.AddTokens(5, 7)
+
+	if c.TokensIn() != 15 {
+		t.Errorf("TokensIn = %d, want 15", c.TokensIn())
+	}
+	if c.TokensOut() != 27 {
+		t.Errorf("TokensOut = %d, want 27", c.TokensOut())
+	}
+}
+
+// A reported zero is not a count, so it must not clear an accumulated total.
+func TestAddTokensIgnoresZero(t *testing.T) {
+	c := NewConversation()
+	c.AddTokens(10, 20)
+	c.AddTokens(0, 0)
+
+	if c.TokensIn() != 10 || c.TokensOut() != 20 {
+		t.Errorf("tokens = %d/%d, want 10/20", c.TokensIn(), c.TokensOut())
+	}
+}
+
+func TestTokenCount(t *testing.T) {
+	for _, tc := range []struct {
+		in   int
+		want string
+	}{
+		{0, "0"}, {999, "999"}, {1000, "1.0k"}, {1500, "1.5k"},
+		{1_000_000, "1.0M"}, {2_500_000, "2.5M"},
+	} {
+		if got := tokenCount(tc.in); got != tc.want {
+			t.Errorf("tokenCount(%d) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

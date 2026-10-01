@@ -11,13 +11,16 @@ import (
 // rendered as a dash rather than being hidden, so that the layout stays stable
 // as values arrive and a missing value is visible rather than ambiguous.
 type Status struct {
-	Provider  string
-	Model     string
-	Reasoning string
-	Branch    string
-	State     string
-	Approval  string
-	Context   string
+	Provider string
+	Model    string
+	State    string
+	// Credits is the remaining allowance reported by the key endpoint, as a
+	// figure against a limit. It is not the conversation context, which is the
+	// share of the model window a message occupies.
+	Credits string
+	// TokensIn and TokensOut accumulate across the session rather than
+	// describing one exchange, since a session is the unit a reader cares
+	// about.
 	TokensIn  string
 	TokensOut string
 	Host      string
@@ -33,11 +36,8 @@ var fields = []struct {
 }{
 	{"Provider", func(s Status) string { return s.Provider }},
 	{"Model", func(s Status) string { return s.Model }},
-	{"Reasoning", func(s Status) string { return s.Reasoning }},
-	{"Branch", func(s Status) string { return s.Branch }},
 	{"Status", func(s Status) string { return s.State }},
-	{"Approval", func(s Status) string { return s.Approval }},
-	{"Context", func(s Status) string { return s.Context }},
+	{"Credits", func(s Status) string { return s.Credits }},
 	{"In", func(s Status) string { return s.TokensIn }},
 	{"Out", func(s Status) string { return s.TokensOut }},
 }
@@ -61,32 +61,64 @@ func StatusLine(s Status, width int) string {
 		parts = append(parts, f.label+": "+value)
 	}
 
+	// The host is held back rather than appended. It is the field a reader
+	// can most afford to lose, since it does not change while the session
+	// runs, and appending it last meant a narrow bar dropped the token
+	// counters before it instead.
+	host := s.Host
+
 	line := strings.Join(parts, sep)
 	if width > 0 && len(line) > width {
 		line = trimToWidth(parts, sep, width)
 	}
-	if s.Host != "" && (width <= 0 || len(line)+len(s.Host)+3 <= width) {
-		line += sep + s.Host
+	if host != "" && (width <= 0 || len(line)+len(host)+len(sep) <= width) {
+		line += sep + host
 	}
 	return line
 }
 
-// trimToWidth drops trailing fields until the line fits.
+// dropOrder names the fields in the order they are sacrificed when the bar is
+// too narrow.
+//
+// The order is by how much a reader loses, not by where the field sits. The
+// token counters go before the allowance, since a running total is the figure
+// most often watched, and the host goes before either, since it does not change
+// while the session runs. Dropping by position instead would remove whichever
+// field happened to be last, which was the token count.
+var dropOrder = []string{"In", "Out", "Credits", "Status", "Model"}
+
+// trimToWidth removes fields until the line fits, sacrificing dropOrder first.
 func trimToWidth(parts []string, sep string, width int) string {
-	for len(parts) > 1 {
-		candidate := strings.Join(parts, sep)
-		if len(candidate) <= width {
-			return candidate
+	kept := make([]string, len(parts))
+	copy(kept, parts)
+
+	for _, label := range dropOrder {
+		if len(join(kept, sep)) <= width {
+			break
 		}
-		parts = parts[:len(parts)-1]
+		for i, p := range kept {
+			if strings.HasPrefix(p, label+": ") {
+				kept = append(kept[:i], kept[i+1:]...)
+				break
+			}
+		}
 	}
+
+	line := join(kept, sep)
+	if len(line) > width && len(kept) > 0 {
+		// Everything droppable is gone and it still does not fit, so the
+		// remainder is cut rather than left to wrap onto a second row.
+		return truncate(kept[0], width)
+	}
+	return line
+}
+
+// join concatenates the parts, which is the empty string when there are none.
+func join(parts []string, sep string) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	if len(parts[0]) > width {
-		return truncate(parts[0], width)
-	}
-	return parts[0]
+	return strings.Join(parts, sep)
 }
 
 // truncate shortens a string to width, marking the cut with an ellipsis.
