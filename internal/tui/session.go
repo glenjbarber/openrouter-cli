@@ -413,6 +413,10 @@ func (s *Session) Seed(doc *bootstrap.Document) {
 	if doc == nil {
 		return
 	}
+	if doc.Session != nil {
+		s.loadSaved(doc.Session)
+		return
+	}
 	s.conv.Seed(doc.Instructions)
 	s.Note("bootstrap: %s (%s)", doc.Path, doc.Format)
 }
@@ -564,6 +568,8 @@ func init() {
 		{names: []string{"/btw"}, description: "start a thread branched from this conversation", run: (*Session).cmdBtw, idleOnly: true},
 		{names: []string{"/main"}, description: "leave the thread and return to the conversation", run: (*Session).cmdMain, idleOnly: true},
 		{names: []string{"/compact"}, description: "summarise the conversation and start again", run: (*Session).cmdCompact, idleOnly: true},
+		{names: []string{"/save"}, usage: "/save [NAME]", description: "write the conversation to a file of its own", run: (*Session).cmdSave},
+		{names: []string{"/load"}, usage: "/load NAME", description: "resume a conversation saved with /save", run: (*Session).cmdLoad, idleOnly: true},
 		{names: []string{"/mouse"}, description: "turn mouse reporting on or off, for wheel scrolling", run: (*Session).cmdMouse},
 		{names: []string{"/clear"}, description: "clear the pane", run: (*Session).cmdClear, idleOnly: true},
 		{names: []string{"/info"}, description: "report the session settings", run: (*Session).cmdInfo},

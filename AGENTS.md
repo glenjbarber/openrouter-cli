@@ -92,8 +92,8 @@ so that a later change does not silently reverse it.
   the project. A module file is part of a Go program's source, not a local
   artifact.
 - `go.sum` is not ignored either, so a dependency added later yields a committed
-  checksum file rather than a silently unpinned build. It is currently absent
-  because the module has no external dependencies.
+  checksum file rather than a silently unpinned build. It was absent until the
+  saved sessions took a database driver, and it is committed from then on.
 - The `go` directive is a minor version, `go 1.26`, not a patch pin. A patch pin
   is unusual and needlessly excludes users on a lower patch release.
 - An override carrying a path is used verbatim. The `/api/v1` suffix is appended
@@ -147,7 +147,8 @@ so that a later change does not silently reverse it.
   `--bootstrap MEMORY.md`.
 - The extension alone selects the format. A `.md` file is passed to the model
   verbatim, since it is already prose. A `.json` file is decoded as a structured
-  document.
+  document. A `.db` file is a conversation saved with `/save` and is resumed
+  from rather than read as prose.
 - The JSON form carries an `instructions` field, which is required, plus
   optional `name` and `description` fields. Unknown fields are ignored, so a
   document written for a newer version stays readable by an older one. This
@@ -160,7 +161,9 @@ so that a later change does not silently reverse it.
   the command line is an assertion that it exists and can be read.
 - A document carrying no instructions is refused, since a session begun with
   none would fail silently until the model behaved as though it had never been
-  told anything.
+  told anything. A session is judged on what it carries rather than on its
+  instructions: one with turns and a model has something to begin from, and one
+  with neither is refused for the same reason.
 - A symlink is resolved under the same rule as an instruction file, so the
   device-identifier comparison and the cross-device refusal are shared rather
   than restated.
@@ -547,6 +550,66 @@ so that a later change does not silently reverse it.
 - The six-byte mouse form is not held, since it is a fixed width and is taken
   whole or not at all.
 
+### Saved sessions
+
+- `/save [NAME]` writes the conversation to a file of its own and `/load NAME`
+  puts it back in front of the model. The file is a SQLite database, so that it
+  can be read afterwards by any tool rather than only by this client, which was
+  what the extension was chosen for.
+- The driver is `modernc.org/sqlite`. It is pure Go, which matters because
+  `make crossbuild` sets `GOOS` without `CGO_ENABLED` and therefore leaves cgo
+  off: a driver that compiles C would produce a binary that builds for every
+  target and then fails at the first query.
+- Its emulation of the C library carries no DragonFly. Rather than drop a
+  supported target, that one build answers that it has no driver and says so.
+  The commands stay in the vocabulary, since a reader who typed `/save` on a
+  platform where it cannot work should be told that, rather than being told the
+  command is unknown, which is a different problem to send them chasing. This
+  follows the `termios_unsupported.go` precedent.
+- Files are held in `~/.openrouter-cli/sessions`, not beside the configuration
+  file. The two hold different things: the configuration is written at setup and
+  read thereafter, a session whenever the reader asks for one. Keeping them
+  apart means removing a configuration file does not remove conversations.
+- One file per save rather than one database of many, so that a file can be
+  handed to someone else, queried on its own, or deleted without touching
+  anything else.
+- What is written is the turns, the model, the token counters, the reported
+  usage, and the time. What is not written is as deliberate: not the
+  credential, since the configuration file is the only source of the key; not
+  the session preferences, which belong to the configuration file; and not the
+  free-model allowance, whose type is unexported and cannot be carried out of
+  the package that holds it.
+- The opening instructions are saved as the system turn they are, so that a
+  resumed session behaves as the one that was saved did.
+- A save is refused in-cognito and inside a thread. Both record nothing, and a
+  file holding the conversation would break that rather than record that it was
+  broken. A refusal is the honest outcome; a flag saying recording was on would
+  be the failure.
+- `/save` under a name already taken asks before replacing, and only an explicit
+  yes replaces. Anything else, an empty line included, keeps the earlier file and
+  writes beside it under a name carrying the epoch, which cannot collide with
+  itself and needs nothing remembered to stay unique.
+- `/save` with no name is filed under the date and second, since a session saved
+  twice in one minute is ordinary and one that quietly replaced the last would
+  not be.
+- `/load` is idle only, on the same terms as `/new`: a turn records its answer
+  into the conversation it was asked in, so replacing that conversation
+  underneath one would file the answer somewhere nobody asked for it.
+- `/load` shows the turns it restored as well as restoring them. A load that
+  replaced the conversation silently would leave the reader unable to tell a
+  resumed conversation from one that had merely been going on.
+- A model the reader chose wins over the one the file carries, which is the rule
+  the configuration file's model is already held to.
+- The ephemeral flag is not read from a file. It is what the reader asked for in
+  this session, and a file that could turn recording off on load would defeat the
+  mode from somewhere the reader never looked.
+- A save may be taken while a model works, and holds what has been recorded. The
+  turn in flight is not in it, since a turn is recorded only once its answer has
+  arrived.
+- A file that is some other database, or one written by a later version, is
+  reported rather than read as an empty conversation. An empty one loaded over a
+  real one would look like a session the reader had.
+
 ### Delegates
 
 - `/delegate QUESTION` asks a question from a copy of the conversation while the
@@ -900,6 +963,10 @@ so that a later change does not silently reverse it.
 
 ### Toolchain
 
+- The module carries one runtime dependency, `modernc.org/sqlite`, for saved
+  sessions. It is the one departure from the no-dependency rule the rest of the
+  client is built on, and it was taken so that a saved file could be opened and
+  read by any SQLite tool rather than only by this client.
 - These tools are tracked as module tool dependencies in `go.mod` and are run
   through `go tool`: `staticcheck`, `errcheck`, `gosec`, `govulncheck`,
   `protoc-gen-go`, and `protoc-gen-go-grpc`.

@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/glenjbarber/openrouter-cli/internal/saved"
 )
 
 // Format is the on-disk format of a bootstrap document.
@@ -25,6 +27,9 @@ const (
 	FormatMarkdown Format = "markdown"
 	// FormatJSON is a JSON document decoded into a Document.
 	FormatJSON Format = "json"
+	// FormatSession is a saved session in a local database, which carries a
+	// conversation rather than instructions for one.
+	FormatSession Format = "session"
 )
 
 // ErrUnsupportedFormat reports an extension that names no known format.
@@ -49,11 +54,41 @@ type Document struct {
 	Name string `json:"name,omitempty"`
 	// Description is an optional human-readable summary.
 	Description string `json:"description,omitempty"`
+	// Session is a saved conversation, set where the document was a session
+	// rather than prose. A session is kept beside the instructions rather
+	// than folded into them, since a conversation is not an instruction and a
+	// summary of it would throw away exactly what was saved.
+	Session *saved.Session `json:"-"`
 
 	// Path is the file the document was read from.
 	Path string `json:"-"`
 	// Format is the format the file was read as.
 	Format Format `json:"-"`
+}
+
+// loadSession reads a saved session as a bootstrap document.
+//
+// A session is read through the package that wrote it rather than decoded
+// here, so that the schema is stated in one place. It is not read as text: a
+// database is bytes rather than prose, and asking for it to be valid UTF-8
+// would refuse every session there is.
+func loadSession(path, target string) (*Document, error) {
+	sess, err := saved.Read(target)
+	if err != nil {
+		return nil, err
+	}
+	// A session with no turns and no model would begin a session with nothing
+	// in it, which is the same silent failure an empty document is refused
+	// for.
+	if len(sess.Messages) == 0 && sess.Model == "" {
+		return nil, fmt.Errorf("%w: %s holds no turns and no model", ErrEmpty, path)
+	}
+	return &Document{
+		Path:    path,
+		Format:  FormatSession,
+		Name:    sess.Name,
+		Session: sess,
+	}, nil
 }
 
 // formatFor resolves a path extension to a format.
@@ -63,6 +98,8 @@ func formatFor(path string) (Format, error) {
 		return FormatMarkdown, nil
 	case ".json":
 		return FormatJSON, nil
+	case ".db":
+		return FormatSession, nil
 	}
 	// The path is named rather than the extension, since a bare extension says
 	// nothing about which file was refused.
@@ -88,6 +125,10 @@ func Load(path string) (*Document, error) {
 	target, err := resolve(path)
 	if err != nil {
 		return nil, err
+	}
+
+	if format == FormatSession {
+		return loadSession(path, target)
 	}
 
 	data, err := os.ReadFile(target)

@@ -211,7 +211,8 @@ Usage:
 
 Options:
   --bootstrap FILE   Start the session from FILE. The extension selects the
-                     format: .md is used as written, .json is decoded.
+                     format: .md is used as written, .json is decoded, .db
+                     is a conversation saved with /save and is resumed from.
   --mouse            Turn on mouse reporting, so the wheel scrolls the reply
                      pane. It is off by default, and off inside tmux even when
                      the configuration asks for it, since a terminal that
@@ -232,6 +233,8 @@ Commands, typed inside the interface:
   /main              Leave the thread and return to the conversation.
   /new               Clear the conversation.
   /compact           Summarise the conversation and carry on.
+  /save NAME         Write the conversation to a file of its own.
+  /load NAME         Resume a conversation saved with /save.
   /mouse             Turn mouse reporting on or off, for wheel scrolling.
   /clear             Clear the pane.
   /quit, /exit       Leave the interface.
