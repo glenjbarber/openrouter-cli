@@ -45,6 +45,30 @@ type Config struct {
 // ErrNotFound reports that no configuration file exists at any search path.
 var ErrNotFound = errors.New("no configuration file found")
 
+// ErrNoAPIKey reports that the file exists but carries no usable key.
+//
+// It is distinct from a read failure so that the interface may open and report
+// the absence rather than refusing to start. A key that was never entered is an
+// ordinary state, whereas a file that could not be parsed is a fault.
+type ErrNoAPIKey struct {
+	// Path is the file that was read.
+	Path string
+}
+
+// Error implements the error interface.
+func (e *ErrNoAPIKey) Error() string {
+	return fmt.Sprintf("%s does not contain OPENROUTER_API_KEY", e.Path)
+}
+
+// Empty returns a configuration with no key and the default endpoint, used when
+// the file exists but carries no credential.
+//
+// It is returned by value so that a caller cannot retain a pointer into the
+// loader state.
+func Empty() *Config {
+	return &Config{URLBase: DefaultURLBase}
+}
+
 // Load reads the configuration from the first file found at a search path.
 //
 // The process environment is deliberately not consulted. An OPENROUTER_API_KEY
@@ -124,7 +148,7 @@ func parse(path string) (*Config, error) {
 		if raw.SetupKey {
 			return cfg, nil
 		}
-		return nil, fmt.Errorf("%s does not contain OPENROUTER_API_KEY", path)
+		return nil, &ErrNoAPIKey{Path: path}
 	}
 
 	if cfg.URLBase == "" {

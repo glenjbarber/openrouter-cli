@@ -56,20 +56,28 @@ func run(args []string) error {
 	// misconfigured file is reported before any work is attempted.
 	cfg, err := config.Load()
 	if err != nil {
-		return err
+		// A file with no key is not a failure. The interface opens and
+		// reports the absence as an ordinary message, so that the user can
+		// see what is wrong and read /help. Refusing to open would leave
+		// nothing on screen to explain it.
+		var keyErr *config.ErrNoAPIKey
+		if !errors.As(err, &keyErr) {
+			return err
+		}
+		cfg = config.Empty()
 	}
 	_ = cfg
 
 	// The interface is entered only when both ends are a terminal. A
 	// redirected run reports why and stops rather than writing a frame into
 	// the capture, since escape sequences in a file or a pipe are noise.
-	return interface_(os.Stdout, os.Stdin, opts)
+	return interface_(os.Stdout, os.Stdin, cfg, opts)
 }
 
 // interface_ starts the interactive session.
 //
 // The name carries a trailing underscore because interface is a keyword.
-func interface_(out, in *os.File, opts options) error {
+func interface_(out, in *os.File, cfg *config.Config, opts options) error {
 	session, err := tui.Start(out, in, "openrouter-cli")
 	if err != nil {
 		if errors.Is(err, tui.ErrNotTerminal) {
@@ -80,14 +88,17 @@ func interface_(out, in *os.File, opts options) error {
 	}
 	defer session.Close()
 
+	// The credential is installed on the session rather than used here, so
+	// that the interface opens even when the key is absent and reports the
+	// absence as an ordinary message rather than refusing to open.
+	session.Configure(cfg.URLBase, cfg.APIKey)
+
 	if opts.bootstrap != "" {
 		// The document is reported inside the frame rather than cleared, so
 		// that a startup message is not lost behind the first repaint.
-		doc, err := bootstrap.Load(opts.bootstrap)
-		if err != nil {
+		if err := session.Seed(opts.bootstrap); err != nil {
 			return err
 		}
-		session.Note("bootstrap: %s (%s)", doc.Path, doc.Format)
 	}
 
 	if err := session.Run(); err != nil && !errors.Is(err, tui.ErrQuit) {

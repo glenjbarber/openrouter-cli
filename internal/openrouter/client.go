@@ -53,6 +53,12 @@ func New(baseURL, apiKey string) *Client {
 	}
 }
 
+// BaseURL returns the endpoint the client was built against.
+//
+// The credential is deliberately not exposed, since a diagnostic that printed
+// it would put the key in a terminal history or a log.
+func (c *Client) BaseURL() string { return c.baseURL }
+
 // do performs a request and returns the response body on success.
 func (c *Client) do(ctx context.Context, method, path string, body any) ([]byte, error) {
 	var reader io.Reader

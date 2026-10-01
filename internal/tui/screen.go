@@ -41,6 +41,7 @@ const (
 	seqHideCur   = "\x1b[?25l"
 	seqShowCur   = "\x1b[?25h"
 	seqClear     = "\x1b[2J"
+	seqClearLine = "\x1b[K"
 	seqHome      = "\x1b[H"
 	seqResetAttr = "\x1b[0m"
 )

@@ -173,3 +173,48 @@ func TestInstallDefaultReportsMissingParent(t *testing.T) {
 		t.Errorf("err = %v, want a not-exist error", err)
 	}
 }
+
+// A file holding no key is reported through the typed error, so the interface
+// may open and explain rather than refusing to start.
+func TestParseReportsMissingKeyAsTypedError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DefaultFileName)
+	if err := os.WriteFile(path, []byte(`{"OPENROUTER_URL_BASE":"x"}`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, err := parse(path)
+	var noKey *ErrNoAPIKey
+	if !errors.As(err, &noKey) {
+		t.Fatalf("err = %v, want *ErrNoAPIKey", err)
+	}
+	if noKey.Path != path {
+		t.Errorf("Path = %q, want %q", noKey.Path, path)
+	}
+}
+
+// Malformed JSON is a fault rather than an ordinary state, so it must not be
+// reported as a missing key.
+func TestParseDoesNotReportMalformedAsMissingKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DefaultFileName)
+	if err := os.WriteFile(path, []byte(`{nope`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, err := parse(path)
+	var noKey *ErrNoAPIKey
+	if errors.As(err, &noKey) {
+		t.Errorf("err = %v, want a parse error rather than a missing key", err)
+	}
+}
+
+// Empty returns a usable configuration so the interface has an endpoint even
+// with no credential.
+func TestEmptyHasDefaultEndpoint(t *testing.T) {
+	cfg := Empty()
+	if cfg.URLBase != DefaultURLBase {
+		t.Errorf("URLBase = %q, want %q", cfg.URLBase, DefaultURLBase)
+	}
+	if cfg.APIKey != "" {
+		t.Errorf("APIKey = %q, want empty", cfg.APIKey)
+	}
+}
