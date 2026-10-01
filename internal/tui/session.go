@@ -44,9 +44,6 @@ type Session struct {
 	// and written by the input goroutine, which is the same pair of jobs mu
 	// already does for the frame.
 	scroll int
-	// mouseRequested records that the reader asked for mouse reporting, so
-	// that a request made before the terminal is ready is not lost.
-	mouseRequested bool
 	// thread is the ephemeral conversation, nil while the main one is in
 	// force. The main conversation is held in mainConv throughout, so that
 	// leaving a thread restores it without a snapshot being taken here.
@@ -83,6 +80,17 @@ type Session struct {
 	// paintPending records that a repaint was asked for during the interval and
 	// is owed once it passes.
 	paintPending bool
+	// flush draws the deferred repaint once the interval has passed. It is the
+	// owner of a deferred repaint, since nothing else is left to ask for it:
+	// the work that wanted it may have finished and the twiddle with it, and
+	// the next thing to happen would be the reader typing, which shows the
+	// reply all at once rather than as it arrived. A nil value means nothing is
+	// owed. It is guarded by repaint, as lastPaint and paintPending are.
+	flush *time.Timer
+	// closed records that the terminal has been restored, so that nothing is
+	// drawn after the way out. It is guarded by repaint and is read while that
+	// is held.
+	closed bool
 	// delegates are the background questions still running. They are tracked so
 	// that leaving does not leave one writing to a frame nobody is drawing on,
 	// and so that the count can be reported.
@@ -175,7 +183,9 @@ func Start(out, in *os.File, title string) (*Session, error) {
 		s.draw()
 	}
 	s.editor.OnChange = func(line string) {
+		s.mu.Lock()
 		s.frame.Input = line
+		s.mu.Unlock()
 		s.draw()
 	}
 	// Tab completes the line rather than inserting a tab into it, since a
@@ -226,7 +236,6 @@ func (s *Session) resetScroll() {
 
 // setMouse turns mouse reporting on or off at the reader's request.
 func (s *Session) setMouse(on bool) {
-	s.mouseRequested = on
 	s.screen.SetMouse(on)
 	// The hint row names the wheel only while reporting is on, since the
 	// wheel is what reporting drives. The bit is taken under the lock,
@@ -247,6 +256,19 @@ func (s *Session) SetMouse(on bool) {
 
 // Close restores the terminal.
 func (s *Session) Close() {
+	// The session is marked closed before anything is cancelled, so that a
+	// repaint already in flight, a deferred one waiting on its timer, and the
+	// twiddle turning at the time all find a terminal that has been put back
+	// and draw nothing.
+	s.repaint.Lock()
+	s.closed = true
+	s.stopFlush()
+	s.repaint.Unlock()
+
+	// The twiddle is stopped here rather than left to the request that owns it,
+	// since a request abandoned by the cancellation below may take a moment to
+	// unwind and would keep the interface turning until it does.
+	s.spinner.Stop()
 	s.cancel()
 	// Reporting is turned off before the terminal is restored, so that a
 	// wheel notch is not delivered to a program that has stopped reading.
@@ -254,6 +276,31 @@ func (s *Session) Close() {
 		s.screen.SetMouse(false)
 	}
 	s.screen.Close()
+}
+
+// addReply appends the given lines to the reply pane.
+//
+// The lock is taken because the paint path copies the frame while the twiddle
+// turns and while a deferred repaint is drawn, and a copy taken while an
+// append is in progress reads the slice header as it is being written. Every
+// other writer of the frame takes the lock for the same reason.
+//
+// The lines are plain text. Nothing is drawn around them, since a selection
+// out of the pane has to yield the text with no escape sequence in it.
+func (s *Session) addReply(lines ...string) {
+	if len(lines) == 0 {
+		return
+	}
+	s.mu.Lock()
+	s.frame.Reply = append(s.frame.Reply, lines...)
+	s.mu.Unlock()
+}
+
+// clearReply empties the reply pane.
+func (s *Session) clearReply() {
+	s.mu.Lock()
+	s.frame.Reply = nil
+	s.mu.Unlock()
 }
 
 // appendLines adds text to the reply pane, one entry per line.
@@ -268,14 +315,14 @@ func (s *Session) appendLines(text string) {
 	if text == "" {
 		return
 	}
-	s.frame.Reply = append(s.frame.Reply, text)
+	s.addReply(text)
 }
 
 // Note adds a line to the reply pane, for a message the client generates such
 // as a bootstrap confirmation. The line is shown inside the frame rather than
 // written before it, so that it is not cleared by the first repaint.
 func (s *Session) Note(format string, args ...any) {
-	s.frame.Reply = append(s.frame.Reply, fmt.Sprintf(format, args...))
+	s.addReply(fmt.Sprintf(format, args...))
 	s.draw()
 }
 
@@ -332,18 +379,25 @@ func (s *Session) Run() error {
 		}
 
 		line, err := s.editor.ReadLine()
+		// The composed line is taken before the frame is cleared of it. The
+		// editor reports the line after every keystroke, so the frame holds
+		// what was in hand when the interrupt arrived. Clearing it first
+		// left nothing to test, which made the test below always true and
+		// ended the session on every interrupt.
+		composed := s.frame.Input
+		s.mu.Lock()
 		s.frame.Input = ""
 		s.frame.Pasted = nil
+		s.mu.Unlock()
 		switch {
 		case errors.Is(err, ErrEndOfInput):
 			return nil
 		case errors.Is(err, ErrInterrupt):
-			if s.frame.Input == "" {
+			if composed == "" {
 				return ErrQuit
 			}
 			// An interrupt with text in hand abandons the line rather than
 			// the session, which is what a shell does.
-			s.frame.Input = ""
 			s.draw()
 			continue
 		case err != nil:
@@ -451,7 +505,7 @@ func (s *Session) command(line string) bool {
 	if c := lookupCommand(name); c != nil {
 		return c.run(s, args[1:])
 	}
-	s.frame.Reply = append(s.frame.Reply, "unknown command: "+name)
+	s.addReply("unknown command: " + name)
 	return false
 }
 
@@ -480,7 +534,7 @@ func (s *Session) cmdHelp([]string) bool {
 // cmdClear empties the pane and the conversation behind it.
 func (s *Session) cmdClear([]string) bool {
 	s.conv.Reset()
-	s.frame.Reply = nil
+	s.clearReply()
 	s.resetScroll()
 	return false
 }
@@ -532,7 +586,7 @@ func (s *Session) cmdModel(args []string) bool {
 // clears the very pane the report would be written to.
 func (s *Session) cmdNew([]string) bool {
 	s.conv.Reset()
-	s.frame.Reply = nil
+	s.clearReply()
 	s.resetScroll()
 	s.Note("conversation cleared")
 	return false
@@ -713,7 +767,7 @@ func (s *Session) showCandidates(res complete.Result) {
 // knowing when nothing works.
 func (s *Session) connect() {
 	if msg := s.credentialProblem(); msg != "" {
-		s.frame.Reply = append(s.frame.Reply, msg)
+		s.addReply(msg)
 		return
 	}
 
@@ -727,20 +781,19 @@ func (s *Session) connect() {
 
 	usage, err := s.client.KeyUsage(ctx)
 	if err != nil {
-		s.frame.Reply = append(s.frame.Reply, "connect failed: "+err.Error())
+		s.addReply("connect failed: " + err.Error())
 		return
 	}
 
 	s.conv.usage = *usage
 	s.updateStatus()
-	s.frame.Reply = append(s.frame.Reply,
-		fmt.Sprintf("connected: usage %g of %g", usage.Usage, usage.Limit))
+	s.addReply(fmt.Sprintf("connected: usage %g of %g", usage.Usage, usage.Limit))
 }
 
 // showUsage reports the usage against the key.
 func (s *Session) showUsage() {
 	if msg := s.credentialProblem(); msg != "" {
-		s.frame.Reply = append(s.frame.Reply, msg)
+		s.addReply(msg)
 		return
 	}
 	ctx, cancel := context.WithTimeout(s.ctx, 10*time.Second)
@@ -748,7 +801,7 @@ func (s *Session) showUsage() {
 
 	usage, err := s.client.KeyUsage(ctx)
 	if err != nil {
-		s.frame.Reply = append(s.frame.Reply, "usage failed: "+err.Error())
+		s.addReply("usage failed: " + err.Error())
 		return
 	}
 	s.conv.usage = *usage
@@ -758,7 +811,7 @@ func (s *Session) showUsage() {
 	if f := usage.FreeModelRequests; f != nil {
 		line += fmt.Sprintf(", free models %g of %g", f.Used, f.Limit)
 	}
-	s.frame.Reply = append(s.frame.Reply, line)
+	s.addReply(line)
 }
 
 // filtering reports whether the model filter is open.
@@ -921,10 +974,10 @@ func (s *Session) modelListKey(b byte) {
 func (s *Session) chooseModel(args []string) {
 	if len(args) == 0 {
 		if s.conv.Model() == "" {
-			s.frame.Reply = append(s.frame.Reply, "no model is selected: /model NAME")
+			s.addReply("no model is selected: /model NAME")
 			return
 		}
-		s.frame.Reply = append(s.frame.Reply, "model: "+s.conv.Model())
+		s.addReply("model: " + s.conv.Model())
 		return
 	}
 
@@ -933,7 +986,7 @@ func (s *Session) chooseModel(args []string) {
 	// slug may be given without the vendor prefix being required.
 	s.conv.SetModel(name)
 	s.updateStatus()
-	s.frame.Reply = append(s.frame.Reply, "model: "+s.conv.Model())
+	s.addReply("model: " + s.conv.Model())
 }
 
 // credentialProblem reports why a request cannot be sent.
@@ -974,17 +1027,23 @@ func (s *Session) endpoint() string {
 // The reply is appended a token at a time rather than once at the end, so that
 // a slow model does not leave the interface apparently idle while it works.
 func (s *Session) send(line string) {
+	// Every exit from a turn ends on a painted frame, including the two early
+	// refusals and every error path. The deferral is registered before either
+	// refusal is tested, so a turn that never reached the request is as painted
+	// as one that did, and it is the last thing to run so that it paints the
+	// state the exits above left behind.
+	defer s.paintFinal()
+
 	if msg := s.credentialProblem(); msg != "" {
-		s.frame.Reply = append(s.frame.Reply, "> "+line, msg)
+		s.addReply("> "+line, msg)
 		return
 	}
 	if s.conv.Model() == "" {
-		s.frame.Reply = append(s.frame.Reply,
-			"> "+line, "(no model is selected: /model NAME)")
+		s.addReply("> "+line, "(no model is selected: /model NAME)")
 		return
 	}
 
-	s.frame.Reply = append(s.frame.Reply, "> "+line)
+	s.addReply("> " + line)
 	s.updateStatus()
 	s.draw()
 
@@ -1010,11 +1069,13 @@ func (s *Session) send(line string) {
 	// including a failure, so that a stale partial reply is not left on
 	// screen behind the error.
 	defer func() {
+		s.mu.Lock()
 		s.frame.Busy = false
 		s.frame.Partial = ""
 		s.frame.Status.State = stateIdle
+		s.mu.Unlock()
 		if verbose {
-			s.frame.Reply = append(s.frame.Reply, "[stream] "+report.summary())
+			s.addReply("[stream] " + report.summary())
 		}
 	}()
 
@@ -1044,13 +1105,13 @@ func (s *Session) send(line string) {
 	})
 
 	if err != nil {
-		s.frame.Reply = append(s.frame.Reply, "(error) "+err.Error())
+		s.addReply("(error) " + err.Error())
 		return
 	}
 
 	text := reply.String()
 	if text == "" {
-		s.frame.Reply = append(s.frame.Reply, "(the model returned nothing)")
+		s.addReply("(the model returned nothing)")
 		return
 	}
 	// The reply is appended rather than written over the last line, since
@@ -1078,20 +1139,25 @@ func (s *Session) stream(partial string) {
 	s.frame.Partial = partial
 	s.mu.Unlock()
 
-	s.paintDue()
-	s.paint()
+	// The repaint is coalesced like any other. A deferred one is owned by the
+	// timer rather than by the next delta, so a reply that stops arriving is
+	// still drawn rather than left owed to a stream that has finished.
+	s.draw()
 }
 
 // updateStatus refreshes the fields the client knows.
 func (s *Session) updateStatus() {
-	s.frame.Status.Provider = providerName
-	s.frame.Status.Model = orDash(s.conv.Model())
-	s.frame.Status.State = stateIdle
-	s.frame.Status.Host = hostname()
+	// The figures are worked out before the lock is taken. Looking the window
+	// up can reach the network on the first request for a model, and holding
+	// the lock across that would stop the twiddle turning for the length of
+	// the call, which is the one thing the twiddle is there to show.
+	model := s.conv.Model()
+	host := hostname()
 
+	var credits string
 	u := s.conv.Usage()
 	if u.Limit > 0 {
-		s.frame.Status.Credits = fmt.Sprintf("%.2f/%.0f", u.Usage, u.Limit)
+		credits = fmt.Sprintf("%.2f/%.0f", u.Usage, u.Limit)
 	}
 
 	// The window is looked up on every repaint, which is cheap because it is
@@ -1099,18 +1165,41 @@ func (s *Session) updateStatus() {
 	// figure is shown as a percentage, since what a reader wants to know is how
 	// close the conversation is to needing a compaction rather than the raw
 	// count.
-	if window := s.windows.lookup(s.ctx, s, s.conv.Model()); window > 0 {
-		share := float64(s.conv.EstimatedTokens()) / float64(window) * 100
-		s.frame.Status.Context = fmt.Sprintf("%.0f%%", share)
-	} else {
-		s.frame.Status.Context = ""
+	var share string
+	if window := s.windows.lookup(s.ctx, s, model); window > 0 {
+		share = fmt.Sprintf("%.0f%%",
+			float64(s.conv.EstimatedTokens())/float64(window)*100)
 	}
+
+	var tokensIn, tokensOut string
 	if s.conv.TokensIn() > 0 {
-		s.frame.Status.TokensIn = tokenCount(s.conv.TokensIn())
+		tokensIn = tokenCount(s.conv.TokensIn())
 	}
 	if s.conv.TokensOut() > 0 {
-		s.frame.Status.TokensOut = tokenCount(s.conv.TokensOut())
+		tokensOut = tokenCount(s.conv.TokensOut())
 	}
+
+	// The assignment is taken under the lock, since the paint path copies the
+	// whole frame under it and a status field written while that copy is being
+	// taken is a field read halfway written.
+	s.mu.Lock()
+	s.frame.Status.Provider = providerName
+	s.frame.Status.Model = orDash(model)
+	// The state is read from the frame rather than set to idle. The
+	// accounting arrives on the last chunk of a turn, so writing idle here
+	// reported a request finished while its reply was still arriving and the
+	// twiddle still turning.
+	if s.frame.Busy {
+		s.frame.Status.State = stateWorking
+	} else {
+		s.frame.Status.State = stateIdle
+	}
+	s.frame.Status.Host = host
+	s.frame.Status.Credits = credits
+	s.frame.Status.Context = share
+	s.frame.Status.TokensIn = tokensIn
+	s.frame.Status.TokensOut = tokensOut
+	s.mu.Unlock()
 }
 
 // orDash returns the value, or a dash when it is empty.
@@ -1130,7 +1219,15 @@ func keyState(c *openrouter.Client) string {
 }
 
 // beginWork starts the twiddle.
+//
+// The state is set here rather than by the first streamed delta, since the
+// wait for that first delta is the longest part of a turn and is where the
+// interface would otherwise look finished while it waited.
 func (s *Session) beginWork() {
+	s.mu.Lock()
+	s.frame.Busy = true
+	s.frame.Status.State = stateWorking
+	s.mu.Unlock()
 	s.spinner.Start(func(frame string) {
 		s.mu.Lock()
 		s.frame.Spinner = frame
@@ -1140,10 +1237,17 @@ func (s *Session) beginWork() {
 }
 
 // endWork stops the twiddle and clears it from the frame.
+//
+// The busy bit is cleared here rather than by each caller that started the
+// work, since a caller that forgot would leave the interface reporting work in
+// progress for the rest of the session. A connection test clears it the same
+// way a request does, because it is work in progress either way.
 func (s *Session) endWork() {
 	s.spinner.Stop()
 	s.mu.Lock()
 	s.frame.Spinner = ""
+	s.frame.Busy = false
+	s.frame.Status.State = stateIdle
 	s.mu.Unlock()
 	s.draw()
 }
@@ -1167,10 +1271,15 @@ func (s *Session) paint() {
 	s.repaint.Lock()
 	defer s.repaint.Unlock()
 
+	if s.closed {
+		return
+	}
+
 	// A repaint within the interval is deferred rather than refused, so the
 	// state drawn at the end of it is the most recent one and nothing is lost.
 	if since := time.Since(s.lastPaint); since < minPaintInterval {
 		s.paintPending = true
+		s.flushIn(minPaintInterval - since)
 		return
 	}
 
@@ -1178,24 +1287,65 @@ func (s *Session) paint() {
 	s.lastPaint = time.Now()
 }
 
-// paintDue runs a deferred repaint once the interval has passed.
+// flushIn arranges for a deferred repaint to be drawn in the given time.
 //
-// It is called from the same place a fresh repaint would be, so a reply that
-// keeps arriving continues to be drawn at the bounded rate rather than falling
-// behind.
-func (s *Session) paintDue() {
+// The timer is the owner of the deferred repaint. Deferring one and leaving it
+// unowned is what loses a frame: the work that asked for it finishes, the
+// twiddle with it, and the next repaint comes from the reader typing, so the
+// reply appears all at once rather than as it arrived. One timer serves every
+// repaint deferred before it fires, since the frame is read at the moment it is
+// drawn and the newest state is the one worth drawing.
+//
+// The caller holds repaint.
+func (s *Session) flushIn(d time.Duration) {
+	if s.flush != nil {
+		return
+	}
+	s.flush = time.AfterFunc(d, s.flushDue)
+}
+
+// flushDue draws a repaint that has waited out the interval.
+func (s *Session) flushDue() {
 	s.repaint.Lock()
 	defer s.repaint.Unlock()
 
-	if !s.paintPending {
-		return
-	}
-	if since := time.Since(s.lastPaint); since < minPaintInterval {
+	s.flush = nil
+	if s.closed || !s.paintPending {
 		return
 	}
 	s.paintPending = false
 	s.paintNow()
 	s.lastPaint = time.Now()
+}
+
+// paintFinal draws the frame at the end of a turn, whatever the rate is.
+//
+// The bound on the repaint rate keeps a fast reply readable, and it is not
+// changed here. What it must not decide is whether the end of a turn is drawn at
+// all. Nothing is left to ask for that repaint once the work is over, so a
+// repaint deferred here is owed to nobody and the reply in place, the status
+// back to idle and the cleared twiddle stay off the screen until the reader
+// types. Every exit from a turn ends on one of these, so a turn that failed is
+// as painted as a turn that succeeded.
+func (s *Session) paintFinal() {
+	s.repaint.Lock()
+	defer s.repaint.Unlock()
+
+	s.stopFlush()
+	s.paintPending = false
+	if s.closed {
+		return
+	}
+	s.paintNow()
+	s.lastPaint = time.Now()
+}
+
+// stopFlush cancels a repaint that is owed. The caller holds repaint.
+func (s *Session) stopFlush() {
+	if s.flush != nil {
+		s.flush.Stop()
+		s.flush = nil
+	}
 }
 
 // minPaintInterval is the shortest time between two repaints.
@@ -1208,6 +1358,13 @@ const minPaintInterval = 40 * time.Millisecond
 // paintNow renders the frame without coalescing.
 func (s *Session) paintNow() {
 	s.mu.Lock()
+	// A frame drawn after the terminal has been restored lands on whatever is
+	// behind the interface, which is the shell. Repaint is held throughout, so
+	// the check is made against the same guard Close set it under.
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
 	// The pane carries a hint only while it is empty. Once a conversation has
 	// started the hint is in the way, and the opening instructions are what
 	// should be read.

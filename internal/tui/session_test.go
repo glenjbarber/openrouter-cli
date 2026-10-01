@@ -1,8 +1,12 @@
 package tui
 
 import (
+	"errors"
+	"io"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/glenjbarber/openrouter-cli/internal/complete"
 )
@@ -237,5 +241,237 @@ func TestQuitAndExitAreTheSameCommand(t *testing.T) {
 	}
 	if quit != exit {
 		t.Error("/quit and /exit resolve to different commands, so one would leave and the other would not")
+	}
+}
+
+// A write to the frame and the paint path that copies it must not be able to
+// run at the same time.
+//
+// The paint path copies the whole frame under the lock, and it does so while
+// the twiddle turns and while a deferred repaint is drawn, which is most of
+// the time a turn is in flight. A pane write made without the lock is
+// therefore a write the copy can be taken across, and the reader sees a
+// half-written exchange rather than a late one.
+//
+// The race is not visible from one goroutine, so it is not left to the race
+// detector alone. A write is made while the lock the paint path holds is held
+// on purpose, and the write has to wait for it.
+func TestPaneWriteWaitsForTheLockThePaintPathHolds(t *testing.T) {
+	s, capture := auditSession(t, auditStream)
+
+	s.mu.Lock()
+	done := make(chan struct{})
+	go func() {
+		s.addReply("written while the paint path held the lock")
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		s.mu.Unlock()
+		t.Fatal("a pane write went in while the paint path held the lock")
+	case <-time.After(50 * time.Millisecond):
+	}
+	s.mu.Unlock()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the pane write did not complete once the lock was released")
+	}
+
+	s.draw()
+	if got := auditLastFrame(t, capture); !strings.Contains(got, "written while the paint path held the lock") {
+		t.Errorf("the line the write was waiting for is not on the screen.")
+	}
+}
+
+// The same lock guards the status fields, which the request goroutine writes
+// while the paint path is copying the frame it read them from.
+func TestStatusWriteWaitsForTheLockThePaintPathHolds(t *testing.T) {
+	s, _ := auditSession(t, auditStream)
+
+	s.mu.Lock()
+	done := make(chan struct{})
+	go func() {
+		s.updateStatus()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		s.mu.Unlock()
+		t.Fatal("the status was written while the paint path held the lock")
+	case <-time.After(50 * time.Millisecond):
+	}
+	s.mu.Unlock()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the status write did not complete once the lock was released")
+	}
+}
+
+// interruptSession returns a session reading its keys from a pipe, with the
+// callbacks Start installs, so that a key can be delivered the way a terminal
+// would deliver it rather than by calling the path under test directly.
+func interruptSession(t *testing.T, keys string) (*Session, func() string) {
+	t.Helper()
+	s, capture := auditSession(t, auditStream)
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("creating the input pipe: %v", err)
+	}
+	t.Cleanup(func() { reader.Close(); writer.Close() })
+
+	s.editor = NewLineEditor(reader)
+	s.editor.OnChange = func(line string) {
+		s.mu.Lock()
+		s.frame.Input = line
+		s.mu.Unlock()
+		s.draw()
+	}
+
+	go func() {
+		io.WriteString(writer, keys)
+		writer.Close()
+	}()
+	return s, capture
+}
+
+// runSession drives Run on its own goroutine and reports what it returned,
+// bounded so that a session that never leaves fails rather than hangs.
+func runSession(t *testing.T, s *Session) error {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- s.Run() }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(10 * time.Second):
+		t.Fatal("the session did not leave")
+		return nil
+	}
+}
+
+// An interrupt with a line in hand abandons the line rather than the session,
+// which is what a shell does.
+//
+// The editor reports the composed line after every keystroke, so the frame
+// holds it. The frame was cleared before it was tested, which left nothing to
+// test and made every interrupt end the session whatever had been typed.
+func TestInterruptWithALineInHandAbandonsTheLine(t *testing.T) {
+	s, capture := interruptSession(t, "half a thought\x03")
+
+	if err := runSession(t, s); errors.Is(err, ErrQuit) {
+		t.Fatal("an interrupt with a line in hand ended the session")
+	}
+
+	if got := auditLastFrame(t, capture); strings.Contains(got, "> half a thought") {
+		t.Errorf("the abandoned line was sent to the model.\n%s", got)
+	}
+}
+
+// An interrupt with nothing in hand is the way out, and must still be one.
+// The two are told apart by what was in hand, so the fix for the case above
+// must not swallow this one.
+func TestInterruptWithNoLineInHandEndsTheSession(t *testing.T) {
+	s, _ := interruptSession(t, "\x03")
+
+	if err := runSession(t, s); !errors.Is(err, ErrQuit) {
+		t.Errorf("an interrupt with no line in hand returned %v, want ErrQuit", err)
+	}
+}
+
+// The status must not report a request finished while it is still running.
+//
+// The accounting arrives on the last chunk of a turn and calls updateStatus
+// with it, which wrote the idle state over the working one. The bar then read
+// idle while the reply was still arriving and the twiddle still turning, which
+// is the one reading the state field exists to prevent.
+func TestStatusReportsWorkWhileARequestIsInFlight(t *testing.T) {
+	s, _ := auditSession(t, auditStream)
+
+	s.mu.Lock()
+	s.frame.Busy = true
+	s.mu.Unlock()
+
+	s.updateStatus()
+
+	s.mu.Lock()
+	state := s.frame.Status.State
+	s.mu.Unlock()
+	if state != stateWorking {
+		t.Errorf("the state is %q with a request in flight, want %q", state, stateWorking)
+	}
+}
+
+// The other half of the same reading: with nothing in flight the bar is idle,
+// which is what the derivation must not lose.
+func TestStatusReportsIdleWithNoRequestInFlight(t *testing.T) {
+	s, _ := auditSession(t, auditStream)
+
+	s.updateStatus()
+
+	s.mu.Lock()
+	state := s.frame.Status.State
+	s.mu.Unlock()
+	if state != stateIdle {
+		t.Errorf("the state is %q with no request in flight, want %q", state, stateIdle)
+	}
+}
+
+// The twiddle and the state are set together, so the bar cannot show work in
+// progress with nothing turning or a twiddle turning with the bar idle.
+//
+// The wait for the first streamed delta is the longest part of a turn, and it
+// is the part where an interface that reports itself idle looks finished while
+// it is working.
+func TestWorkInProgressIsReportedBeforeTheFirstDelta(t *testing.T) {
+	s, _ := auditSession(t, auditStream)
+
+	s.beginWork()
+
+	s.mu.Lock()
+	busy, state := s.frame.Busy, s.frame.Status.State
+	s.mu.Unlock()
+	if !busy {
+		t.Error("a request in flight is not reported as one")
+	}
+	if state != stateWorking {
+		t.Errorf("the state is %q before the first delta arrives, want %q", state, stateWorking)
+	}
+
+	s.endWork()
+
+	s.mu.Lock()
+	busy, state = s.frame.Busy, s.frame.Status.State
+	s.mu.Unlock()
+	if busy {
+		t.Error("the request is still reported as in flight after the work ended")
+	}
+	if state != stateIdle {
+		t.Errorf("the state is %q after the work ended, want %q", state, stateIdle)
+	}
+}
+
+// The request for mouse reporting reaches the terminal itself.
+//
+// A bit was kept on the session to remember that reporting had been asked for,
+// and nothing ever read it, so it promised that a request made before the
+// terminal was ready would not be lost without providing for it. The request
+// goes straight to the screen instead, which is where it is acted on.
+func TestMouseRequestReachesTheTerminal(t *testing.T) {
+	s, _ := auditSession(t, auditStream)
+
+	s.setMouse(true)
+	if !s.screen.Mouse() {
+		t.Error("mouse reporting was asked for and the screen does not report it on")
+	}
+	s.setMouse(false)
+	if s.screen.Mouse() {
+		t.Error("mouse reporting was asked to stop and the screen still reports it on")
 	}
 }
