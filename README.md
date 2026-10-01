@@ -1,2 +1,269 @@
 # openrouter-cli
-OpenRouter.AI CLI Client written in Go
+
+A command-line client for the OpenRouter.AI API, written in Go.
+
+`openrouter-cli` provides an interactive terminal interface in the style of Codex,
+ChatGPT, Claude, and Perplexity, along with non-interactive commands suitable for
+use in scripts and pipelines.
+
+## Status
+
+This project is in early development. The first release has not been scoped, and
+no release has been published. The README is updated as decisions are settled.
+
+## Requirements
+
+Go 1.26 or later is required to build from source.
+
+FreeBSD is the primary target platform. Best effort is made for other Unix-like
+systems, and macOS is a supported target. Windows support is planned.
+
+### Build dependencies
+
+Build dependencies are required to compile the client and to run the scanning
+tools in the test suite. They are not required to run a released binary.
+
+| Dependency          | Purpose                                              |
+| ------------------- | ---------------------------------------------------- |
+| `go`                | The Go toolchain.                                    |
+| `protoc`            | The protocol buffer compiler, used by the generators. |
+| `gmake`             | GNU Make, used by the test entry point.              |
+| `cc`                | A C compiler, required for `go test -race`.          |
+
+On FreeBSD the corresponding packages are `go`, `protobuf`, `gmake`, and `clang`.
+
+The generated code is committed to the repository, so `protoc` is required only
+when a `.proto` file is added or changed, and not for an ordinary build.
+
+### Runtime dependencies
+
+A released binary is statically linked and has no runtime dependencies beyond a
+supported platform and a C library on Windows. The following are required at
+runtime, and are not build dependencies.
+
+| Requirement          | Detail                                               |
+| -------------------- | ---------------------------------------------------- |
+| Configuration file   | A JSON file holding the API key, required at startup. |
+| Network access       | Reachability of the OpenRouter.AI API.                |
+| Supported terminal   | A terminal capable of the sequences the client uses.  |
+
+## Installation
+
+Installation instructions are pending and are added once a release is published.
+
+## Configuration
+
+Configuration is read from a JSON file. The file is treated as read-only input
+except during first-time setup, which is described below.
+
+### Location
+
+The configuration file is searched for in the following locations, in order.
+The first file found is used, and the search stops there.
+
+| Order | Path                                              |
+| ----- | ------------------------------------------------- |
+| 1     | `~/.openrouter-cli.json`                          |
+| 2     | `~/.config/openrouter-cli/openrouter-cli.json`    |
+
+The second path follows the XDG Base Directory Specification. When
+`XDG_CONFIG_HOME` is set, it is used in place of `~/.config`.
+
+The search does not merge files. When a file is found at an earlier location, the
+later locations are neither read nor consulted.
+
+### Permissions
+
+The configuration file must have mode `0600`, meaning readable and writable by
+the owner only. When the file has any other mode, the client refuses to start and
+explains why.
+
+The API key is a credential, and a group-readable or world-readable file would
+expose it to other accounts on the system. The check is a hard requirement rather
+than a warning, so a key cannot be leaked by an accidentally permissive mode that
+is never noticed.
+
+The check is performed on the file itself rather than on its parent directories,
+since directory permissions are commonly `0755` and are not a credential
+exposure on their own.
+
+When the file is created by the client, it is created with mode `0600`.
+
+### Format
+
+The file is JSON, which is parsed using the Go standard library and requires no
+external dependency. Two keys are recognized:
+
+| Key                   | Required | Description                                             |
+| --------------------- | -------- | ------------------------------------------------------- |
+| `OPENROUTER_API_KEY`  | Yes      | The API key used to authenticate against OpenRouter.AI. |
+| `OPENROUTER_URL_BASE` | No       | The base URL of the backend.                             |
+
+The keys are given in the same form as the equivalent environment variables,
+which keeps a value transferable between the file and the environment.
+
+An example, with the key redacted:
+
+```json
+{
+  "OPENROUTER_API_KEY": "sk-or-v1-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "OPENROUTER_URL_BASE": "https://openrouter.ai/api/v1"
+}
+```
+
+JSON is used rather than YAML because Go has no standard-library YAML parser, and
+a configuration file is not a place where a dependency is worth taking. The
+trade-off is that JSON does not permit comments, and that hand-editing requires
+strict punctuation, where a trailing comma is an error. The client writes the
+file with tab indentation so that it remains readable and produces a readable
+diff when it is changed.
+
+Unknown keys are ignored rather than treated as an error, so a file written for a
+newer version of the client is still readable by an older one.
+
+A file that is not valid JSON, or a file in which `OPENROUTER_API_KEY` is absent
+or empty, is an error, and the client exits with a diagnostic rather than
+falling back to a default.
+
+### First-time setup
+
+When no configuration file is found, or when a file is found that does not carry a
+setup key indicating that configuration is complete, the client prompts for the
+API key.
+
+The prompt allows the entry to be skipped. Skipping records that setup has been
+carried out, so the prompt is not shown again, while no credential is stored.
+
+The setup key name, and whether a skipped configuration is recorded distinctly
+from a completed one, are not yet settled.
+
+The client writes the configuration file when setup is completed or skipped, which
+is the only circumstance in which the file is written. The file is created with
+mode `0600`.
+
+### Endpoint
+
+The default base URL is:
+
+```
+https://openrouter.ai/api/v1
+```
+
+When `OPENROUTER_URL_BASE` is supplied, it overrides the default, which allows
+the client to be pointed at a proxy, a gateway, or a self-hosted deployment.
+
+The override is used verbatim when it includes a path. The `/api/v1` suffix is
+appended only when the override names a scheme and host with no path, such as
+`http://localhost:3000`.
+
+### Precedence
+
+The precedence between the configuration file, the process environment, and
+command-line flags is not yet settled. The configuration file is currently
+treated as authoritative, and the environment and flags are not yet defined.
+
+## Features
+
+### Status bar
+
+An interactive session displays a status bar showing the following fields:
+
+- Provider
+- Model
+- Reasoning
+- Branch
+- Status
+- Approval Method
+- Context used
+- Tokens used (input and output)
+- Hostname
+
+The final field set and ordering are not yet settled, and whether the ordering is
+configurable is also undecided.
+
+### Usage and quota meter
+
+Key usage and quota are displayed natively by the client. The meter is rendered
+in-process and is not written into the tmux status bar or maintained by an
+external helper or scheduled task. The data is read from the key endpoint.
+
+### Backgrounding and ephemeral chats
+
+A running chat may be backgrounded, which suspends it and returns the user to a
+prompt without discarding the conversation. A new ephemeral chat may then be
+started alongside the backgrounded one.
+
+An ephemeral chat is not persisted. It is discarded when the session ends, and
+it is not written to disk and is not listed among saved conversations. Its
+context is not carried into a subsequent chat, so a later conversation begins
+without the history of an earlier one.
+
+The behavior is intended to allow one thread to be set aside while another is
+worked on, without the set-aside thread being lost or contaminating the
+continuation. Backgrounded chats are retained within the running session, and
+the manner in which they are restored, listed, and resumed is not yet settled.
+
+### Tab completion
+
+Commands and configuration options are completed with the Tab key.
+
+### Terminal behavior
+
+The interface is designed to behave correctly with a combination of terminal and
+mouse, and within tmux.
+
+## License
+
+BSD 3-Clause. See [LICENSE](LICENSE).
+
+## Development
+
+### Test suite
+
+The project ships a scanning and test toolchain. The tools are tracked as module
+tool dependencies, so they are pinned in `go.mod` and are installed together with
+the module rather than being fetched by hand.
+
+Every tool is invoked through `go tool`, and no global installation is required:
+
+| Tool                                | Purpose                                              |
+| ----------------------------------- | ---------------------------------------------------- |
+| `staticcheck`                       | Bug-oriented static analysis.                          |
+| `errcheck`                          | Reports unchecked errors.                             |
+| `gosec`                             | Security analysis of the source.                      |
+| `govulncheck`                       | Reports known vulnerabilities in the dependency graph. |
+| `protoc-gen-go`                     | Generates Go code from a protocol buffer schema.      |
+| `protoc-gen-go-grpc`                | Generates gRPC bindings from a protocol buffer schema. |
+
+The `protoc-gen-go` and `protoc-gen-go-grpc` commands are provided by the modules
+`google.golang.org/protobuf` and `google.golang.org/grpc/cmd/protoc-gen-go-grpc`
+respectively. The second is a module in its own right, and the parent module
+`google.golang.org/grpc` does not contain the command.
+
+The generators are listed for completeness. The client communicates with the
+backend over a REST interface, so no schema exists yet and the two generators
+remain idle until one is added. They can be removed from the tool set if a
+REST-only design is confirmed.
+
+`govulncheck` reports on the standard library and the dependency graph rather
+than on the source, so it requires network access to the vulnerability database
+when it is run.
+
+### Layout
+
+The repository is laid out in the manner a FreeBSD port expects.
+
+| Path                | Contents                                              |
+| ------------------- | ----------------------------------------------------- |
+| `cmd/`              | One directory per executable, each holding a `main` package. |
+| `internal/`         | Packages that are not importable from outside the module. |
+| `doc/`              | Manual pages and additional documentation.            |
+| `files/`            | Auxiliary files consumed by the port, such as the pkg-descr. |
+| `test/`             | Test scripts and fixtures, including a `Vagrantfile` where one is used. |
+| `.github/workflows/`| Continuous integration definitions.                    |
+
+A port additionally expects a `Makefile` carrying the port metadata, such as
+`PORTNAME`, `DISTVERSION`, `CATEGORIES`, and `MAINTAINER`, along with the
+`distinfo` and `pkg-descr` entries. Those files are not yet written, and the
+`PORTVERSION` field is held until the first release is defined.
+
