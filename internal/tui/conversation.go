@@ -107,10 +107,17 @@ func (c *Conversation) Record(user, reply string) {
 //
 // The distinction matters: clearing the conversation is a normal action, while
 // losing the bootstrap document would silently change how the model behaves.
+//
+// A summary is a system turn as the instructions are, but it is recorded work.
+// Clearing a conversation is a request to stop carrying the work, and a
+// description of the work carried in its place would defeat it.
 func (c *Conversation) Reset() {
-	if len(c.messages) > 0 && c.messages[0].Role == openrouter.RoleSystem {
-		c.messages = c.messages[:1]
-		return
+	if len(c.messages) > 0 {
+		first := c.messages[0]
+		if first.Role == openrouter.RoleSystem && !isCompaction(first.Content) {
+			c.messages = c.messages[:1]
+			return
+		}
 	}
 	c.messages = nil
 }

@@ -126,6 +126,14 @@ func (s *Session) startDelegate(task string) {
 
 	d := NewDelegate(s.conv, task)
 
+	// The model and the client are taken here rather than inside the
+	// goroutine. The conversation a delegate was branched from is replaced when
+	// a thread starts or the in-cognito mode is turned on, and reading the
+	// field from the goroutine would be a race against the input goroutine
+	// doing that. The model in force when the question was asked is also the
+	// one the answer should come from.
+	model, client := s.conv.Model(), s.client
+
 	// The delegate is tracked so that leaving does not leave it writing to a
 	// frame nobody is drawing on.
 	s.mu.Lock()
@@ -141,7 +149,7 @@ func (s *Session) startDelegate(task string) {
 	s.draw()
 
 	go func() {
-		d.Run(s.ctx, s.client, s.conv.Model(), func(text string) {
+		d.Run(s.ctx, client, model, func(text string) {
 			s.mu.Lock()
 			// The partial answer replaces the last line rather than being
 			// appended, so a growing answer does not fill the pane with
@@ -158,10 +166,16 @@ func (s *Session) startDelegate(task string) {
 		s.frame.Delegate = ""
 		// The finished answer joins the pane as ordinary text. It is not
 		// added to the conversation, since a delegate keeps nothing.
-		if err != nil {
+		switch {
+		case err != nil:
 			s.frame.Reply = append(s.frame.Reply,
 				fmt.Sprintf("/delegate %s (error) %v", task, err))
-		} else {
+		case answer == "":
+			// An empty line would be indistinguishable from a question that
+			// was never asked, so the absence is said in the same words the
+			// request path uses.
+			s.frame.Reply = append(s.frame.Reply, "(the model returned nothing)")
+		default:
 			s.frame.Reply = append(s.frame.Reply, answer)
 		}
 		s.mu.Unlock()

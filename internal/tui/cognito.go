@@ -104,6 +104,12 @@ func setCognito(on bool) error {
 	if err := os.WriteFile(path, body, 0o600); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
+	// The mode is set on its own because a write leaves the mode of a file
+	// that is already there alone, so a marker left at a wider mode by an
+	// earlier version would be rewritten and stay wide.
+	if err := os.Chmod(path, 0o600); err != nil {
+		return fmt.Errorf("setting the mode on %s: %w", path, err)
+	}
 	return nil
 }
 
@@ -115,7 +121,7 @@ func setCognito(on bool) error {
 func (s *Session) toggleCognito() {
 	if s.cognito {
 		if err := setCognito(false); err != nil {
-			s.frame.Reply = append(s.frame.Reply, "(error) "+err.Error())
+			s.addReply("(error) " + err.Error())
 			return
 		}
 		s.cognito = false
@@ -128,27 +134,33 @@ func (s *Session) toggleCognito() {
 		// Restoring recording while keeping that history would leave the model
 		// still carrying it, which is what the mode was meant to prevent.
 		dropped := s.conv.DiscardRecorded()
-		s.frame.Reply = append(s.frame.Reply,
-			fmt.Sprintf("cognito mode off: recording again, %s discarded",
-				dropped))
+		s.addReply(fmt.Sprintf("cognito mode off: recording again, %s discarded",
+			dropped))
 		return
 	}
 
 	if err := setCognito(true); err != nil {
-		s.frame.Reply = append(s.frame.Reply, "(error) "+err.Error())
+		s.addReply("(error) " + err.Error())
 		return
 	}
 	s.cognito = true
+	// Both conversations are marked, since the mode is a statement about the
+	// session rather than about whichever conversation happens to be in force.
+	// Marking only the one in force would leave the main conversation
+	// recording, so a thread left open at the time would return the reader to a
+	// conversation that keeps what the mode promised to discard.
+	if s.mainConv != nil {
+		s.mainConv.setEphemeral()
+	}
 	s.conv.setEphemeral()
 	// A thread is already unrecorded, so saying so avoids the impression that
 	// the mode changed anything while it is in one.
 	if s.thread != nil {
-		s.frame.Reply = append(s.frame.Reply,
-			"cognito mode on: nothing is recorded. The thread already records nothing.")
+		s.addReply("cognito mode on: nothing is recorded. " +
+			"The thread already records nothing.")
 		return
 	}
-	s.frame.Reply = append(s.frame.Reply,
-		"cognito mode on: nothing is recorded from now on")
+	s.addReply("cognito mode on: nothing is recorded from now on")
 }
 
 // AdoptCognito reports whether a session should start in the mode.
@@ -166,6 +178,14 @@ func (s *Session) AdoptCognito() error {
 	}
 
 	s.cognito = true
+	// The conversation is marked in the same step as the flag, since the mode is
+	// reported as in force from the next note onwards. A session that adopted
+	// the marker and went on recording would keep work the reader was told was
+	// being discarded.
+	s.conv.setEphemeral()
+	if s.mainConv != nil && s.mainConv != s.conv {
+		s.mainConv.setEphemeral()
+	}
 	if st.crash {
 		s.Note("cognito mode was left on by a session that did not exit cleanly. " +
 			"It is on, and nothing will be recorded.")
