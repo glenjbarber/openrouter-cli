@@ -168,12 +168,14 @@ func (s *Session) compact(manual bool) {
 	}
 
 	before := s.conv.EstimatedTokens()
-	s.frame.Status.State = stateWorking
 	s.addReply("compacting the conversation...")
-	s.draw()
+	// The twiddle turns for the compaction as it does for a request, since it
+	// costs a request of its own and the frame would otherwise sit still for
+	// the length of it.
+	s.beginWork()
+	defer s.endWork()
 
 	summary, err := Summarise(s.ctx, s.client, s.conv.Model(), toSummarise)
-	s.frame.Status.State = stateIdle
 	if err != nil {
 		s.addReply("(error) " + err.Error())
 		return
