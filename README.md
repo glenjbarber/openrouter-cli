@@ -65,6 +65,21 @@ runtime, and are not build dependencies.
 
 Installation instructions are pending and are added once a release is published.
 
+A binary is built from a checkout with the Makefile, which is written in the
+syntax common to BSD make and GNU make:
+
+```sh
+make build          # compile into build/openrouter-cli
+make test           # run the test suite
+make check          # run the test suite under the race detector
+make lint           # static analysis and the format check
+make install        # copy into /usr/local/bin, honouring PREFIX
+make help           # list the targets
+```
+
+The build is stamped with the version through the linker, so `make build`
+followed by `openrouter-cli -version` reports the port version.
+
 ## Usage
 
 ### Bootstrap documents

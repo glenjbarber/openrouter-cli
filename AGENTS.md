@@ -185,9 +185,23 @@ The tree follows what a FreeBSD port expects.
 - `files/` holds port auxiliary files, including the pkg-descr.
 - `test/` holds test scripts and fixtures.
 - `.github/workflows/` holds CI definitions.
+- `Makefile` carries the port metadata and the developer targets.
 
-A port also expects a `Makefile` with port metadata, plus `distinfo` and
-`pkg-descr`. Those are not yet written.
+A port also expects `distinfo` and `pkg-descr`. The `pkg-descr` is held under
+`files/`, which is empty, and the `distinfo` is not yet written.
+
+### Build
+
+- The `Makefile` is written in the syntax common to BSD make and GNU make,
+  because the port host uses BSD make while a developer may reach for GNU make.
+  No GNU-only construct is used.
+- `$(shell ...)` is avoided for the same reason. The binary is therefore
+  rebuilt whenever the target is requested rather than only when a dependency
+  is newer, since a source list cannot be expanded into a dependency.
+- The Go toolchain version is not repeated in the `Makefile`. The directive in
+  `go.mod` is the source of it, and a second copy would drift.
+- Build output is written to `build/`, which is ignored, so that the binary
+  does not sit beside the directories a port expects.
 
 ## Open decisions
 
