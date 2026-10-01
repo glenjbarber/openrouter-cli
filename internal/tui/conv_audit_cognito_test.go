@@ -155,3 +155,26 @@ func TestCognitoOnInsideAThreadCoversTheMainConversation(t *testing.T) {
 		t.Error("the main conversation records while the mode is on")
 	}
 }
+
+// The marker is written at mode 0600. A file that is already there is not
+// brought to that mode by the write alone, so the mode is checked after one.
+func TestCognitoMarkerIsLeftAtSixHundred(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	path := filepath.Join(home, cognitoMarker)
+	if err := os.WriteFile(path, []byte("1"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := setCognito(true); err != nil {
+		t.Fatalf("setCognito: %v", err)
+	}
+
+	st, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if got := st.Mode().Perm(); got != 0o600 {
+		t.Errorf("marker mode = %#o, want 0600", got)
+	}
+}

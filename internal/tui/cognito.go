@@ -104,6 +104,12 @@ func setCognito(on bool) error {
 	if err := os.WriteFile(path, body, 0o600); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
+	// The mode is set on its own because a write leaves the mode of a file
+	// that is already there alone, so a marker left at a wider mode by an
+	// earlier version would be rewritten and stay wide.
+	if err := os.Chmod(path, 0o600); err != nil {
+		return fmt.Errorf("setting the mode on %s: %w", path, err)
+	}
 	return nil
 }
 
