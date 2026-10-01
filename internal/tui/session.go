@@ -1189,7 +1189,15 @@ func (s *Session) updateStatus() {
 	s.mu.Lock()
 	s.frame.Status.Provider = providerName
 	s.frame.Status.Model = orDash(model)
-	s.frame.Status.State = stateIdle
+	// The state is read from the frame rather than set to idle. The
+	// accounting arrives on the last chunk of a turn, so writing idle here
+	// reported a request finished while its reply was still arriving and the
+	// twiddle still turning.
+	if s.frame.Busy {
+		s.frame.Status.State = stateWorking
+	} else {
+		s.frame.Status.State = stateIdle
+	}
 	s.frame.Status.Host = host
 	s.frame.Status.Credits = credits
 	s.frame.Status.Context = share

@@ -384,3 +384,41 @@ func TestInterruptWithNoLineInHandEndsTheSession(t *testing.T) {
 		t.Errorf("an interrupt with no line in hand returned %v, want ErrQuit", err)
 	}
 }
+
+// The status must not report a request finished while it is still running.
+//
+// The accounting arrives on the last chunk of a turn and calls updateStatus
+// with it, which wrote the idle state over the working one. The bar then read
+// idle while the reply was still arriving and the twiddle still turning, which
+// is the one reading the state field exists to prevent.
+func TestStatusReportsWorkWhileARequestIsInFlight(t *testing.T) {
+	s, _ := auditSession(t, auditStream)
+
+	s.mu.Lock()
+	s.frame.Busy = true
+	s.mu.Unlock()
+
+	s.updateStatus()
+
+	s.mu.Lock()
+	state := s.frame.Status.State
+	s.mu.Unlock()
+	if state != stateWorking {
+		t.Errorf("the state is %q with a request in flight, want %q", state, stateWorking)
+	}
+}
+
+// The other half of the same reading: with nothing in flight the bar is idle,
+// which is what the derivation must not lose.
+func TestStatusReportsIdleWithNoRequestInFlight(t *testing.T) {
+	s, _ := auditSession(t, auditStream)
+
+	s.updateStatus()
+
+	s.mu.Lock()
+	state := s.frame.Status.State
+	s.mu.Unlock()
+	if state != stateIdle {
+		t.Errorf("the state is %q with no request in flight, want %q", state, stateIdle)
+	}
+}
