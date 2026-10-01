@@ -753,3 +753,15 @@ the session rather than to the object guarding it.
 two goroutines takes a second goroutine that the production paths do not create,
 so such a test would document a hazard rather than catch a regression. `make
 check` passes on the unmodified tree.
+
+## A fourth branch is held off main, and is superseded
+
+A concurrent session worked the same delegate shutdown defect in its own
+worktree, on the branch `fix/close-waits-delegate-fix`, and committed it there.
+The defect has since been fixed and merged here, so that branch carries a
+duplicate of work already on `main` and must not be merged. It is recorded here
+rather than deleted, since the worktree belongs to another session.
+
+The three branches held off `main` are now: `feature/upload-withdrawn`,
+`feature/model-list-cache-withdrawn`, and `fix/close-waits-delegate-fix`, the last
+of which is a duplicate rather than a withdrawal.
