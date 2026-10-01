@@ -109,14 +109,28 @@ openrouter-cli
 ```
 
 The interface draws a frame on the alternate screen, so the shell history and
-whatever was on the screen before are left untouched and restored on exit. The
-reply pane holds the conversation, the status bar sits above the input line, and
-the fields are Provider, Model, Reasoning, Branch, Status, Approval, Context,
-tokens in, and tokens out, followed by the hostname.
+whatever was on the screen before are left untouched and restored on exit.
 
-A field with no value yet is shown as a dash, and when the terminal is too
-narrow the fields are dropped from the end of the bar rather than allowed to
-wrap. A dropped field means the bar is narrow, not that the value is missing.
+The status bar sits above the input line, carrying Provider, Model, Status,
+Credits, the token counters, and the hostname:
+
+```
+Provider: openrouter.ai | Model: stealth/space-bunny-alpha | Status: idle | Credits: 0.42/5 | In: 1.2k | Out: 5.7k | claude1.lab3.home.arpa
+```
+
+`Status` reads `Working` while a request is in flight. `Credits` is the
+remaining allowance reported against the API key, which is not the conversation
+context; the token counters accumulate across the session.
+
+A field with no value yet is shown as a dash. Fields with no source in the
+client are not shown at all: `Branch`, `Reasoning`, and `Approval` were removed,
+since the client has no branching, no reasoning parameter, and no tool execution
+to approve.
+
+When the terminal is too narrow, fields are dropped rather than allowed to wrap.
+The order is by how much is lost: the token counters go first, then the
+allowance, and the hostname last, since it does not change while the session
+runs.
 
 The interface requires both stdout and stdin to be a terminal. A redirected run
 reports that and stops rather than writing escape sequences into the capture. A
