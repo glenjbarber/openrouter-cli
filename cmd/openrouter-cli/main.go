@@ -73,7 +73,6 @@ func run(args []string) error {
 			cfg.URLBase = keyErr.URLBase
 		}
 	}
-	_ = cfg
 
 	// The interface is entered only when both ends are a terminal. A
 	// redirected run reports why and stops rather than writing a frame into
