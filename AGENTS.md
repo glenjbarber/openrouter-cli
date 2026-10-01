@@ -354,6 +354,14 @@ so that a later change does not silently reverse it.
 - Each pane row is cleared before it is written. Without that, a repaint shorter
   than the frame before it leaves the tail of the longer one visible, so a
   reply appears twice.
+- A line that has been sent is followed by a blank row. Without it the reply
+  reads as a continuation of the question that asked for it, and two exchanges
+  in a row are not told apart at a glance. The row is a row of the pane rather
+  than padding drawn around the reply, since a selection out of the pane has to
+  yield the text with nothing in it.
+- The two refusals a turn can make, a missing credential and an unselected
+  model, are not followed by a blank row. The reason they give belongs with the
+  line that provoked it rather than under it.
 
 ### Getting started
 
