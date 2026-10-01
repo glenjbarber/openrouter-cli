@@ -306,7 +306,12 @@ func Render(f Frame, height, width int) []string {
 	if divided {
 		inputRows = inputRowsDivided
 	}
-	inputRows += pasteRows(f.Pasted, height-inputRows)
+	// The rows a paste takes are held onto, rather than recomputed at the
+	// point where it is drawn. The budget is what keeps the block from
+	// pushing the prompt off the bottom of the screen, so the drawing has to
+	// be held to the same figure the budget came to.
+	pasteBudget := pasteRows(f.Pasted, height-inputRows)
+	inputRows += pasteBudget
 	// The hint row is budgeted after the paste, so that a paste which has
 	// landed is still reported. A paste the reader cannot see reads as a lost
 	// paste, while a missing hint costs nothing beyond the row it was on.
@@ -452,15 +457,21 @@ func Render(f Frame, height, width int) []string {
 	// A paste occupies the rows above the prompt. They are appended after the
 	// pane is filled, so the pane gives up the rows rather than the frame
 	// overflowing and pushing the status bar off the screen.
-	for i, line := range f.Pasted {
-		if i >= maxPasteRows {
-			// The notice is indented the same way the lines it counts, so it
-			// is read as part of the block rather than as another message.
-			body = append(body, indent("", "  ", fmt.Sprintf(
-				"... %d more pasted lines", len(f.Pasted)-maxPasteRows), width))
-			break
-		}
-		body = append(body, indent("", "  ", line, width))
+	//
+	// The block is drawn to the rows the budget allowed rather than to the
+	// fixed maximum on its own. The maximum bounds a paste on a terminal with
+	// room to spare, and on one without it the block took rows the prompt
+	// needed, so a paste of any size could push the prompt off the bottom and
+	// leave the reader with no way to write a next message.
+	pasteShown, pasteNotice := pasteLayout(len(f.Pasted), pasteBudget)
+	for i := 0; i < pasteShown; i++ {
+		// The lines are indented the same way as the notice that counts the
+		// rest, so that the block reads as one thing rather than as a message.
+		body = append(body, indent("", "  ", f.Pasted[i], width))
+	}
+	if pasteNotice {
+		body = append(body, indent("", "  ", fmt.Sprintf(
+			"... %d more pasted lines", len(f.Pasted)-pasteShown), width))
 	}
 
 	// The hint row sits above the prompt, so the prompt stays the last row of
@@ -558,6 +569,34 @@ func pasteRows(pasted []string, room int) int {
 		rows++
 	}
 	return minInt(rows, maxInt(0, room))
+}
+
+// pasteLayout decides how many lines of a pasted block are drawn and whether
+// the rest of it are reported.
+//
+// The lines shown are bounded by the rows the budget allowed as well as by the
+// fixed maximum, since the maximum says what a terminal with room to spare
+// shows while the budget says what this one has. Where the budget is the
+// smaller of the two it is the one that decides, because the rows past it
+// would come out of the prompt.
+//
+// The overflow is reported whenever a row is left to report it in, since a
+// block cut without saying so reads as a paste that arrived short. A row spent
+// on the notice is a line of the block given up for it, which is the right
+// trade: a reader told a paste was cut can ask for the rest, while a reader
+// told nothing cannot know anything was lost.
+func pasteLayout(n, budget int) (shown int, notice bool) {
+	if n <= 0 || budget < 1 {
+		return 0, false
+	}
+	shown = minInt(minInt(n, maxPasteRows), budget)
+	if n <= shown {
+		return shown, false
+	}
+	if shown+1 > budget {
+		shown--
+	}
+	return shown, true
 }
 
 // Draw writes the frame to w, one line per row, home first.
