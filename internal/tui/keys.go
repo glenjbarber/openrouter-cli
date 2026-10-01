@@ -109,18 +109,12 @@ func (le *LineEditor) key(final byte, out *strings.Builder) {
 	}
 }
 
-// recall replaces the composed line with a remembered one.
-//
-// The builder is the line being composed, which belongs to the read loop
-// maxHistory is how many submitted lines are remembered.
-
-// recall walks the history and returns the line to compose.
-//
-// The up arrow walks back and the down arrow walks forward. At the ends it does
-// nothing rather than wrapping, since wrapping makes it impossible to tell
-// which end one is at. Walking past the newest restores the line that was being
 // applyRecall replaces the composed line with a remembered one, when there is
 // one to recall.
+//
+// The composition is not overwritten here, since the walk holds it aside and
+// walking back out restores it. Only the remembered line is reported, so that
+// the frame shows what the reader asked for.
 //
 // With nothing to recall the key has no action at all, and the line being
 // composed is left exactly as it is. The builder belongs to the read loop
@@ -135,14 +129,16 @@ func (le *LineEditor) applyRecall(back bool, out *strings.Builder) {
 
 	out.Reset()
 	out.WriteString(line)
-	// The composition follows the recall, so that a later recall knows where
-	// in the walk the user is rather than treating every key as a new start.
-	le.composing = line
 	if le.OnChange != nil {
 		le.OnChange(line)
 	}
 }
 
+// walkHistory moves through the history and returns the line to compose.
+//
+// The up arrow walks back and the down arrow walks forward. At the ends it does
+// nothing rather than wrapping, since wrapping makes it impossible to tell
+// which end one is at. Walking past the newest restores the line that was being
 // composed rather than losing it.
 func (le *LineEditor) walkHistory(back bool) (string, bool) {
 	if len(le.history) == 0 {
@@ -155,7 +151,13 @@ func (le *LineEditor) walkHistory(back bool) (string, bool) {
 		if le.historyAt == 0 {
 			return "", false
 		}
-
+		if le.historyAt == len(le.history) {
+			// The walk is leaving the line being composed, so it is kept
+			// aside for the walk back out. Taking the composition from here
+			// rather than from the recalled line is what makes walking
+			// forward past the newest resume it.
+			le.recalled = le.composing
+		}
 		le.historyAt--
 		return le.history[le.historyAt], true
 	}
@@ -169,6 +171,7 @@ func (le *LineEditor) walkHistory(back bool) (string, bool) {
 		// and the composition resumes.
 		line := le.recalled
 		le.recalled = ""
+		le.composing = line
 		return line, true
 	}
 	return le.history[le.historyAt], true

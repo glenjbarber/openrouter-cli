@@ -319,6 +319,18 @@ func (le *LineEditor) ReadLine() (string, error) {
 	var out strings.Builder
 	var pending []byte
 
+	// A paste that has landed belongs to the line it landed in. Every path
+	// out of this loop other than a submit abandons it, so that text the
+	// reader discarded with a control character is not prepended to whatever
+	// they type next. The submit path takes the paste out of the editor
+	// itself and sets the flag, so the two cannot disagree.
+	submitted := false
+	defer func() {
+		if !submitted {
+			le.pasted = nil
+		}
+	}()
+
 	for {
 		b, err := le.readKey()
 
@@ -388,11 +400,13 @@ func (le *LineEditor) ReadLine() (string, error) {
 			if len(le.pasted) > 0 {
 				lines := le.pasted
 				le.pasted = nil
+				submitted = true
 				if typed := out.String(); typed != "" {
 					lines = append(lines, typed)
 				}
 				return strings.Join(lines, "\n"), nil
 			}
+			submitted = true
 			return out.String(), nil
 		case keyTab:
 			// A control key abandons a rune that has not arrived whole, so
