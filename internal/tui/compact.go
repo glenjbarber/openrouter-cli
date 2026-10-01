@@ -191,11 +191,26 @@ func (s *Session) compact(manual bool) {
 // window is refused by the backend and costs the turn. Compacting beforehand
 // means the request is sent smaller rather than not sent at all.
 func (s *Session) maybeCompact() {
+	s.maybeCompactFor(nil)
+}
+
+// maybeCompactFor runs a compaction when the conversation and the messages
+// about to be sent have grown too large.
+//
+// It is called before every request of a turn rather than once before the
+// first, since a turn that called tools makes several requests and the result
+// of one is usually bigger than the question that asked for it. An estimate
+// taken once at the start of the turn would not see any of it.
+func (s *Session) maybeCompactFor(inflight []openrouter.Message) {
 	if s.client == nil || s.conv.Model() == "" {
 		return
 	}
 	window := s.windows.lookup(s.ctx, s, s.conv.Model())
-	if !shouldCompact(window, s.conv.Turns(), s.conv.EstimatedTokens()) {
+	// The turns in flight count towards the threshold as well as towards the
+	// estimate, since a turn holding several results is short of the turn
+	// count on its own and would otherwise be left alone however large it grew.
+	turns := s.conv.Turns() + len(inflight)
+	if !shouldCompact(window, turns, s.conv.EstimatedTokensWith(inflight)) {
 		return
 	}
 	s.compact(false)

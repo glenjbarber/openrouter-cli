@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -20,6 +21,13 @@ import (
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+	// ToolCalls are the calls an assistant asked for, replayed as they were
+	// asked for, so that the model can see the work it set in motion. It is
+	// omitted on every message but an assistant one that called something.
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	// ToolCallID names the call a result answers. It is omitted elsewhere,
+	// since a result addressed to nothing is not a result.
+	ToolCallID string `json:"tool_call_id,omitempty"`
 }
 
 // The roles the API accepts.
@@ -27,6 +35,7 @@ const (
 	RoleSystem    = "system"
 	RoleUser      = "user"
 	RoleAssistant = "assistant"
+	RoleTool      = "tool"
 )
 
 // ChatRequest is a completion request.
@@ -37,6 +46,11 @@ const (
 type ChatRequest struct {
 	Model    string    `json:"model"`
 	Messages []Message `json:"messages"`
+	// Tools are the tools the model may call. The field is omitted when there
+	// are none, so that a session offering none is byte for byte the request
+	// it was before this field existed: a request is not improved by naming
+	// a list the model has nothing to choose from.
+	Tools []Tool `json:"tools,omitempty"`
 }
 
 // streamUsage is the token accounting reported on a streamed reply.
@@ -173,6 +187,10 @@ type StreamEvent struct {
 	// final choice alongside an empty delta. It is empty on every other
 	// event.
 	Finish string
+	// ToolCalls are the calls the model asked for, complete and in the order
+	// the model gave them. It is empty on every event but the one carrying
+	// them, and it is empty on a turn that called nothing.
+	ToolCalls []ToolCall
 }
 
 // The kinds a stream event can carry.
@@ -182,6 +200,7 @@ type StreamEvent struct {
 const (
 	EventDelta = "delta"
 	EventUsage = "usage"
+	EventTool  = "tool"
 	EventDone  = "done"
 	EventError = "error"
 	EventEnd   = "finish"
@@ -261,12 +280,107 @@ type streamChunk struct {
 	Choices []struct {
 		Delta struct {
 			Content string `json:"content"`
+			// ToolCalls are fragments of the calls the model asked for, and
+			// a fragment is what the field carries: the arguments arrive
+			// split across deltas and the name arrives in only the first of
+			// them. It is a list because the field is a list on the wire,
+			// even where a chunk carries a single call.
+			ToolCalls []streamToolCall `json:"tool_calls"`
 		} `json:"delta"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
+}
+
+// streamToolCall is one fragment of a call, as it appears in a delta.
+//
+// It is decoded separately from the ToolCall that reaches the caller rather
+// than as one, because a fragment is not a call. An identifier or a name is
+// present in the first fragment of a call and absent from every fragment after
+// it, so a fragment read as a call would be a call with no name.
+type streamToolCall struct {
+	Index    int              `json:"index"`
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function ToolCallFunction `json:"function"`
+}
+
+// toolCallAccumulator joins the fragments of the calls a turn asked for.
+//
+// The wire index is the only field every fragment carries, so it is what the
+// pieces are joined on. The alternative, joining on arrival, would interleave
+// two calls into one whenever a turn asked for more than one.
+type toolCallAccumulator struct {
+	byIndex map[int]ToolCall
+}
+
+// add gathers one delta worth of fragments.
+//
+// The identifier, the type and the name are taken from whichever fragment
+// carries them, and the first fragment to carry one wins, since no later
+// fragment repeats them. Taking them from the first fragment outright instead
+// would cost the caller its name wherever a model put it in any fragment but
+// that one. The arguments are appended in arrival order, which is the only
+// order they can be joined in.
+func (a *toolCallAccumulator) add(fragments []streamToolCall) {
+	if len(fragments) == 0 {
+		return
+	}
+	if a.byIndex == nil {
+		a.byIndex = make(map[int]ToolCall, len(fragments))
+	}
+	for _, fragment := range fragments {
+		call := a.byIndex[fragment.Index]
+		// The index is the key the call is gathered under, so it is written
+		// from the fragment rather than left at the zero value. A fragment
+		// carrying no index therefore joins index zero, since that is what
+		// an absent number decodes to.
+		call.Index = fragment.Index
+		if call.ID == "" {
+			call.ID = fragment.ID
+		}
+		if call.Type == "" {
+			call.Type = fragment.Type
+		}
+		if call.Function.Name == "" {
+			call.Function.Name = fragment.Function.Name
+		}
+		call.Function.Arguments += fragment.Function.Arguments
+		a.byIndex[fragment.Index] = call
+	}
+}
+
+// calls returns the accumulated calls in the order of the wire index, which is
+// the order the model gave them in.
+//
+// A call whose name never arrived is dropped, since there would be nothing to
+// run. It returns nothing rather than an empty set, so that a turn whose calls
+// were all fragments reports having called nothing rather than reporting a
+// call the caller would have to discover was not one.
+func (a *toolCallAccumulator) calls() []ToolCall {
+	if len(a.byIndex) == 0 {
+		return nil
+	}
+	indexes := make([]int, 0, len(a.byIndex))
+	for index := range a.byIndex {
+		indexes = append(indexes, index)
+	}
+	slices.Sort(indexes)
+
+	calls := make([]ToolCall, 0, len(indexes))
+	for _, index := range indexes {
+		call := a.byIndex[index]
+		if call.Function.Name == "" {
+			continue
+		}
+		calls = append(calls, call)
+	}
+	if len(calls) == 0 {
+		return nil
+	}
+	return calls
 }
 
 // maxStreamLine bounds a single line of the event stream.
@@ -294,6 +408,12 @@ func (c *Client) readStream(body io.Reader, onEvent func(StreamEvent)) error {
 	// the scan fail partway through a reply.
 	scanner.Buffer(make([]byte, 0, 64*1024), maxStreamLine)
 
+	// The calls a turn asked for are gathered across every delta that carried
+	// part of one and delivered once, at the terminator. A stream that fails
+	// before the terminator delivers none of them, since a call the model
+	// did not finish asking for is not a call.
+	var calls toolCallAccumulator
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "" || strings.HasPrefix(line, ":") {
@@ -316,6 +436,14 @@ func (c *Client) readStream(body io.Reader, onEvent func(StreamEvent)) error {
 
 		if payload == "[DONE]" {
 			sawDone = true
+			// The calls are delivered here rather than as they arrive,
+			// because a call arrives in fragments and a caller handed a
+			// fragment would have to reassemble it. The transport is the one
+			// place that knows how the fragments were framed, so the
+			// reassembling is done here rather than left to every caller.
+			if whole := calls.calls(); len(whole) > 0 {
+				onEvent(StreamEvent{Kind: EventTool, ToolCalls: whole})
+			}
 			onEvent(StreamEvent{Done: true, Kind: EventDone})
 			return nil
 		}
@@ -338,6 +466,9 @@ func (c *Client) readStream(body io.Reader, onEvent func(StreamEvent)) error {
 			onEvent(StreamEvent{Usage: chunk.Usage, Kind: EventUsage})
 		}
 		for _, choice := range chunk.Choices {
+			// The fragments are gathered and nothing is emitted, since no
+			// single delta carries a call a caller could run.
+			calls.add(choice.Delta.ToolCalls)
 			if choice.FinishReason != "" {
 				onEvent(StreamEvent{Kind: EventEnd, Finish: choice.FinishReason})
 			}

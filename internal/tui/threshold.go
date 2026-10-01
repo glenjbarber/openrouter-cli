@@ -119,9 +119,38 @@ func (c *Conversation) forSummary() []openrouter.Message {
 
 // EstimatedTokens guesses the size of the recorded conversation.
 func (c *Conversation) EstimatedTokens() int {
+	return estimateTokens(c.messages)
+}
+
+// EstimatedTokensWith guesses the size the conversation would be once the
+// given messages were recorded.
+//
+// The check runs inside a turn, where the messages about to be sent are not yet
+// part of the conversation. A tool result is the largest text an agentic turn
+// carries, so an estimate that ignored what was in flight would be wrong
+// exactly when the size of the result decides whether the next request fits.
+func (c *Conversation) EstimatedTokensWith(extra []openrouter.Message) int {
+	if len(extra) == 0 {
+		return estimateTokens(c.messages)
+	}
+	all := make([]openrouter.Message, 0, len(c.messages)+len(extra))
+	all = append(all, c.messages...)
+	all = append(all, extra...)
+	return estimateTokens(all)
+}
+
+// estimateTokens guesses the size of a set of turns.
+func estimateTokens(msgs []openrouter.Message) int {
 	chars := 0
-	for _, m := range c.messages {
+	for _, m := range msgs {
 		chars += len(m.Role) + len(m.Content) + 4
+		// The calls an assistant turn carries are counted with the turn they
+		// belong to. They are small beside a result, but they are text the
+		// next request replays, and a model that calls in a loop is the case
+		// where the estimate decides anything.
+		for _, call := range m.ToolCalls {
+			chars += len(call.Function.Name) + len(call.Function.Arguments) + len(call.ID)
+		}
 	}
 	// Four characters per token is an approximation, since counting exactly
 	// needs the model tokenizer. It is deliberately generous, so that

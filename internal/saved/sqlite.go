@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/glenjbarber/openrouter-cli/internal/openrouter"
@@ -89,7 +90,8 @@ CREATE TABLE IF NOT EXISTS meta (
 CREATE TABLE IF NOT EXISTS messages (
     seq     INTEGER PRIMARY KEY,
     role    TEXT NOT NULL,
-    content TEXT NOT NULL
+    content TEXT NOT NULL,
+    extra   TEXT
 );`)
 	return err
 }
@@ -122,8 +124,12 @@ func insert(db *sql.DB, s Session) error {
 		}
 	}
 	for i, m := range s.Messages {
-		if _, err := tx.Exec(`INSERT INTO messages (seq, role, content) VALUES (?, ?, ?)`,
-			i, m.Role, m.Content); err != nil {
+		extra, err := envelope(m)
+		if err != nil {
+			return fmt.Errorf("writing message %d: %w", i, err)
+		}
+		if _, err := tx.Exec(`INSERT INTO messages (seq, role, content, extra) VALUES (?, ?, ?, ?)`,
+			i, m.Role, m.Content, extra); err != nil {
 			return fmt.Errorf("writing message %d: %w", i, err)
 		}
 	}
@@ -168,7 +174,11 @@ func Read(path string) (*Session, error) {
 	if version == "" {
 		return nil, fmt.Errorf("%w: %s carries no version", ErrNotASession, path)
 	}
-	if version != formatVersion {
+	// A version below the oldest readable one is refused as firmly as a version
+	// above this one. Both are a schema this cannot interpret, and a file
+	// missing turns would read as a conversation in which the model never
+	// called anything, which is the same silence as a truncated file.
+	if version != formatVersion && version != oldestReadable {
 		return nil, fmt.Errorf("%w: %s is version %s, and this reads version %s",
 			ErrFuture, path, version, formatVersion)
 	}
@@ -202,7 +212,7 @@ func Read(path string) (*Session, error) {
 			return nil, fmt.Errorf("reading %s: the usage is not readable: %w", path, err)
 		}
 	}
-	if out.Messages, err = turns(db); err != nil {
+	if out.Messages, err = turns(db, version); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -235,13 +245,68 @@ func count(db *sql.DB, key string) (int, error) {
 	return n, nil
 }
 
+// envelope is the tool detail a message carries, held as one JSON document in
+// the extra column.
+//
+// A turn that called a tool has to carry the call, and a turn that answered one
+// has to carry the identifier it answers, or the pair cannot be put back
+// together. Both are written as a single envelope rather than as a column each,
+// for the reason the schema comment gives: a file that stays readable as role
+// and content in any SQLite tool is the whole point of the format.
+//
+// A message with nothing to add returns a nil value, which is stored as SQL
+// NULL. An empty string is not the same as no envelope, and a reader
+// distinguishing the two is what makes a future field possible.
+func envelope(m openrouter.Message) ([]byte, error) {
+	if len(m.ToolCalls) == 0 && m.ToolCallID == "" {
+		return nil, nil
+	}
+	b, err := json.Marshal(struct {
+		Calls      []openrouter.ToolCall `json:"calls,omitempty"`
+		AnswerToID string                `json:"answer_to,omitempty"`
+	}{m.ToolCalls, m.ToolCallID})
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+// unreads an envelope back onto a message. An absent or empty column leaves
+// the message as it was, which is the case for every turn that is ordinary
+// prose and for every file written before the column existed.
+func unreads(raw []byte, m *openrouter.Message) error {
+	text := strings.TrimSpace(string(raw))
+	if text == "" || text == "null" {
+		return nil
+	}
+	var e struct {
+		Calls      []openrouter.ToolCall `json:"calls"`
+		AnswerToID string                `json:"answer_to"`
+	}
+	if err := json.Unmarshal([]byte(text), &e); err != nil {
+		return err
+	}
+	m.ToolCalls = e.Calls
+	m.ToolCallID = e.AnswerToID
+	return nil
+}
+
 // turns returns the messages in the order they were written.
 //
 // The order is the sequence the messages were recorded in rather than the row
 // identifiers, so that a file written by a later version, or one that has had
 // rows deleted from it, still reads back in the order it was written in.
-func turns(db *sql.DB) ([]openrouter.Message, error) {
-	rows, err := db.Query(`SELECT role, content FROM messages ORDER BY seq`)
+//
+// The extra column is read only when the file has one. A version 1 file has
+// three columns and no envelope, and asking a version 1 file for a column it
+// does not carry is an error from the driver rather than an empty result, so
+// the two are read by different queries.
+func turns(db *sql.DB, version string) ([]openrouter.Message, error) {
+	query := `SELECT role, content, extra FROM messages ORDER BY seq`
+	if version == oldestReadable {
+		query = `SELECT role, content, NULL FROM messages ORDER BY seq`
+	}
+	rows, err := db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("reading the messages: %w", err)
 	}
@@ -250,8 +315,12 @@ func turns(db *sql.DB) ([]openrouter.Message, error) {
 	var out []openrouter.Message
 	for rows.Next() {
 		var m openrouter.Message
-		if err := rows.Scan(&m.Role, &m.Content); err != nil {
+		var extra []byte
+		if err := rows.Scan(&m.Role, &m.Content, &extra); err != nil {
 			return nil, fmt.Errorf("reading the messages: %w", err)
+		}
+		if err := unreads(extra, &m); err != nil {
+			return nil, fmt.Errorf("reading a message: %w", err)
 		}
 		out = append(out, m)
 	}

@@ -33,7 +33,21 @@ const Driver = "sqlite"
 // It is carried in every file so that a file written by a later version is
 // reported rather than read as though it were this one, which is the same
 // treatment the configuration file and the JSON bootstrap document get.
-const formatVersion = "1"
+//
+// Version 2 added a column to the message table, for the turns a tool call
+// makes. It is one nullable column rather than a column per field, so a file
+// stays readable as plain text in any SQLite tool, which is the reason the
+// format is a database rather than a file of prose.
+const formatVersion = "2"
+
+// oldestReadable is the earliest schema this package reads.
+//
+// A file written before the column was added is still read, and a file written
+// by a later version is still refused. The refusal is the important half: a
+// schema this cannot interpret must be reported rather than half-read, since a
+// conversation missing its tool turns reads as though the model never called
+// anything.
+const oldestReadable = "1"
 
 // Errors reported by the package.
 var (

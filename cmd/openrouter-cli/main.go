@@ -235,11 +235,18 @@ Commands, typed inside the interface:
   /compact           Summarise the conversation and carry on.
   /save NAME         Write the conversation to a file of its own.
   /load NAME         Resume a conversation saved with /save.
+  /tools            Report the tools the model is given, and where they reach.
   /mouse             Turn mouse reporting on or off, for wheel scrolling.
   /clear             Clear the pane.
   /quit, /exit       Leave the interface.
 
 Ctrl-C abandons the line being composed, or leaves the interface when the line
 is empty. Ctrl-D leaves when the line is empty.
+
+The model is given tools: it can read, write and list files under the working
+directory the client was started in, and can run git there. The git tool is
+read-only. /tools reports exactly what is on offer. Nothing else is reachable,
+and a thread or a cognito session offers the model nothing at all, since those
+record nothing.
 `)
 }
