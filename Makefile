@@ -95,10 +95,14 @@ tidy:
 # The terminal layer names ioctl requests that differ between the BSD family and
 # System V, so a change there breaks a platform that is not the one being
 # developed on. This target is what notices, since nothing else would.
+# The vet pass is included rather than the build alone, because a build does not
+# typecheck test files. A test file naming an ioctl that one platform does not
+# carry compiled everywhere and failed only where the constant was missing.
 crossbuild:
 	@for os in freebsd linux darwin netbsd openbsd dragonfly; do \
 		printf '%-10s ' $$os; \
 		GOOS=$$os GOARCH=amd64 $(GO) build ./... || exit 1; \
+		GOOS=$$os GOARCH=amd64 $(GO) vet ./... || exit 1; \
 		echo ok; \
 	done
 

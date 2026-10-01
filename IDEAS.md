@@ -92,28 +92,24 @@ maintainers to confirm.
 
 ## Not started
 
-Present as an empty worktree, or named but with no work in it. Remove the
-checkout and recreate it when the work begins.
+Written but not landed. The checkout exists and holds the work.
 
 | Worktree | Branch | Subject |
 | --- | --- | --- |
 | `completion` | `feature/completion` | Slash command completion on Tab. |
 | `markdown` | `feature/markdown` | Render headings, lists, and emphasis. |
-| `cmdqueue` | `feature/cmdqueue` | Not recorded. |
-| `mfilterfix` | `feature/mfilterfix` | Model filter, since merged. Stale. |
-| `noninteractive` | `feature/noninteractive` | Scripted, non-interactive use. |
-| `stopcancel` | `feature/stopcancel` | Cancelling a turn in flight. |
-
-`instructions` is listed under In progress rather than here, because the
-discrepancy it is blocked on needs an answer before it becomes work.
 
 `completion` and `markdown` have uncommitted work in them. `completion` is 129
 lines with no test file at all. `markdown` is 297 lines, unwired, also untested.
 Both need a rebase before they can land, and both need tests written.
 
-`cmdqueue`, `mfilterfix`, `noninteractive`, and `stopcancel` hold no changes and
-are stale checkouts at `cd761d5`. `instructions` is empty but is listed above,
-since it is blocked rather than abandoned.
+`instructions` is not listed here. It is empty, but it is blocked on a decision
+rather than abandoned, so it sits under In progress.
+
+`cmdqueue`, `mfilterfix`, `noninteractive`, and `stopcancel` held no changes and
+were removed, along with their branches, since nothing referenced them. A
+checkout with no changes is a stale one rather than work in progress, and the
+distinction is recorded under Worktrees in `AGENTS.md`.
 
 ## Notes
 

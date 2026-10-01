@@ -841,6 +841,15 @@ A port also expects `distinfo` and `pkg-descr`. The `pkg-descr` is held under
   ioctl requests that differ between the BSD family and System V, so a change
   there breaks a platform that is not the one being developed on, and nothing
   else would notice. Continuous integration runs it.
+- `make crossbuild` runs the vet pass as well as the build, because a build
+  does not typecheck test files. A test naming an ioctl that one platform does
+  not carry compiles everywhere and fails only where the constant is missing,
+  which is how a FreeBSD-only pty helper reached four other BSD platforms
+  without the build noticing.
+- The resize tests open a real pseudo-terminal, since a regular file reports a
+  fixed size and would pass whether the size were cached or re-read. The ioctl
+  numbers are spelled for FreeBSD only, and the other platforms skip rather
+  than fail. Nothing in the client is conditioned on the helper.
 - The termios ioctl names live in build-tagged files: the BSD spelling carries a
   trailing A where System V omits it. The window-size query is spelled the same
   everywhere, so only the termios constants are split.
