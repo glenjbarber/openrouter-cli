@@ -30,6 +30,7 @@ type rawFile struct {
 	APIKey  string `json:"OPENROUTER_API_KEY"`
 	URLBase string `json:"OPENROUTER_URL_BASE"`
 	Model   string `json:"OPENROUTER_MODEL"`
+	Bell    bool   `json:"OPENROUTER_BELL"`
 	// SetupKey keeps its name from the open decision about the setup state.
 	SetupKey bool `json:"setup_complete"`
 	// Mouse asks for mouse reporting. It is a preference rather than a
@@ -44,7 +45,11 @@ type Config struct {
 	// Model is the model requests are sent to when the session has not chosen
 	// one. It is empty when the file does not set it, which is not an error:
 	// the model may be chosen at runtime instead.
-	Model   string
+	Model string
+	// Bell reports whether the terminal bell is rung when a reply arrives. It
+	// is a preference rather than a mode: nothing else in the client changes
+	// because of it.
+	Bell    bool
 	URLBase string
 	// Path is the file the values were read from, empty when none was found.
 	Path string
@@ -68,6 +73,9 @@ var ErrNotFound = errors.New("no configuration file found")
 type ErrNoAPIKey struct {
 	// Path is the file that was read.
 	Path string
+	// Bell is the bell preference, carried through so a caller standing in a
+	// configuration does not lose it.
+	Bell bool
 	// Model is the model the file prefers, carried through so that the
 	// caller can stand in a configuration without losing the preference.
 	Model string
@@ -88,15 +96,19 @@ func (e *ErrNoAPIKey) Error() string {
 // The model is taken from the file even though the key is not, since a session
 // with no key cannot reach a model anyway and losing the preference would make
 // the file appear not to have been read.
-func Empty(model string) *Config {
-	return &Config{URLBase: DefaultURLBase, Model: strings.TrimSpace(model)}
+func Empty(model string, bell bool) *Config {
+	return &Config{
+		URLBase: DefaultURLBase,
+		Model:   strings.TrimSpace(model),
+		Bell:    bell,
+	}
 }
 
 // EmptyMouse returns a configuration that asks for mouse reporting without
 // carrying a credential, so that a file which cannot be read for its key is
 // not also a file whose other preferences are lost.
-func EmptyMouse(model string, mouse bool) *Config {
-	cfg := Empty(model)
+func EmptyMouse(model string, mouse, bell bool) *Config {
+	cfg := Empty(model, bell)
 	cfg.Mouse = mouse
 	return cfg
 }
@@ -172,6 +184,7 @@ func parse(path string) (*Config, error) {
 	cfg := &Config{
 		APIKey:  raw.APIKey,
 		Model:   strings.TrimSpace(raw.Model),
+		Bell:    raw.Bell,
 		URLBase: raw.URLBase,
 		Path:    path,
 		Skipped: raw.SetupKey && raw.APIKey == "",

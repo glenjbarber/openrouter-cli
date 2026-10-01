@@ -210,7 +210,7 @@ func TestParseDoesNotReportMalformedAsMissingKey(t *testing.T) {
 // Empty returns a usable configuration so the interface has an endpoint even
 // with no credential.
 func TestEmptyHasDefaultEndpoint(t *testing.T) {
-	cfg := Empty("")
+	cfg := Empty("", false)
 	if cfg.URLBase != DefaultURLBase {
 		t.Errorf("URLBase = %q, want %q", cfg.URLBase, DefaultURLBase)
 	}
@@ -222,7 +222,7 @@ func TestEmptyHasDefaultEndpoint(t *testing.T) {
 // The model survives a missing key, so a file carrying a preference is not
 // treated as though it had not been read.
 func TestEmptyKeepsModel(t *testing.T) {
-	cfg := Empty("stealth/space-bunny-alpha")
+	cfg := Empty("stealth/space-bunny-alpha", false)
 	if cfg.Model != "stealth/space-bunny-alpha" {
 		t.Errorf("Model = %q, want it preserved", cfg.Model)
 	}

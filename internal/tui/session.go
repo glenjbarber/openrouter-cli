@@ -43,6 +43,12 @@ type Session struct {
 	// leaving a thread restores it without a snapshot being taken here.
 	thread   *Ephemeral
 	mainConv *Conversation
+	// bellWanted reports that the terminal bell is rung when a reply arrives.
+	// It is a preference read from the configuration and changed at runtime,
+	// so that a user who did not ask for it never hears one.
+	bellWanted bool
+	// out is where the bell is written, which is the interface output.
+	out *os.File
 	// cognito reports that this session records nothing. The mode is in force
 	// because the user asked for it, or because it was left on by a crash,
 	// which is reported at startup rather than honoured silently.
@@ -90,6 +96,7 @@ func Start(out, in *os.File, title string) (*Session, error) {
 		conv:    NewConversation(),
 		windows: newContextLength(),
 		spinner: NewSpinner(),
+		out:     out,
 		ctx:     ctx,
 		cancel:  cancel,
 		frame: Frame{
@@ -309,6 +316,8 @@ func (s *Session) command(line string) bool {
 		s.frame.Reply = nil
 		s.resetScroll()
 		s.Note("conversation cleared")
+	case "/bell":
+		s.toggleBell()
 	case "/cognito":
 		s.toggleCognito()
 	case "/btw":
@@ -353,6 +362,7 @@ func helpText() string {
 		"/models            list the models the endpoint offers",
 		"/model [NAME]      show or choose the model, without an argument to list",
 		"/new               clear the conversation",
+		"/bell              ring the terminal bell on reply, on or off",
 		"/cognito           record nothing, on or off",
 		"/btw               start a thread branched from this conversation",
 		"/main              leave the thread and return to the conversation",
@@ -584,6 +594,9 @@ func (s *Session) send(line string) {
 	// that line is the question. Overwriting it loses the exchange and makes
 	// the pane show a reply with nothing that prompted it.
 	s.appendLines(text)
+	// The bell rings once the reply has finished arriving rather than when the
+	// request was sent, since the point of it is to say the answer is ready.
+	s.ringBell()
 	if s.thread != nil {
 		s.thread.Note()
 	}
