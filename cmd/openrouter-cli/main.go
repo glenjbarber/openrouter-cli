@@ -46,6 +46,13 @@ func run(args []string) error {
 		fmt.Fprintf(os.Stderr, "bootstrap: %s (%s)\n", doc.Path, doc.Format)
 	}
 
+	// A default is written when no configuration exists, so that the path and
+	// the file mode are established before the key is ever entered. An
+	// existing file is left alone.
+	if _, err := config.InstallDefault(); err != nil {
+		return err
+	}
+
 	// Configuration is resolved on every start so that a missing or
 	// misconfigured file is reported before any work is attempted.
 	cfg, err := config.Load()
