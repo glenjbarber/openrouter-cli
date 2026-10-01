@@ -11,16 +11,26 @@ itself.
 
 ## Last updated
 
-At `main` commit `4e8e481`, clean and in sync with `origin/main`. The three
-branches holding work are pushed: `feature/hintrow`, `feature/completion`, and
-`feature/markdown`.
+At `main` commit `3189907`, four commits ahead of `origin/main` and not pushed.
 
-Work in progress is `hintrow`, which does not build. `completion` and `markdown`
-hold written but untested work. The instruction search is blocked on a decision
-and has no worktree. Five stale worktrees were removed.
+Tab completion and markdown rendering have landed, merged with `--no-ff` behind
+`make lint`, `make check`, and `make crossbuild`. Each was built in a worktree
+on its own branch and each was verified after the merge rather than before it.
 
+**The worktrees this file described do not exist on this host.** There was no
+`~/openrouter-cli-worktrees`, no `hintrow` source, and no uncommitted `hintrow`,
+`completion`, or `markdown` code to recover: no stash, no dangling objects, and
+nothing anywhere under `/Users/gjb`. The three remote branches all pointed at
+commits already merged into `main`, so they never carried the work. The
+`hintrow` files described below existed on another machine and are gone.
+
+Work in progress is therefore `hintrow`, which has to be rebuilt from its
+description rather than resumed. The instruction search is blocked on a decision.
 The audit has not started. It waits on the backlog, since reviewing code that
 is about to change is wasted effort.
+
+Choices made during implementation that the maintainer has not confirmed are
+recorded under Awaiting confirmation.
 
 ## Ground rules
 
@@ -45,10 +55,19 @@ Merged into `main`.
 | Terminal resize | `ccf34c1` | Size re-read per repaint rather than cached. |
 | Pty test tag fix | `cef05a9` | FreeBSD-only helper, and the crossbuild target now vets. |
 | Working list | `5ed0eb1` | `IDEAS.md` at the repository root. |
+| Slash command completion | `c453b63` | Tab completes, from one table of command names. |
+| Markdown rendering | `3189907` | Headings, lists, and emphasis, rendered as plain text. |
 
 ## In progress
 
 ### The key hint row
+
+**The worktree and its files do not exist on this host and were not recoverable
+from it.** There is no `internal/tui/hintrow.go`, no `hintrow_test.go`, and no
+reference to `Hints` anywhere in the tree. Nothing is stashed, no dangling
+objects exist, and the remote branch `origin/feature/hintrow` points at the
+Terminal resize merge already shipped. The work below has to be written again
+from its description.
 
 Worktree `~/openrouter-cli-worktrees/hintrow`, branch `feature/hintrow`.
 
@@ -103,8 +122,11 @@ Written but not landed. The checkout exists and holds the work.
 
 | Worktree | Branch | Subject |
 | --- | --- | --- |
-| `completion` | `feature/completion` | Slash command completion on Tab. |
-| `markdown` | `feature/markdown` | Render headings, lists, and emphasis. |
+| none | none | Nothing remains in this section. |
+
+`completion` and `markdown` were listed here with uncommitted work in their
+worktrees. They have landed, see Shipped. The uncommitted code was not
+recoverable on this host and was written again from the description above.
 
 `completion` and `markdown` have uncommitted work in them. `completion` is 129
 lines with no test file at all. `markdown` is 297 lines, unwired, also untested.
@@ -228,6 +250,51 @@ integration would have failed it after the push instead.
 `make crossbuild` now runs `go vet` as well as `go build` for every target. The
 helper is FreeBSD-only and the other platforms skip. Both facts are recorded
 under Build in `AGENTS.md`.
+
+## Awaiting confirmation
+
+The record settles that rendered output is plain text and that a terminal
+selection yields it with no escape sequence and no padding. It does not settle
+how a construct should look within that plain text. The following were chosen
+during implementation and are marked `PROVISIONAL` at each site in the source.
+Each is the maintainer's to confirm or reverse.
+
+Markdown, in `internal/tui/markdown.go`:
+
+1. A heading keeps its marker as written, rather than being underlined, capped,
+   or separated by a blank row. No character is changed and no row is added.
+2. A closing hash run is left in the text: `## Title ##` renders as written.
+3. List markers are not normalised. `-`, `*`, `+`, `1.`, and `1)` all stand, and
+   the spaces after a marker collapse to one.
+4. A code span keeps its backticks, which is the plain text convention.
+5. Backslash escapes are passed through rather than consumed, so `\*x\*` is left
+   as written. This is the one place an escape is deliberately shown rather than
+   acted on, and it is the choice most worth a second opinion.
+6. A heading or list item folding onto a second row indents that row under the
+   first character of the text.
+7. A marker wider than the pane takes a row of its own and the text folds below.
+8. A seventh hash, a hash with no space after it, a marker run longer than three,
+   a bullet with no space, and an indent deeper than three are all treated as
+   prose, so a sentence mentioning one is never altered.
+
+Completion, in `internal/complete`:
+
+1. A Tab where completion does not apply writes a line to the pane rather than
+   inserting a literal tab. This may prove noisier than intended for a reader
+   composing prose.
+2. Configuration option names complete only as a whole single word on an
+   otherwise empty line, so a setting name is never rewritten into a message.
+3. Command arguments are never completed. The record gives no argument grammar
+   beyond `/model [NAME]` and `/delegate QUESTION`, so completing one would be
+   guessing. `/models` remains the discovery path.
+4. The five option names are written in `internal/complete` rather than exported
+   from `internal/config`. Renaming a setting means editing both, and the drift
+   risk is real.
+5. An empty line and a caret at the head of a line both report rather than
+   staying silent, so that Tab always says something.
+6. The candidate listing is one multi-line pane entry rather than one entry per
+   candidate, since search folds on stored entry boundaries. The heading wording
+   is the implementer's and is not specified anywhere.
 
 ## Outstanding
 
