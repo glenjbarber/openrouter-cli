@@ -172,11 +172,31 @@ func scrolledBy(offset, direction int) int {
 // SGR form can be held, since it is variable in length and is therefore the one
 // a short read can split.
 func mousePrefix(buf []byte) bool {
-	if len(buf) < 3 || buf[0] != keyEscape || buf[1] != '[' || buf[2] != '<' {
+	if len(buf) == 0 || buf[0] != keyEscape {
 		return false
 	}
-	// The fields after the marker are digits and semicolons, and the report
-	// ends at M or m. Any other byte means these are not a report at all.
+
+	// A prefix too short to tell a report from a lone escape is still a
+	// candidate. Over a slow link a report arrives one byte at a time, and a
+	// two-byte buffer cannot yet be recognised, so requiring three bytes here
+	// is what returned the opening escape as a key and ended the session.
+	if len(buf) < 3 {
+		return len(buf) == 1 || buf[1] == '['
+	}
+
+	// Beyond the bracket the form decides. A report is the angle form. The
+	// six-byte form is not held, since it is a fixed width and is taken whole
+	// or not at all. Anything else after the bracket is an arrow or another
+	// escape sequence, and holding it would swallow the key rather than a
+	// report.
+	if buf[2] != '<' {
+		return false
+	}
+
+	// The fields after the angle marker are digits and semicolons, and the
+	// report ends at M or m. Any other byte means these are not a report at
+	// all. A report that has ended is not held either: it is taken whole by
+	// the caller rather than being waited for.
 	for i := 3; i < len(buf); i++ {
 		switch c := buf[i]; {
 		case c >= '0' && c <= '9', c == ';':
