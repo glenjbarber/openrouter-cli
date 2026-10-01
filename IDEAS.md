@@ -113,6 +113,16 @@ Merged into `main`.
 | Split mouse report | `eb57cbb` | A wheel notch split across reads no longer ends the session. |
 | Queued message | `1436167` | A line sent while a model works, and escape stopping it with the line. |
 | Saved session | `a828197` | A conversation written to a `.db` of its own, and loaded back. |
+| Blank row under a sent line | `e5c23ad` | What was asked is told apart from what answers it. |
+| Model tools | `4272ae3` | The model reads, writes and lists files under the working directory, and runs read-only git there. |
+
+**NEXT The tools need answering four questions before they grow.** Whether a
+call is asked about first, whether the git tool should write, which models can
+call tools at all, and whether a saved session carrying tool turns may be
+resumed against a model that cannot. All four are listed as open in
+`AGENTS.md` rather than answered by omission. The approval one is the first
+that matters: the `Approval` field was removed from the status bar on the
+grounds that the client had no tools, and this is the moment it would come back.
 
 ### A conversation can be saved to a file of its own
 
@@ -583,9 +593,10 @@ landed rather than before.
 | Session | `internal/tui/session.go` | `ddfb756` |
 | Rendering | `render.go`, `screen.go`, `wrap.go`, `markdown.go`, termios | `a153b45` |
 | API | `internal/openrouter` | `0cfb59b` |
+| Tools | `internal/tools`, `internal/tui/toolcall.go` | `4272ae3` |
 | Configuration | `internal/config`, `internal/bootstrap`, `cmd/openrouter-cli` | `9e8cbab` |
 | Input | `line.go`, `keys.go`, `paste.go`, `mouse.go`, `hintrow.go` | `d669b05` |
-| Conversation | `conversation.go`, `compact.go`, `cognito.go`, `btw.go`, `delegate.go`, `threshold.go`, `verbose.go`, `bell.go`, `spinner.go` | `aa149ac` |
+| Conversation | `conversation.go`, `compact.go`, `cognito.go`, `btw.go`, `delegate.go`, `threshold.go`, `verbose.go`, `bell.go`, `spinner.go` | `4272ae3` |
 
 The serious ones, in the order a reader is most likely to hit them:
 
