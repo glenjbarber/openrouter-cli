@@ -324,12 +324,22 @@ func Render(f Frame, height, width int) []string {
 	// a next message, so something in the header has to yield.
 	headerRows := headerRowCount
 	if height < headerRows+inputRows+1 {
-		headerRows = maxInt(1, height-inputRows)
+		// The header yields before the prompt does, and the title is the first
+		// row it gives up. A terminal too short to hold the header and the
+		// prompt together keeps the prompt, since a reader with no prompt has
+		// no way to write a next message.
+		headerRows = maxInt(0, height-inputRows)
 	}
 
+	// The pane takes a row out of the row the budget holds below the prompt,
+	// since that row is only drawn when the frame has not already filled the
+	// height. Where the input block alone is taller than the terminal there is
+	// nothing left to give, and the pane gives way to the prompt instead,
+	// since a frame showing a pane and no way to type is one the reader cannot
+	// continue.
 	paneHeight := height - headerRows - inputRows
 	if paneHeight < 1 {
-		paneHeight = 1
+		paneHeight = maxInt(0, height-headerRows-inputRows+1)
 	}
 
 	body := make([]string, 0, height)
