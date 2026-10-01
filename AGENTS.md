@@ -341,6 +341,19 @@ so that a later change does not silently reverse it.
   commits indistinguishable from the rest.
 - A worktree is removed after the merge, and the branch is deleted with it. A
   stale worktree holds a whole checkout of disk that nothing refers to.
+- A worktree holding no changes is not work in progress. It is a stale
+  checkout, and the distinction matters: one is a thing being built and the
+  other is disk that could be reclaimed.
+- `IDEAS.md` in the repository root is the working list. It records what is
+  being built, what is unfinished, and what has been shipped. Research notes on
+  features that are only being considered live outside the repository, at
+  `~/openrouter-cli-worktrees/ideas/`.
+- `IDEAS.md` is a status, not a decision. Where it disagrees with this file,
+  this file decides, and the disagreement is a bug in one of them.
+- Every merge is gated on `make lint`, `make check`, and `make crossbuild`. The
+  cross-compile is part of the gate rather than a separate chore, since the
+  terminal layer names ioctl requests that differ between platforms and nothing
+  else would notice.
 
 ### Compaction
 
@@ -861,6 +874,12 @@ These are unsettled. Each is listed so that it is not mistaken for a decision.
 - The first release scope, and the split between interactive and scripted use.
 - The minimum supported Go version, currently stated as 1.26 in the README and
   taken from the host toolchain rather than decided.
+- Whether the model instruction search under Interface is built or the section
+  is corrected. The section describes reading `AGENTS.md`, `OPENROUTER.md`,
+  `RULES.md`, or `SHARED.md` from the working directory before a request, and
+  no source file mentions any of those names. The only path that exists is
+  `--bootstrap FILE`. Until this is answered there is nothing for an `/update`
+  command to re-read.
 
 ## Working notes
 
