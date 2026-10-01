@@ -133,7 +133,7 @@ func TestCompactionRunsBeforeTheRequestThatWouldExceedTheWindow(t *testing.T) {
 	s.conv.Record("the first question", strings.Repeat("x", 30_000))
 	s.conv.Record("the second question", "the second answer")
 
-	s.send("the question the reader asked")
+	s.send(s.ctx, s.conv, "the question the reader asked")
 
 	mu.Lock()
 	defer mu.Unlock()

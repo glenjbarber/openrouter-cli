@@ -81,7 +81,7 @@ func TestPasteOverflowIsReported(t *testing.T) {
 func TestPasteLayoutHonoursItsBudget(t *testing.T) {
 	for budget := 0; budget <= 10; budget++ {
 		for n := 0; n <= 40; n++ {
-			shown, notice := pasteLayout(n, budget)
+			shown, notice := blockLayout(n, budget)
 			rows := shown
 			if notice {
 				rows++
@@ -104,12 +104,12 @@ func TestPasteLayoutHonoursItsBudget(t *testing.T) {
 // A paste that fits shows every line, and one that does not is cut to the
 // maximum rather than to whatever the terminal happens to have.
 func TestPasteLayoutKeepsTheFirstLines(t *testing.T) {
-	shown, notice := pasteLayout(8, 6)
-	if shown != maxPasteRows || !notice {
+	shown, notice := blockLayout(8, 6)
+	if shown != maxBlockRows || !notice {
 		t.Errorf("shown = %d, notice = %v, want %d and true",
-			shown, notice, maxPasteRows)
+			shown, notice, maxBlockRows)
 	}
-	if shown, notice := pasteLayout(3, 6); shown != 3 || notice {
+	if shown, notice := blockLayout(3, 6); shown != 3 || notice {
 		t.Errorf("shown = %d, notice = %v, want 3 and false", shown, notice)
 	}
 }

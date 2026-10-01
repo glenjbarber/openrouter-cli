@@ -38,9 +38,13 @@ func TestHintRowNamesOnlyKeysThatAct(t *testing.T) {
 			want: []string{"Enter send", "Tab complete", "Up/Down history"},
 		},
 		{
-			name: "escape is named while a request is in flight",
+			// Enter queues rather than sends while a model is working, and
+			// escape stops the model with whatever is in hand, so the row
+			// names what the keys do in that state rather than what they do
+			// on an idle prompt.
+			name: "a model working renames enter and names escape",
 			st:   hintState{busy: true},
-			want: []string{"Enter send", "Tab complete", "Esc interrupt"},
+			want: []string{"Enter queue", "Esc stop and send", "Tab complete"},
 		},
 		{
 			name: "the wheel is named only while reporting is on",

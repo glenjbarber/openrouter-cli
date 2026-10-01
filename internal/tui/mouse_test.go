@@ -204,8 +204,7 @@ func TestReadLineWheelBurst(t *testing.T) {
 }
 
 // A lone escape is still a key and still interrupts, which the chunked reader
-// must not have changed. The empty buffer is what makes it an interrupt, since
-// an escape with text in hand abandons the line rather than the session.
+// must not have changed.
 func TestReadLineLoneEscapeStillInterrupts(t *testing.T) {
 	le := NewLineEditor(strings.NewReader("\x1b"))
 	if _, err := le.ReadLine(); err != ErrInterrupt {
@@ -213,16 +212,15 @@ func TestReadLineLoneEscapeStillInterrupts(t *testing.T) {
 	}
 }
 
-// An escape behind text is still a key and is still not an interrupt, so the
-// report handling has not changed what an escape means.
-func TestReadLineEscapeAfterTextIsNotInterrupt(t *testing.T) {
+// An escape behind text interrupts as well. It used to do nothing at all, which
+// left a reader pressing it to abandon what they had typed with no way to say
+// so, and stopped it reaching the session while a model was working. What the
+// interrupt means is decided there: a line is abandoned on an idle prompt, and
+// a model is stopped with the text on an idle one.
+func TestReadLineEscapeBehindTextInterrupts(t *testing.T) {
 	le := NewLineEditor(strings.NewReader("abc\x1b"))
-	line, err := le.ReadLine()
-	if err == ErrInterrupt {
-		t.Error("an escape with text in hand interrupted the line")
-	}
-	if !strings.HasPrefix(line, "abc") {
-		t.Errorf("line = %q, want the text kept", line)
+	if _, err := le.ReadLine(); err != ErrInterrupt {
+		t.Errorf("err = %v, want ErrInterrupt", err)
 	}
 }
 

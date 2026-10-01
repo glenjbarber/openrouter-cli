@@ -111,6 +111,7 @@ Merged into `main`.
 | Conversation audit | `aa149ac` | Four races, the cognito marker, and a summary that outlived `/new`. |
 | Model filter completion | `f3b7e47` | Tab completes the filter and cycles through what it matched. |
 | Split mouse report | `eb57cbb` | A wheel notch split across reads no longer ends the session. |
+| Queued message | see the merge | A line sent while a model works, and escape stopping it with the line. |
 
 ## In progress
 
@@ -1106,3 +1107,40 @@ The test that pins it uses a socket pair built with `os.NewFile` rather than
 a hold that asked for a deadline. It is the same case a terminal is in: a
 descriptor the program was handed rather than one it opened. On the old code it
 fails with `interrupted`, which is the crash.
+
+## A message can be queued while a model works
+
+Enter while a model is working queues the line and the model carries on. Escape
+with a line in hand stops the model and sends the line as an update to the
+request it was answering. The queue goes ahead of the line being composed, so a
+stop sends everything in hand, and a stop with nothing in hand and nothing
+queued sends nothing.
+
+The update travels as part of the request it updates. The model was asked the
+first question and the update is the correction to it, so the two go out as one
+request with a blank line between them, rather than as a question and then an
+answer to it. A queued line that is never used as an update is sent as a
+question of its own once the request ahead of it has been answered, one line at
+a time, since two queued lines are two questions.
+
+Making this work took a change the feature did not begin with. The request ran
+on the input goroutine, so nothing was reading the keys while a model worked and
+there was nothing to queue with; a request was also made with the session
+context, so stopping one would have taken the session down. A turn now runs on a
+goroutine of its own, carries its own context, and holds the conversation it was
+started from so that a turn records its answer where the question was asked.
+
+Two further things fell out of it. A lone escape was answered only on an empty
+line, so escape did nothing at all while a message was being composed, and the
+key the feature is built on could not be pressed with a line in hand. And a
+command that changes the conversation is refused while a model is working, since
+a turn records into the conversation it was asked in and a conversation cleared
+underneath one would collect an exchange nobody asked it to keep.
+
+The pane is not the place a message sent during a long reply can be relied on to
+be read. A line is queued above the prompt for that reason, and the notice a
+stop writes to the pane is pushed up by a reply that is still arriving, which is
+what the pane does with anything written to it while a partial reply is on
+screen. Measured through a real terminal: a queued line is shown above the
+prompt, the refusal and the stop notice are drawn, and the update reaches the
+endpoint as an update to the request that was stopped.
