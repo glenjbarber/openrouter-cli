@@ -9,19 +9,18 @@ import "strings"
 // leaves its opening escape to be read as a key, and a lone escape ends the
 // line: pressing an arrow would close the session.
 
-// sequenceKinds are the final bytes of the sequences the reader understands.
+// keyFinals are the final bytes of the sequences this reader acts on.
 //
-// The sequences are the ones in common use by terminal emulators. A sequence
-// ending in any other byte is not one this reader acts on, so it is consumed
-// and discarded rather than being read as keys.
+// The sequences are the ones in common use by terminal emulators: the four
+// arrows and the two ends of the line. A sequence ending in any other byte is
+// consumed and discarded rather than being read as keys, so the home and end
+// keys, which a terminal writes the same way as an arrow, need no constant of
+// their own.
 const (
 	keyUp    = 'A'
 	keyDown  = 'B'
 	keyRight = 'C'
 	keyLeft  = 'D'
-	keyHome  = 'H'
-	keyEnd   = 'F'
-	keyDel   = '~'
 )
 
 // csiParamLo and csiParamHi bound the parameter bytes of a control sequence,
@@ -197,16 +196,16 @@ const maxHistory = 100
 //
 // The model filter is typed into rather than submitted, so it reads keys
 // directly instead of going through the line editor. A key sequence is consumed
-// and ignored, since the filter takes characters only.
+// and discarded, since the filter takes characters only.
+//
+// The discard happens before the error is reported, as the line editor acts on
+// its own sequences before it handles the end of the input. Leaving one queued
+// would hand it to the line editor afterwards, where it would act on a key
+// pressed while the filter was open.
 func (le *LineEditor) ReadByte() (byte, error) {
-	for {
-		b, err := le.readKey()
-		if err != nil {
-			return 0, err
-		}
-		if len(le.pendingKeys) > 0 {
-			le.pendingKeys = le.pendingKeys[:0]
-		}
-		return b, nil
+	b, err := le.readKey()
+	if len(le.pendingKeys) > 0 {
+		le.pendingKeys = le.pendingKeys[:0]
 	}
+	return b, err
 }

@@ -47,3 +47,33 @@ func TestAuditBothBreaksSubmit(t *testing.T) {
 		}
 	}
 }
+
+// A key sequence read at the end of a read is discarded before the end of the
+// input is reported, since the filter takes characters only. Leaving it queued
+// would hand it to the line editor afterwards, where it would act on a key
+// pressed while the filter was open.
+func TestAuditReadByteDrainsASequenceBeforeTheEnd(t *testing.T) {
+	le := NewLineEditor(strings.NewReader("\x1b[A"))
+	if _, err := le.ReadByte(); err == nil {
+		t.Fatal("err = nil, want the end of the input reported")
+	}
+	if len(le.pendingKeys) != 0 {
+		t.Errorf("pendingKeys = %v, want the sequence discarded", le.pendingKeys)
+	}
+}
+
+// A sequence read by the filter is discarded rather than acted on, since the
+// filter walks the catalogue rather than composing a message.
+func TestAuditReadByteDiscardsASequence(t *testing.T) {
+	le := NewLineEditor(strings.NewReader("\x1b[Ax"))
+	b, err := le.ReadByte()
+	if err != nil {
+		t.Fatalf("ReadByte: %v", err)
+	}
+	if b != 'x' {
+		t.Errorf("byte = %q, want the sequence consumed and the character returned", b)
+	}
+	if len(le.pendingKeys) != 0 {
+		t.Errorf("pendingKeys = %v, want the sequence discarded", le.pendingKeys)
+	}
+}
