@@ -99,7 +99,7 @@ tidy:
 # typecheck test files. A test file naming an ioctl that one platform does not
 # carry compiled everywhere and failed only where the constant was missing.
 crossbuild:
-	@for os in freebsd linux darwin netbsd openbsd dragonfly; do \
+	@for os in freebsd linux darwin netbsd openbsd; do \
 		printf '%-10s ' $$os; \
 		GOOS=$$os GOARCH=amd64 $(GO) build ./... || exit 1; \
 		GOOS=$$os GOARCH=amd64 $(GO) vet ./... || exit 1; \

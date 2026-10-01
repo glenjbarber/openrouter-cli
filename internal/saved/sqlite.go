@@ -1,5 +1,3 @@
-//go:build !dragonfly
-
 package saved
 
 import (

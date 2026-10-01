@@ -1819,7 +1819,20 @@ func (s *Session) paintNow() {
 	s.mu.Unlock()
 
 	height, width := s.screen.Size()
-	s.screen.Draw(Render(frame, height, width))
+	rows, drawn := render(frame, height, width)
+	// The offset the renderer drew at is adopted back into the session, so
+	// that scrolling up further than there is history does not leave the
+	// session holding an offset the pane cannot show. The change is made
+	// only when the offset is the one the frame was drawn from, so a wheel
+	// notch arriving while the frame was being drawn is not undone.
+	if drawn != frame.Scroll {
+		s.mu.Lock()
+		if s.scroll == frame.Scroll {
+			s.scroll = drawn
+		}
+		s.mu.Unlock()
+	}
+	s.screen.Draw(rows)
 }
 
 // hint reports what to do next, which differs depending on what is missing.

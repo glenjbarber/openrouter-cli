@@ -246,6 +246,12 @@ func TestSearchEnterJumpsAndClosingResets(t *testing.T) {
 	for i := 0; i < 40; i++ {
 		entries = append(entries, "a line of ordinary conversation")
 	}
+	// Enough matches that the search pane is taller than the pane it is drawn
+	// in. A single match is already on screen, and there is nothing for the
+	// jump to move the view to.
+	for i := 0; i < 40; i++ {
+		entries = append(entries, "a kumquat among the conversation")
+	}
 	entries = append(entries, "and at last a distinctive kumquat appears")
 	// Content below the match, so the newest match is not already sitting at
 	// the bottom of the pane and the jump has somewhere to move it to.
