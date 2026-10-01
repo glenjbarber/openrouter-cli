@@ -58,6 +58,17 @@ so that a later change does not silently reverse it.
 - The client creates the file at `0600`.
 - `OPENROUTER_API_KEY` is required. `OPENROUTER_URL_BASE` is optional and
   overrides the default base URL of `https://openrouter.ai/api/v1`.
+- `OPENROUTER_MODEL` is optional and sets the model a session starts with, so
+  that `/model NAME` is not needed on every run. The key is named after the
+  model field that would otherwise be introduced, for the same reason as the
+  others: a value is transferable between the file and the environment.
+- A model taken from the file is adopted only when the session has not chosen
+  one, so an explicit choice always wins over the file.
+- The model survives a missing key. A file carrying a preference must not appear
+  unread merely because it has no credential, and a session cannot reach a
+  model without one anyway.
+- A model identifier is trimmed of surrounding whitespace, since a stray space
+  would otherwise be sent to the backend as part of the identifier.
 - The API key is never read from the process environment. The file is the only
   source. An environment variable of the same name is ignored even when it is set,
   which removes the class of failure in which a correct file is shadowed by a
@@ -225,6 +236,15 @@ so that a later change does not silently reverse it.
 - Each pane row is cleared before it is written. Without that, a repaint shorter
   than the frame before it leaves the tail of the longer one visible, so a
   reply appears twice.
+
+### Getting started
+
+- The reply pane carries a hint while it is empty, naming whatever is missing: an
+  absent key, an unselected model, or simply that a message can be typed. The
+  hint is removed once a conversation has started, since it is then in the way.
+- Without the hint a first run shows an empty pane and a prompt, which gives no
+  indication that plain text is the message and that a model must be selected
+  first.
 
 ### Echo
 

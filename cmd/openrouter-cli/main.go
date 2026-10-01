@@ -64,7 +64,9 @@ func run(args []string) error {
 		if !errors.As(err, &keyErr) {
 			return err
 		}
-		cfg = config.Empty()
+		// The model is preserved from the file even though the key is not,
+		// so that a file carrying a preference is not treated as unread.
+		cfg = config.Empty(keyErr.Model)
 	}
 	_ = cfg
 
@@ -91,7 +93,7 @@ func interface_(out, in *os.File, cfg *config.Config, opts options) error {
 	// The credential is installed on the session rather than used here, so
 	// that the interface opens even when the key is absent and reports the
 	// absence as an ordinary message rather than refusing to open.
-	session.Configure(cfg.URLBase, cfg.APIKey)
+	session.Configure(cfg.URLBase, cfg.APIKey, cfg.Model)
 
 	if opts.bootstrap != "" {
 		// The document is reported inside the frame rather than cleared, so

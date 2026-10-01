@@ -210,11 +210,74 @@ func TestParseDoesNotReportMalformedAsMissingKey(t *testing.T) {
 // Empty returns a usable configuration so the interface has an endpoint even
 // with no credential.
 func TestEmptyHasDefaultEndpoint(t *testing.T) {
-	cfg := Empty()
+	cfg := Empty("")
 	if cfg.URLBase != DefaultURLBase {
 		t.Errorf("URLBase = %q, want %q", cfg.URLBase, DefaultURLBase)
 	}
 	if cfg.APIKey != "" {
 		t.Errorf("APIKey = %q, want empty", cfg.APIKey)
+	}
+}
+
+// The model survives a missing key, so a file carrying a preference is not
+// treated as though it had not been read.
+func TestEmptyKeepsModel(t *testing.T) {
+	cfg := Empty("stealth/space-bunny-alpha")
+	if cfg.Model != "stealth/space-bunny-alpha" {
+		t.Errorf("Model = %q, want it preserved", cfg.Model)
+	}
+}
+
+// The model is read from the file and trimmed, since a stray space would be
+// sent to the backend as part of the identifier.
+func TestParseReadsModel(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DefaultFileName)
+	body := `{"OPENROUTER_API_KEY":"k","OPENROUTER_MODEL":"  stealth/space-bunny-alpha  "}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := parse(path)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if cfg.Model != "stealth/space-bunny-alpha" {
+		t.Errorf("Model = %q, want it trimmed", cfg.Model)
+	}
+}
+
+// A file with no model is not an error, since the model may be chosen at
+// runtime instead.
+func TestParseWithoutModel(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DefaultFileName)
+	if err := os.WriteFile(path, []byte(`{"OPENROUTER_API_KEY":"k"}`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := parse(path)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if cfg.Model != "" {
+		t.Errorf("Model = %q, want empty", cfg.Model)
+	}
+}
+
+// A missing key carries the model through, so a caller standing in a
+// configuration does not lose the preference.
+func TestMissingKeyCarriesModel(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DefaultFileName)
+	body := `{"OPENROUTER_MODEL":"stealth/space-bunny-alpha"}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, err := parse(path)
+	var noKey *ErrNoAPIKey
+	if !errors.As(err, &noKey) {
+		t.Fatalf("err = %v, want *ErrNoAPIKey", err)
+	}
+	if noKey.Model != "stealth/space-bunny-alpha" {
+		t.Errorf("Model = %q, want it carried through", noKey.Model)
 	}
 }

@@ -96,11 +96,19 @@ func (s *Session) Note(format string, args ...any) {
 // The client is built here rather than at start, so that the interface works
 // before a connection exists and reports a missing key as an ordinary message
 // rather than refusing to open.
-func (s *Session) Configure(baseURL, apiKey string) {
-	if apiKey == "" {
-		return
+func (s *Session) Configure(baseURL, apiKey, model string) {
+	// The model is adopted whether or not a credential is present, so that
+	// the status bar reflects the file from the first repaint.
+	if model != "" && s.conv.Model() == "" {
+		s.conv.SetModel(model)
 	}
-	s.client = openrouter.New(baseURL, apiKey)
+	if apiKey != "" {
+		s.client = openrouter.New(baseURL, apiKey)
+	}
+	// The status bar is refreshed here as well as in the conversation, since
+	// a model taken from the file must appear on the first repaint rather than
+	// only after the first exchange.
+	s.updateStatus()
 }
 
 // Seed loads a bootstrap document into the conversation.
@@ -451,6 +459,29 @@ func keyState(c *openrouter.Client) string {
 
 // draw repaints the frame.
 func (s *Session) draw() {
+	// The pane carries a hint only while it is empty. Once a conversation has
+	// started the hint is in the way, and the opening instructions are what
+	// should be read.
+	if len(s.frame.Reply) == 0 {
+		s.frame.Hint = s.hint()
+	} else {
+		s.frame.Hint = ""
+	}
 	height, width := s.screen.Size()
 	s.screen.Draw(Render(s.frame, height, width))
+}
+
+// hint reports what to do next, which differs depending on what is missing.
+func (s *Session) hint() string {
+	switch {
+	case s.credentialProblem() != "":
+		return "No API key is configured. Set OPENROUTER_API_KEY in ~/.openrouter-cli.json,\n" +
+			"then run /connect."
+	case s.conv.Model() == "":
+		return "No model is selected. Run /models to see what is offered,\n" +
+			"then /model NAME to choose one."
+	default:
+		return "Type a message and press Enter to send it to " + s.conv.Model() + ".\n" +
+			"/help lists the commands."
+	}
 }

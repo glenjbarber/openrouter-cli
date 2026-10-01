@@ -123,8 +123,18 @@ reports that and stops rather than writing escape sequences into the capture. A
 missing API key is not a reason to refuse to open: the interface opens and
 reports the absence, so that the cause is on screen.
 
-Commands are typed inside the interface and begin with a slash, so that they do
-not collide with text sent to the model:
+A message is typed as plain text and sent with Enter, with no command needed:
+
+```
+> what does this project do?
+```
+
+While the pane is empty it shows what is still missing: an absent key, or an
+unselected model, or simply that a message can be typed. The hint disappears
+once a conversation has started.
+
+Commands begin with a slash, so that they do not collide with text sent to the
+model:
 
 | Command          | Effect                                                |
 | ---------------- | ----------------------------------------------------- |
@@ -229,10 +239,11 @@ When the file is created by the client, it is created with mode `0600`.
 The file is JSON, which is parsed using the Go standard library and requires no
 external dependency. Two keys are recognized:
 
-| Key                   | Required | Description                                             |
-| --------------------- | -------- | ------------------------------------------------------- |
-| `OPENROUTER_API_KEY`  | Yes      | The API key used to authenticate against OpenRouter.AI. |
-| `OPENROUTER_URL_BASE` | No       | The base URL of the backend.                             |
+| Key                   | Required | Description                                                        |
+| --------------------- | -------- | ------------------------------------------------------------------ |
+| `OPENROUTER_API_KEY`  | Yes      | The API key used to authenticate against OpenRouter.AI.            |
+| `OPENROUTER_URL_BASE` | No       | The base URL of the backend.                                        |
+| `OPENROUTER_MODEL`    | No       | The model requests are sent to, such as `stealth/space-bunny-alpha`. |
 
 The keys are given in the same form as the equivalent environment variables,
 which keeps a value transferable between the file and the environment.
@@ -249,9 +260,15 @@ An example, with the key redacted:
 ```json
 {
   "OPENROUTER_API_KEY": "sk-or-v1-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-  "OPENROUTER_URL_BASE": "https://openrouter.ai/api/v1"
+  "OPENROUTER_URL_BASE": "https://openrouter.ai/api/v1",
+  "OPENROUTER_MODEL": "stealth/space-bunny-alpha"
 }
 ```
+
+`OPENROUTER_MODEL` sets the model a session starts with, so `/model NAME` is not
+needed on every run. It may still be changed inside the interface, and a file
+without the key is not an error: the preference is kept even when no credential
+is present, since a session cannot reach a model without one anyway.
 
 JSON is used rather than YAML because Go has no standard-library YAML parser, and
 a configuration file is not a place where a dependency is worth taking. The

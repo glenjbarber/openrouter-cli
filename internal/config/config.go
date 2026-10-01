@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // DefaultURLBase is used when the file does not set OPENROUTER_URL_BASE.
@@ -26,14 +27,20 @@ var fileNames = []string{
 // rawFile is the on-disk shape. Keys are named after the equivalent
 // environment variables so a value is transferable between the two.
 type rawFile struct {
-	APIKey   string `json:"OPENROUTER_API_KEY"`
-	URLBase  string `json:"OPENROUTER_URL_BASE"`
-	SetupKey bool   `json:"setup_complete"`
+	APIKey  string `json:"OPENROUTER_API_KEY"`
+	URLBase string `json:"OPENROUTER_URL_BASE"`
+	Model   string `json:"OPENROUTER_MODEL"`
+	// SetupKey keeps its name from the open decision about the setup state.
+	SetupKey bool `json:"setup_complete"`
 }
 
 // Config is the resolved configuration.
 type Config struct {
-	APIKey  string
+	APIKey string
+	// Model is the model requests are sent to when the session has not chosen
+	// one. It is empty when the file does not set it, which is not an error:
+	// the model may be chosen at runtime instead.
+	Model   string
 	URLBase string
 	// Path is the file the values were read from, empty when none was found.
 	Path string
@@ -53,6 +60,9 @@ var ErrNotFound = errors.New("no configuration file found")
 type ErrNoAPIKey struct {
 	// Path is the file that was read.
 	Path string
+	// Model is the model the file prefers, carried through so that the
+	// caller can stand in a configuration without losing the preference.
+	Model string
 }
 
 // Error implements the error interface.
@@ -60,13 +70,14 @@ func (e *ErrNoAPIKey) Error() string {
 	return fmt.Sprintf("%s does not contain OPENROUTER_API_KEY", e.Path)
 }
 
-// Empty returns a configuration with no key and the default endpoint, used when
-// the file exists but carries no credential.
+// Empty returns the configuration used when a file exists but carries no
+// credential.
 //
-// It is returned by value so that a caller cannot retain a pointer into the
-// loader state.
-func Empty() *Config {
-	return &Config{URLBase: DefaultURLBase}
+// The model is taken from the file even though the key is not, since a session
+// with no key cannot reach a model anyway and losing the preference would make
+// the file appear not to have been read.
+func Empty(model string) *Config {
+	return &Config{URLBase: DefaultURLBase, Model: strings.TrimSpace(model)}
 }
 
 // Load reads the configuration from the first file found at a search path.
@@ -139,6 +150,7 @@ func parse(path string) (*Config, error) {
 
 	cfg := &Config{
 		APIKey:  raw.APIKey,
+		Model:   strings.TrimSpace(raw.Model),
 		URLBase: raw.URLBase,
 		Path:    path,
 		Skipped: raw.SetupKey && raw.APIKey == "",
@@ -148,7 +160,7 @@ func parse(path string) (*Config, error) {
 		if raw.SetupKey {
 			return cfg, nil
 		}
-		return nil, &ErrNoAPIKey{Path: path}
+		return nil, &ErrNoAPIKey{Path: path, Model: cfg.Model}
 	}
 
 	if cfg.URLBase == "" {
