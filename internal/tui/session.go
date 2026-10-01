@@ -282,6 +282,31 @@ func (s *Session) Close() {
 	s.screen.Close()
 }
 
+// addReply appends the given lines to the reply pane.
+//
+// The lock is taken because the paint path copies the frame while the twiddle
+// turns and while a deferred repaint is drawn, and a copy taken while an
+// append is in progress reads the slice header as it is being written. Every
+// other writer of the frame takes the lock for the same reason.
+//
+// The lines are plain text. Nothing is drawn around them, since a selection
+// out of the pane has to yield the text with no escape sequence in it.
+func (s *Session) addReply(lines ...string) {
+	if len(lines) == 0 {
+		return
+	}
+	s.mu.Lock()
+	s.frame.Reply = append(s.frame.Reply, lines...)
+	s.mu.Unlock()
+}
+
+// clearReply empties the reply pane.
+func (s *Session) clearReply() {
+	s.mu.Lock()
+	s.frame.Reply = nil
+	s.mu.Unlock()
+}
+
 // appendLines adds text to the reply pane, one entry per line.
 //
 // The split happens here rather than at render time because a fenced code
@@ -294,14 +319,14 @@ func (s *Session) appendLines(text string) {
 	if text == "" {
 		return
 	}
-	s.frame.Reply = append(s.frame.Reply, text)
+	s.addReply(text)
 }
 
 // Note adds a line to the reply pane, for a message the client generates such
 // as a bootstrap confirmation. The line is shown inside the frame rather than
 // written before it, so that it is not cleared by the first repaint.
 func (s *Session) Note(format string, args ...any) {
-	s.frame.Reply = append(s.frame.Reply, fmt.Sprintf(format, args...))
+	s.addReply(fmt.Sprintf(format, args...))
 	s.draw()
 }
 
@@ -477,7 +502,7 @@ func (s *Session) command(line string) bool {
 	if c := lookupCommand(name); c != nil {
 		return c.run(s, args[1:])
 	}
-	s.frame.Reply = append(s.frame.Reply, "unknown command: "+name)
+	s.addReply("unknown command: " + name)
 	return false
 }
 
@@ -506,7 +531,7 @@ func (s *Session) cmdHelp([]string) bool {
 // cmdClear empties the pane and the conversation behind it.
 func (s *Session) cmdClear([]string) bool {
 	s.conv.Reset()
-	s.frame.Reply = nil
+	s.clearReply()
 	s.resetScroll()
 	return false
 }
@@ -558,7 +583,7 @@ func (s *Session) cmdModel(args []string) bool {
 // clears the very pane the report would be written to.
 func (s *Session) cmdNew([]string) bool {
 	s.conv.Reset()
-	s.frame.Reply = nil
+	s.clearReply()
 	s.resetScroll()
 	s.Note("conversation cleared")
 	return false
@@ -739,7 +764,7 @@ func (s *Session) showCandidates(res complete.Result) {
 // knowing when nothing works.
 func (s *Session) connect() {
 	if msg := s.credentialProblem(); msg != "" {
-		s.frame.Reply = append(s.frame.Reply, msg)
+		s.addReply(msg)
 		return
 	}
 
@@ -753,20 +778,19 @@ func (s *Session) connect() {
 
 	usage, err := s.client.KeyUsage(ctx)
 	if err != nil {
-		s.frame.Reply = append(s.frame.Reply, "connect failed: "+err.Error())
+		s.addReply("connect failed: " + err.Error())
 		return
 	}
 
 	s.conv.usage = *usage
 	s.updateStatus()
-	s.frame.Reply = append(s.frame.Reply,
-		fmt.Sprintf("connected: usage %g of %g", usage.Usage, usage.Limit))
+	s.addReply(fmt.Sprintf("connected: usage %g of %g", usage.Usage, usage.Limit))
 }
 
 // showUsage reports the usage against the key.
 func (s *Session) showUsage() {
 	if msg := s.credentialProblem(); msg != "" {
-		s.frame.Reply = append(s.frame.Reply, msg)
+		s.addReply(msg)
 		return
 	}
 	ctx, cancel := context.WithTimeout(s.ctx, 10*time.Second)
@@ -774,7 +798,7 @@ func (s *Session) showUsage() {
 
 	usage, err := s.client.KeyUsage(ctx)
 	if err != nil {
-		s.frame.Reply = append(s.frame.Reply, "usage failed: "+err.Error())
+		s.addReply("usage failed: " + err.Error())
 		return
 	}
 	s.conv.usage = *usage
@@ -784,7 +808,7 @@ func (s *Session) showUsage() {
 	if f := usage.FreeModelRequests; f != nil {
 		line += fmt.Sprintf(", free models %g of %g", f.Used, f.Limit)
 	}
-	s.frame.Reply = append(s.frame.Reply, line)
+	s.addReply(line)
 }
 
 // filtering reports whether the model filter is open.
@@ -947,10 +971,10 @@ func (s *Session) modelListKey(b byte) {
 func (s *Session) chooseModel(args []string) {
 	if len(args) == 0 {
 		if s.conv.Model() == "" {
-			s.frame.Reply = append(s.frame.Reply, "no model is selected: /model NAME")
+			s.addReply("no model is selected: /model NAME")
 			return
 		}
-		s.frame.Reply = append(s.frame.Reply, "model: "+s.conv.Model())
+		s.addReply("model: " + s.conv.Model())
 		return
 	}
 
@@ -959,7 +983,7 @@ func (s *Session) chooseModel(args []string) {
 	// slug may be given without the vendor prefix being required.
 	s.conv.SetModel(name)
 	s.updateStatus()
-	s.frame.Reply = append(s.frame.Reply, "model: "+s.conv.Model())
+	s.addReply("model: " + s.conv.Model())
 }
 
 // credentialProblem reports why a request cannot be sent.
@@ -1008,16 +1032,15 @@ func (s *Session) send(line string) {
 	defer s.paintFinal()
 
 	if msg := s.credentialProblem(); msg != "" {
-		s.frame.Reply = append(s.frame.Reply, "> "+line, msg)
+		s.addReply("> "+line, msg)
 		return
 	}
 	if s.conv.Model() == "" {
-		s.frame.Reply = append(s.frame.Reply,
-			"> "+line, "(no model is selected: /model NAME)")
+		s.addReply("> "+line, "(no model is selected: /model NAME)")
 		return
 	}
 
-	s.frame.Reply = append(s.frame.Reply, "> "+line)
+	s.addReply("> " + line)
 	s.updateStatus()
 	s.draw()
 
@@ -1043,11 +1066,13 @@ func (s *Session) send(line string) {
 	// including a failure, so that a stale partial reply is not left on
 	// screen behind the error.
 	defer func() {
+		s.mu.Lock()
 		s.frame.Busy = false
 		s.frame.Partial = ""
 		s.frame.Status.State = stateIdle
+		s.mu.Unlock()
 		if verbose {
-			s.frame.Reply = append(s.frame.Reply, "[stream] "+report.summary())
+			s.addReply("[stream] " + report.summary())
 		}
 	}()
 
@@ -1077,13 +1102,13 @@ func (s *Session) send(line string) {
 	})
 
 	if err != nil {
-		s.frame.Reply = append(s.frame.Reply, "(error) "+err.Error())
+		s.addReply("(error) " + err.Error())
 		return
 	}
 
 	text := reply.String()
 	if text == "" {
-		s.frame.Reply = append(s.frame.Reply, "(the model returned nothing)")
+		s.addReply("(the model returned nothing)")
 		return
 	}
 	// The reply is appended rather than written over the last line, since
@@ -1119,14 +1144,17 @@ func (s *Session) stream(partial string) {
 
 // updateStatus refreshes the fields the client knows.
 func (s *Session) updateStatus() {
-	s.frame.Status.Provider = providerName
-	s.frame.Status.Model = orDash(s.conv.Model())
-	s.frame.Status.State = stateIdle
-	s.frame.Status.Host = hostname()
+	// The figures are worked out before the lock is taken. Looking the window
+	// up can reach the network on the first request for a model, and holding
+	// the lock across that would stop the twiddle turning for the length of
+	// the call, which is the one thing the twiddle is there to show.
+	model := s.conv.Model()
+	host := hostname()
 
+	var credits string
 	u := s.conv.Usage()
 	if u.Limit > 0 {
-		s.frame.Status.Credits = fmt.Sprintf("%.2f/%.0f", u.Usage, u.Limit)
+		credits = fmt.Sprintf("%.2f/%.0f", u.Usage, u.Limit)
 	}
 
 	// The window is looked up on every repaint, which is cheap because it is
@@ -1134,18 +1162,33 @@ func (s *Session) updateStatus() {
 	// figure is shown as a percentage, since what a reader wants to know is how
 	// close the conversation is to needing a compaction rather than the raw
 	// count.
-	if window := s.windows.lookup(s.ctx, s, s.conv.Model()); window > 0 {
-		share := float64(s.conv.EstimatedTokens()) / float64(window) * 100
-		s.frame.Status.Context = fmt.Sprintf("%.0f%%", share)
-	} else {
-		s.frame.Status.Context = ""
+	var share string
+	if window := s.windows.lookup(s.ctx, s, model); window > 0 {
+		share = fmt.Sprintf("%.0f%%",
+			float64(s.conv.EstimatedTokens())/float64(window)*100)
 	}
+
+	var tokensIn, tokensOut string
 	if s.conv.TokensIn() > 0 {
-		s.frame.Status.TokensIn = tokenCount(s.conv.TokensIn())
+		tokensIn = tokenCount(s.conv.TokensIn())
 	}
 	if s.conv.TokensOut() > 0 {
-		s.frame.Status.TokensOut = tokenCount(s.conv.TokensOut())
+		tokensOut = tokenCount(s.conv.TokensOut())
 	}
+
+	// The assignment is taken under the lock, since the paint path copies the
+	// whole frame under it and a status field written while that copy is being
+	// taken is a field read halfway written.
+	s.mu.Lock()
+	s.frame.Status.Provider = providerName
+	s.frame.Status.Model = orDash(model)
+	s.frame.Status.State = stateIdle
+	s.frame.Status.Host = host
+	s.frame.Status.Credits = credits
+	s.frame.Status.Context = share
+	s.frame.Status.TokensIn = tokensIn
+	s.frame.Status.TokensOut = tokensOut
+	s.mu.Unlock()
 }
 
 // orDash returns the value, or a dash when it is empty.

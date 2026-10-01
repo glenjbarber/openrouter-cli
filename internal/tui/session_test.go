@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/glenjbarber/openrouter-cli/internal/complete"
 )
@@ -237,5 +238,74 @@ func TestQuitAndExitAreTheSameCommand(t *testing.T) {
 	}
 	if quit != exit {
 		t.Error("/quit and /exit resolve to different commands, so one would leave and the other would not")
+	}
+}
+
+// A write to the frame and the paint path that copies it must not be able to
+// run at the same time.
+//
+// The paint path copies the whole frame under the lock, and it does so while
+// the twiddle turns and while a deferred repaint is drawn, which is most of
+// the time a turn is in flight. A pane write made without the lock is
+// therefore a write the copy can be taken across, and the reader sees a
+// half-written exchange rather than a late one.
+//
+// The race is not visible from one goroutine, so it is not left to the race
+// detector alone. A write is made while the lock the paint path holds is held
+// on purpose, and the write has to wait for it.
+func TestPaneWriteWaitsForTheLockThePaintPathHolds(t *testing.T) {
+	s, capture := auditSession(t, auditStream)
+
+	s.mu.Lock()
+	done := make(chan struct{})
+	go func() {
+		s.addReply("written while the paint path held the lock")
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		s.mu.Unlock()
+		t.Fatal("a pane write went in while the paint path held the lock")
+	case <-time.After(50 * time.Millisecond):
+	}
+	s.mu.Unlock()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the pane write did not complete once the lock was released")
+	}
+
+	s.draw()
+	if got := auditLastFrame(t, capture); !strings.Contains(got, "written while the paint path held the lock") {
+		t.Errorf("the line the write was waiting for is not on the screen.")
+	}
+}
+
+// The same lock guards the status fields, which the request goroutine writes
+// while the paint path is copying the frame it read them from.
+func TestStatusWriteWaitsForTheLockThePaintPathHolds(t *testing.T) {
+	s, _ := auditSession(t, auditStream)
+
+	s.mu.Lock()
+	done := make(chan struct{})
+	go func() {
+		s.updateStatus()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		s.mu.Unlock()
+		t.Fatal("the status was written while the paint path held the lock")
+	case <-time.After(50 * time.Millisecond):
+	}
+	s.mu.Unlock()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the status write did not complete once the lock was released")
 	}
 }
