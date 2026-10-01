@@ -97,13 +97,22 @@ stale one rather than work in progress.
 
 **Blocked on a discrepancy.** `AGENTS.md` describes a search over
 `AGENTS.md`, `OPENROUTER.md`, `RULES.md`, and `SHARED.md` in the working
-directory, read before every request. No `.go` file mentions any of those
-names. The only path that exists is `--bootstrap FILE`, named on the command
-line.
+directory, read before every request, and records it under a settled heading
+with no caveat. No `.go` file mentions any of those names. The only path that
+exists is `--bootstrap FILE`, named on the command line.
+
+**The two documents do not agree about how settled it is.** `README.md`
+describes the same search, and opens that section with a bold
+**Not implemented yet.** naming `--bootstrap FILE` as the only path that works
+today and pointing at `IDEAS.md`. So `README.md` already states the position
+correctly, and the correction route touches `AGENTS.md` alone rather than both
+documents. It is `AGENTS.md` that presents unimplemented behaviour as settled,
+which is the worse of the two, since a reader of it would believe a repository
+holding an `AGENTS.md` had that file loaded.
 
 So there are two possible pieces of work and they are not the same: build the
-search the documentation describes, or correct the documentation to match the
-code. An `/update` command has nothing to re-read until one of those is done.
+search, or correct `AGENTS.md` to match the code. An `/update` command has
+nothing to re-read until one of those is done.
 
 **Recommendation: build the search.** The documentation reads as designed
 behaviour rather than a stray paragraph, and `internal/bootstrap/resolve.go`
