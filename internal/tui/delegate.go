@@ -135,12 +135,20 @@ func (s *Session) startDelegate(task string) {
 	model, client := s.conv.Model(), s.client
 
 	// The delegate is tracked so that leaving does not leave it writing to a
-	// frame nobody is drawing on.
+	// frame nobody is drawing on. The counter is raised under the same lock as
+	// the closing flag is read, since Close waits on it and a delegate counted
+	// after that wait began would be one nobody is waiting for.
 	s.mu.Lock()
+	if s.closing {
+		s.mu.Unlock()
+		s.appendLines("the session is closing")
+		return
+	}
 	if s.delegates == nil {
 		s.delegates = map[*Delegate]bool{}
 	}
 	s.delegates[d] = true
+	s.delegateWG.Add(1)
 	s.mu.Unlock()
 
 	// The label goes in the pane first, so the reader sees the question before
@@ -149,6 +157,11 @@ func (s *Session) startDelegate(task string) {
 	s.draw()
 
 	go func() {
+		// The counter is lowered once the answer has been written to the frame
+		// and drawn, so that Close returning means the goroutine is finished
+		// rather than merely cancelled.
+		defer s.delegateWG.Done()
+
 		d.Run(s.ctx, client, model, func(text string) {
 			s.mu.Lock()
 			// The partial answer replaces the last line rather than being
