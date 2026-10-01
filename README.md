@@ -102,6 +102,13 @@ external dependency. Two keys are recognized:
 The keys are given in the same form as the equivalent environment variables,
 which keeps a value transferable between the file and the environment.
 
+`OPENROUTER_API_KEY` is never read from the process environment. The key is
+accepted only from the configuration file. An environment variable of that name
+is ignored, even when it is set and even when the file is absent, so a key
+present in the environment cannot silently take effect. This removes an entire
+class of confusion in which a correct file is shadowed by a stale value
+elsewhere.
+
 An example, with the key redacted:
 
 ```json
@@ -141,6 +148,50 @@ The client writes the configuration file when setup is completed or skipped, whi
 is the only circumstance in which the file is written. The file is created with
 mode `0600`.
 
+### Model instruction files
+
+Before a request is sent, the client reads instructions from a file in the
+current working directory. The file is selected from the following names, tried
+in alphabetical order, and the first one found is used:
+
+| Order | Name         |
+| ----- | ------------ |
+| 1     | `AGENTS.md`  |
+| 2     | `OPENROUTER.md` |
+| 3     | `RULES.md`   |
+| 4     | `SHARED.md`  |
+
+The names are ordered alphabetically, which places `AGENTS.md` first, then
+`OPENROUTER.md`, then `RULES.md`, then `SHARED.md`. The order is deterministic,
+so a directory containing more than one of these files always resolves to the
+same one.
+
+The search is confined to the current working directory. It is not a recursive
+walk, and no parent directory is consulted.
+
+A file that is not present is not an error, and the request is sent without
+additional instructions. A file that is present but unreadable, or that is not
+valid UTF-8, is an error, since silently ignoring instructions that the user
+believed were in effect would be worse than refusing.
+
+### Symlinks
+
+A model instruction file may be a symbolic link, which allows one set of
+instructions to be shared from a single location.
+
+A symlink is followed only when its target lies on the same filesystem as the
+link itself. A link that crosses a filesystem boundary, which is what a link into
+another mount appears as, is refused with a diagnostic naming the offending path.
+
+The comparison is made on the device identifier of the link and of its target,
+which is the portable way to express sameness of a filesystem. The restriction
+keeps instruction loading predictable, since a link out of the working tree can
+otherwise reach content the user did not intend to supply to the model.
+
+A chain of symlinks is resolved to its final target, and the device check is
+applied to the final target. A symlink loop is reported as an error rather than
+followed.
+
 ### Endpoint
 
 The default base URL is:
@@ -158,9 +209,13 @@ appended only when the override names a scheme and host with no path, such as
 
 ### Precedence
 
-The precedence between the configuration file, the process environment, and
-command-line flags is not yet settled. The configuration file is currently
-treated as authoritative, and the environment and flags are not yet defined.
+The configuration file is authoritative. The process environment is not consulted
+for the API key or the base URL, and no environment variable overrides the file.
+
+The precedence between the configuration file and command-line flags is not yet
+settled. A flag that selects a different configuration file, for example
+`--config`, is expected to be honored, and the treatment of a flag that merely
+overrides an individual value is an open decision.
 
 ## Features
 
@@ -211,6 +266,30 @@ Commands and configuration options are completed with the Tab key.
 
 The interface is designed to behave correctly with a combination of terminal and
 mouse, and within tmux.
+
+### Copyable text
+
+Text is selectable and copyable from the terminal with the same gesture used for
+any other terminal output. A selection made with the mouse yields the plain text
+of the region, with no escape sequences, styling, or layout padding included.
+
+This is in deliberate tension with mouse reporting, since a program that captures
+mouse events intercepts the drag that would otherwise begin a selection. The
+resolution is that mouse reporting is not enabled unconditionally. It is enabled
+only where it is both wanted and safe, and it is suspended for the duration of
+any selection gesture so the terminal retains the selection.
+
+Three cases are distinguished:
+
+- Text is always copyable, whether or not the mouse is used for anything else.
+- Mouse reporting is not enabled inside tmux by default, because a nested
+  selection inside tmux is rarely intended and a captured drag cannot be
+  recovered by the user. It can be enabled on request.
+- Mouse reporting is not enabled when output is not a terminal, such as when the
+  client is piped or redirected, and the copy path is unaffected.
+
+The status bar and any bordered region are drawn without writing to the scrollback
+where that is achievable, so that copied text does not carry the frame with it.
 
 ## License
 

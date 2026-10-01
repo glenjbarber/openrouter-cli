@@ -30,3 +30,8 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Module definition. This project is built as a single binary and the module
+# file is generated locally rather than tracked, so it is ignored here.
+go.mod
+go.sum
