@@ -78,7 +78,10 @@ func foldConstruct(prefix, text string, width int) []string {
 	// and a list item cannot each forget to do it.
 	text = renderInline(text)
 
-	hang := runeLen(prefix)
+	// The hang is measured in columns, since a marker carrying a wide
+	// character takes two of them and indenting the rows under a count that
+	// says one would leave them short of the text they belong to.
+	hang := displayWidth(prefix)
 	if hang >= width {
 		rows := foldWords(text, width)
 		return append([]string{truncate(prefix, width)}, rows...)

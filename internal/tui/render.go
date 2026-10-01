@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 // Status holds the values shown in the status bar.
@@ -73,10 +74,10 @@ func StatusLine(s Status, width int) string {
 	host := s.Host
 
 	line := strings.Join(parts, sep)
-	if width > 0 && len(line) > width {
-		line = trimToWidth(parts, sep, runeWidth(line, width))
+	if width > 0 && displayWidth(line) > width {
+		line = trimToWidth(parts, sep, width)
 	}
-	if host != "" && (width <= 0 || len(line)+len(host)+len(sep) <= width) {
+	if host != "" && (width <= 0 || displayWidth(line)+displayWidth(host)+displayWidth(sep) <= width) {
 		line += sep + host
 	}
 	return line
@@ -98,7 +99,7 @@ func trimToWidth(parts []string, sep string, width int) string {
 	copy(kept, parts)
 
 	for _, label := range dropOrder {
-		if len(join(kept, sep)) <= width {
+		if displayWidth(join(kept, sep)) <= width {
 			break
 		}
 		for i, p := range kept {
@@ -113,7 +114,7 @@ func trimToWidth(parts []string, sep string, width int) string {
 	}
 
 	line := join(kept, sep)
-	if len(line) > width && len(kept) > 0 {
+	if displayWidth(line) > width && len(kept) > 0 {
 		// Everything droppable is gone and it still does not fit, so the
 		// remainder is cut rather than left to wrap onto a second row.
 		return truncate(kept[0], width)
@@ -129,12 +130,13 @@ func join(parts []string, sep string) string {
 	return strings.Join(parts, sep)
 }
 
-// runeWidth returns how many columns a line occupies on the terminal, which is
-// not the same as its length in bytes.
+// runeWidth returns how many characters a line carries, up to a bound.
 //
-// The rule is drawn from a box-drawing character, which is three bytes and one
-// column, and a rule a byte count reports as three times too wide is a rule that
-// runs off the terminal and wraps.
+// It counts characters rather than columns, and it is used where the string is
+// one the interface wrote and holds nothing but ASCII, so the two agree: the
+// names on the hint row, and the marker and the prefix of a row, which are a
+// marker and a space. Anything a terminal will show and a reader will measure
+// is counted with displayWidth instead.
 func runeWidth(s string, max int) int {
 	n := 0
 	for range s {
@@ -146,39 +148,179 @@ func runeWidth(s string, max int) int {
 	return n
 }
 
-// tail returns the last n columns of s, marked with an ellipsis so that a
+// displayWidth returns how many columns a line occupies on the terminal.
+//
+// A character count is not a column count. A character in the East Asian wide
+// ranges takes two columns, and a combining mark takes none at all, since it
+// is drawn over the character before it. A reply carrying either was measured
+// too wide when it was counted in characters, so the row overflowed the pane,
+// the terminal wrapped it, and everything below it moved down.
+//
+// A byte count is worse, since the rule is three bytes for one column and a
+// byte count reports a rule three times too wide.
+func displayWidth(s string) int {
+	n := 0
+	for _, r := range s {
+		n += runeColumns(r)
+	}
+	return n
+}
+
+// runeColumns returns how many columns one character occupies.
+func runeColumns(r rune) int {
+	switch {
+	case r < 0x20 || (r >= 0x7f && r <= 0x9f):
+		// A control character is drawn in no column of its own. The frame
+		// drops these before it is drawn, so the case is here only so that a
+		// width cannot be counted from a string that still carries one.
+		return 0
+	case isZeroWidth(r):
+		return 0
+	case isWide(r):
+		return 2
+	default:
+		return 1
+	}
+}
+
+// wideRanges are the ranges a terminal in a UTF-8 mode gives two columns to:
+// the East Asian wide and fullwidth forms, the Hangul syllables, and the
+// emoji.
+//
+// The whole table of every script is not reproduced. A character outside these
+// ranges is measured as one column, which is the common case and the safe way
+// to be wrong, since a row measured too wide is cut while a row measured too
+// narrow wraps.
+var wideRanges = [...][2]rune{
+	{0x1100, 0x115f},   // Hangul jamo, initial.
+	{0x2e80, 0x303e},   // CJK radicals and punctuation.
+	{0x3041, 0x33ff},   // Kana and CJK compatibility.
+	{0x3400, 0x4dbf},   // CJK extension A.
+	{0x4e00, 0x9fff},   // CJK unified ideographs.
+	{0xa000, 0xa4cf},   // Yi.
+	{0xa960, 0xa97f},   // Hangul jamo, extended A.
+	{0xac00, 0xd7a3},   // Hangul syllables.
+	{0xf900, 0xfaff},   // CJK compatibility ideographs.
+	{0xfe10, 0xfe19},   // Vertical forms.
+	{0xfe30, 0xfe6f},   // CJK compatibility and small forms.
+	{0xff00, 0xff60},   // Fullwidth forms.
+	{0xffe0, 0xffe6},   // Fullwidth signs.
+	{0x1f300, 0x1f64f}, // Emoji.
+	{0x1f680, 0x1f6ff}, // Transport and map symbols.
+	{0x1f900, 0x1f9ff}, // Supplemental symbols.
+	{0x20000, 0x3fffd}, // CJK extensions B and beyond.
+}
+
+// isWide reports whether a character takes two columns.
+func isWide(r rune) bool {
+	for _, span := range wideRanges {
+		if r >= span[0] && r <= span[1] {
+			return true
+		}
+	}
+	return false
+}
+
+// isZeroWidth reports whether a character is drawn over the one before it
+// rather than in a column of its own.
+//
+// A combining mark is the case the interface meets most, since an accented
+// character reaches it in the decomposed form with the accent as a mark of its
+// own. The rest are the joiner and the variation selectors, which a reply
+// carrying an emoji reaches through.
+func isZeroWidth(r rune) bool {
+	if unicode.In(r, unicode.Mn, unicode.Me) {
+		return true
+	}
+	return r == 0x200b || r == 0x200c || r == 0x200d || r == 0xfeff ||
+		(r >= 0x2060 && r <= 0x2064) || (r >= 0xfe00 && r <= 0xfe0f)
+}
+
+// ellipsis marks a row that was cut rather than begun there. It is counted
+// once, as the three columns it occupies, and never as part of the text it
+// stands in front of.
+const ellipsis = "..."
+
+// fitPrefix returns the leading part of s that fits in width columns.
+//
+// A character is taken whole, so a two-column character is not left half past
+// the edge, and a mark is kept with the character it belongs to rather than
+// left at the head of the row on its own.
+func fitPrefix(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	n := 0
+	for i, r := range s {
+		w := runeColumns(r)
+		if n+w > width {
+			return s[:i]
+		}
+		n += w
+	}
+	return s
+}
+
+// fitSuffix returns the trailing part of s that fits in width columns, on the
+// same terms as fitPrefix.
+//
+// The scan starts at the end and stops at a character that takes columns of
+// its own, so that the marks following it are kept with it rather than cut
+// off the front of what is left.
+func fitSuffix(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	start, n := len(r), 0
+	for i := len(r) - 1; i >= 0; i-- {
+		w := runeColumns(r[i])
+		if w == 0 {
+			continue
+		}
+		if n+w > width {
+			start = i + 1
+			break
+		}
+		n += w
+		start = i
+	}
+	return string(r[start:])
+}
+
+// tail returns the last columns of s, marked with an ellipsis so that a
 // reader can tell the line was cut rather than begun there.
 func tail(s string, n int) string {
 	if n <= 0 {
 		return ""
 	}
-	r := []rune(s)
-	if len(r) <= n {
+	if displayWidth(s) <= n {
 		return s
 	}
-	if n <= 3 {
-		return string(r[len(r)-n:])
+	if n <= len(ellipsis) {
+		return fitSuffix(s, n)
 	}
-	return "..." + string(r[len(r)-(n-3):])
+	return ellipsis + fitSuffix(s, n-len(ellipsis))
 }
 
-// truncate shortens a string to width, marking the cut with an ellipsis.
+// truncate shortens a string to width columns, marking the cut with an
+// ellipsis.
 //
-// The cut is taken in characters rather than in bytes, since a reply carries
-// multibyte text and a cut at a byte boundary would leave half a character on
-// the row and count as wider than it is.
+// The cut is taken in columns, since a reply carries multibyte text and a cut
+// in bytes would leave half a character on the row. The ellipsis is counted
+// once: the text is shortened by the columns the ellipsis occupies, so the
+// result is the width asked for and no wider.
 func truncate(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	r := []rune(s)
-	if len(r) <= width {
+	if displayWidth(s) <= width {
 		return s
 	}
-	if width <= 3 {
-		return string(r[:width])
+	if width <= len(ellipsis) {
+		return fitPrefix(s, width)
 	}
-	return string(r[:width-3]) + "..."
+	return fitPrefix(s, width-len(ellipsis)) + ellipsis
 }
 
 // minHeightForDivision is the shortest terminal that still has room for the
@@ -568,7 +710,7 @@ func indent(marker, prefix, body string, width int) string {
 	// A body that did not fit keeps its tail. The marker leads the row, so the
 	// part dropped from the front is the one already spoken for, and the part
 	// at the end is the line being composed.
-	if runeWidth(body, room+1) > room {
+	if displayWidth(body) > room {
 		fit = tail(body, room)
 	}
 	return truncate(marker+prefix+fit, width)
@@ -670,9 +812,10 @@ func (s *Screen) Draw(lines []string) {
 	}
 	s.write(seqHome)
 
-	// The cursor is placed after the prompt on the last row, so that the
-	// caret sits where the next character will appear. The column is taken
-	// from the input row rather than from the first row, which is the title.
+	// The cursor is placed after the prompt on the last row of the input
+	// block, so that the caret sits where the next character will appear.
+	// The column is taken from the input row rather than from the first row,
+	// which is the title.
 	//
 	// A frame with no rows leaves the cursor where it is. There is no last row
 	// to place it against, and a terminal too short to hold the frame is the
@@ -680,8 +823,26 @@ func (s *Screen) Draw(lines []string) {
 	if len(lines) == 0 {
 		return
 	}
-	last := lines[len(lines)-1]
-	s.write(fmt.Sprintf("\x1b[%d;%dH", len(lines), minInt(len(last)+1, s.width)))
+	// The row holding the prompt is found rather than assumed, because the
+	// row below the prompt is drawn whenever the frame has not filled the
+	// height. Placing the caret on the last row would then put it one row
+	// under the prompt, on the blank the layout leaves there, and a reader
+	// typing would watch the character appear away from what they are typing
+	// into.
+	//
+	// The row is the last one with anything on it, because everything drawn
+	// after the prompt is that blank: the hint row and the pasted lines are
+	// drawn above it, and the record puts both there so that the prompt stays
+	// the last row of the input block.
+	row := len(lines)
+	for row > 0 && lines[row-1] == "" {
+		row--
+	}
+	if row == 0 {
+		return
+	}
+	last := lines[row-1]
+	s.write(fmt.Sprintf("\x1b[%d;%dH", row, minInt(displayWidth(last)+1, s.width)))
 }
 
 // minInt returns the smaller of two ints.
