@@ -210,9 +210,9 @@ repaint owed when the session closes is dropped rather than written.
 same defect, written before the audit took it up. It is not in the history of
 `main` and is not to be merged: the same fix landed by the session audit, under
 a different field name and with its own tests, so merging the branch would land
-a second timer for one job. It is kept rather than deleted until the withdrawn
-upload branch is decided, since both were branches taken off `main` and should
-be read together.
+a second timer for one job. It is kept rather than deleted alongside the
+withdrawn branches, since all three were taken off `main` and should be read
+together: `feature/upload-withdrawn` and `feature/model-list-cache-withdrawn`.
 
 ### Accepting a large paste with Ctrl-J
 
