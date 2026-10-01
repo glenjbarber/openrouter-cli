@@ -284,3 +284,28 @@ func TestCredentialTravelsInAHeaderOnly(t *testing.T) {
 		t.Errorf("body = %q, query = %q, want the credential in neither", raw, query)
 	}
 }
+
+// A count above what this build can hold is clamped to the bound this build
+// actually has, rather than refused or refused against a figure written down for
+// a 64-bit machine. A count that fits is delivered unchanged.
+func TestTokenCountClampsToThePlatformBound(t *testing.T) {
+	for _, tc := range []struct {
+		raw  string
+		want int
+	}{
+		{`128000`, 128000},
+		{`0`, 0},
+		{`null`, 0},
+		{`""`, 0},
+		{``, 0},
+		{`"not a figure"`, 0},
+		{`"9223372036854775807"`, maxInt},
+		{`1e30`, maxInt},
+		{`99999999999999999999`, maxInt},
+		{`-1e30`, minInt},
+	} {
+		if got := tokenCount(json.RawMessage(tc.raw)); got != tc.want {
+			t.Errorf("tokenCount(%s) = %d, want %d", tc.raw, got, tc.want)
+		}
+	}
+}
