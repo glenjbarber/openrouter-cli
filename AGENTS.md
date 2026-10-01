@@ -280,6 +280,12 @@ so that a later change does not silently reverse it.
 - A lone escape is still a key and still interrupts. It is the one byte at the
   front of the buffer that could be a report, and it is deliberately not held,
   since treating it as a report would swallow the interrupt it stands for.
+- An escape interrupts whether or not there is a line in hand. It used to be
+  answered only on an empty line, which left the key doing nothing at all while
+  a message was being composed, so a reader pressing it to abandon what they had
+  typed had no way to say so. What the interrupt means is decided by the session,
+  since escape abandons a line on an idle prompt and stops a model with it while
+  one is working.
 - A chat may be backgrounded without losing its conversation, and a new ephemeral
   chat started alongside it.
 - An ephemeral chat is not persisted and is not carried into a later chat.
@@ -311,6 +317,23 @@ so that a later change does not silently reverse it.
   in the session rather than one.
 - A user turn travels with the request but is not recorded until a reply arrives,
   so a failed request leaves no half exchange for the next one to replay.
+- A request runs on a goroutine of its own, so that the input loop keeps reading
+  while a model works. With the request on the input goroutine nothing is
+  reading the keys, so a message could not be queued and a model could not be
+  stopped at all.
+- A request carries its own context, taken from the session. Stopping a model
+  stops that request and not the session, which is the only reason a turn can be
+  stopped without leaving.
+- A turn holds the conversation it was started from, rather than reading the
+  session's. A turn records its answer where the question was asked, and a
+  conversation switched underneath one would file the answer in the wrong place.
+- A request cut short by the reader stopping the model is reported as stopped
+  rather than as an error, and the text that had arrived is kept. A cancellation
+  the reader asked for is not a fault, and telling them so would report a break
+  they had caused.
+- A turn the reader stopped records nothing, on the same terms as a turn that
+  failed. Recording a partial answer as though it were a whole one would have the
+  model carry it into the next request as something it had said.
 - `/new` clears the conversation and keeps the bootstrap document, since losing
   it would silently change how the model behaves.
 - A multi-line reply occupies one pane row per line, since a reply carrying
@@ -327,6 +350,42 @@ so that a later change does not silently reverse it.
 - Without the hint a first run shows an empty pane and a prompt, which gives no
   indication that plain text is the message and that a model must be selected
   first.
+
+### Queued messages
+
+- A line sent while a model is working is queued rather than refused, and the
+  model carries on. Enter does the queueing, and escape is what sends it.
+- Escape with a line in hand stops the model and sends the line as an update to
+  the request it was answering. The queue goes first and the line being composed
+  second, since the queue is what was committed first. Escape with nothing in
+  hand and nothing queued stops the model and sends nothing, which is a stop on
+  its own.
+- The update travels as part of the request it updates rather than as a question
+  after it. The model was asked the first question and the update is the
+  correction to it, and a blank line separates the two without marking either,
+  since a marker would be read as part of what was asked.
+- A queued line is sent as a question of its own once the request ahead of it has
+  been answered, and one line at a time. Two queued lines are two questions, and
+  sending them together would ask them as one.
+- A stop claims the queue under the lock that registers a turn, so a turn that
+  ends at the same moment cannot also drain it. Without that the reader would be
+  sent the same line once by the stop and again by the turn finishing.
+- The stop waits for the turn to settle rather than for the request to stop, since
+  a turn that has not finished unwinding would still be writing to the pane after
+  the update was sent.
+- The queue is drawn above the prompt, one row per line and marked as queued, and
+  is cut and reported rather than allowed to cost the prompt. The decision to
+  stop a model cannot be made against a queue that is not shown.
+- The hint row names Enter as queueing and escape as stopping while a model is
+  working, since a key named for what it does on an idle prompt would be naming
+  something else.
+- A command that changes the conversation is refused while a model is working.
+  A turn records its answer into the conversation it was asked in, so a
+  conversation cleared underneath one would collect an exchange nobody asked it
+  to keep. The refusal says what to do about it.
+- The turn in flight is waited for on the way out, on the same terms as a
+  delegate. A turn is not started once the session is closing, since it would be
+  a request made against a terminal nothing is drawing on.
 
 ### Worktrees
 
