@@ -85,31 +85,32 @@ func TestParseFlagsNoArgs(t *testing.T) {
 	}
 }
 
-// run must not report a configuration failure once the bootstrap document has
-// been reported, so a caller reading stderr sees the document first.
-func TestRunReportsBootstrapBeforeConfig(t *testing.T) {
+// An unreadable bootstrap document is reported before any credential work, so
+// the failure names the document rather than the configuration.
+func TestRunReportsBadBootstrapFirst(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "MEMORY.md")
-	if err := os.WriteFile(path, []byte("Be terse."), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
+	// An extension naming no format is refused by the loader.
+	path := filepath.Join(dir, "MEMORY.txt")
 
-	stderr := os.Stderr
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("Pipe: %v", err)
+	err := run([]string{"--bootstrap", path})
+	if err == nil {
+		t.Fatal("run accepted an unsupported extension, want an error")
 	}
-	os.Stderr = w
-	runErr := run([]string{"--bootstrap", path})
-	w.Close()
-	os.Stderr = stderr
+	if !strings.Contains(err.Error(), "unsupported bootstrap format") {
+		t.Errorf("err = %q, want it to name the format", err)
+	}
+}
 
-	buf := make([]byte, 256)
-	n, _ := r.Read(buf)
-	if !strings.Contains(string(buf[:n]), "MEMORY.md") {
-		t.Errorf("stderr = %q, want it to name the bootstrap document", string(buf[:n]))
+// A bootstrap document that cannot be read is an error, and the failure names
+// the document rather than the configuration.
+func TestRunReportsMissingBootstrap(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "absent.md")
+
+	err := run([]string{"--bootstrap", path})
+	if err == nil {
+		t.Fatal("run accepted a missing document, want an error")
 	}
-	if runErr == nil {
-		t.Skip("a configuration file is present, so run succeeded")
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("err = %v, want a not-exist error", err)
 	}
 }

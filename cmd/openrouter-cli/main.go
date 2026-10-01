@@ -9,6 +9,7 @@ import (
 
 	"github.com/glenjbarber/openrouter-cli/internal/bootstrap"
 	"github.com/glenjbarber/openrouter-cli/internal/config"
+	"github.com/glenjbarber/openrouter-cli/internal/tui"
 )
 
 // version is overridden at build time with -ldflags "-X main.version=...".
@@ -39,11 +40,9 @@ func run(args []string) error {
 	// document which cannot be read is reported before any credential work is
 	// attempted.
 	if opts.bootstrap != "" {
-		doc, err := bootstrap.Load(opts.bootstrap)
-		if err != nil {
+		if _, err := bootstrap.Load(opts.bootstrap); err != nil {
 			return err
 		}
-		fmt.Fprintf(os.Stderr, "bootstrap: %s (%s)\n", doc.Path, doc.Format)
 	}
 
 	// A default is written when no configuration exists, so that the path and
@@ -60,6 +59,40 @@ func run(args []string) error {
 		return err
 	}
 	_ = cfg
+
+	// The interface is entered only when both ends are a terminal. A
+	// redirected run reports why and stops rather than writing a frame into
+	// the capture, since escape sequences in a file or a pipe are noise.
+	return interface_(os.Stdout, os.Stdin, opts)
+}
+
+// interface_ starts the interactive session.
+//
+// The name carries a trailing underscore because interface is a keyword.
+func interface_(out, in *os.File, opts options) error {
+	session, err := tui.Start(out, in, "openrouter-cli")
+	if err != nil {
+		if errors.Is(err, tui.ErrNotTerminal) {
+			return errors.New("the interactive interface needs a terminal: " +
+				"stdout and stdin must both be a terminal")
+		}
+		return err
+	}
+	defer session.Close()
+
+	if opts.bootstrap != "" {
+		// The document is reported inside the frame rather than cleared, so
+		// that a startup message is not lost behind the first repaint.
+		doc, err := bootstrap.Load(opts.bootstrap)
+		if err != nil {
+			return err
+		}
+		session.Note("bootstrap: %s (%s)", doc.Path, doc.Format)
+	}
+
+	if err := session.Run(); err != nil && !errors.Is(err, tui.ErrQuit) {
+		return err
+	}
 	return nil
 }
 
