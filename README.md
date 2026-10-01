@@ -71,6 +71,13 @@ The terminal is driven through `syscall` rather than through a terminal library,
 so that the alternate screen, the cursor, and the input mode are under direct
 control. No third-party dependency is introduced.
 
+The BSD family and System V spell the termios ioctls differently, so those names
+live in build-tagged files. `make crossbuild` compiles every supported target,
+and continuous integration runs it, since a change to the terminal layer
+otherwise breaks only the platforms that are not being developed on. FreeBSD,
+Linux, macOS, NetBSD, OpenBSD, and DragonFly build. Windows does not, and
+`AGENTS.md` records why.
+
 The keys the line editor acts on are:
 
 | Key       | Effect                                                    |
@@ -93,6 +100,7 @@ make build          # compile into build/openrouter-cli
 make test           # run the test suite
 make check          # run the test suite under the race detector
 make lint           # static analysis and the format check
+make crossbuild     # compile for every supported target
 make install        # copy into /usr/local/bin, honouring PREFIX
 make help           # list the targets
 ```

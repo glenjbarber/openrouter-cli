@@ -53,7 +53,7 @@ const (
 func isTerminal(f *os.File) bool {
 	var t syscall.Termios
 	_, _, errno := syscall.Syscall6(syscall.SYS_IOCTL, f.Fd(),
-		uintptr(syscall.TIOCGETA), uintptr(unsafe.Pointer(&t)), 0, 0, 0)
+		uintptr(ioctlGetTermios), uintptr(unsafe.Pointer(&t)), 0, 0, 0)
 	return errno == 0
 }
 
@@ -101,7 +101,7 @@ func NewScreen(out, in *os.File) (*Screen, error) {
 
 // enterRaw switches the terminal to raw mode, saving the prior state.
 func (s *Screen) enterRaw() error {
-	if err := ioctlTermios(s.in.Fd(), syscall.TIOCGETA, &s.saved); err != nil {
+	if err := ioctlTermios(s.in.Fd(), ioctlGetTermios, &s.saved); err != nil {
 		return fmt.Errorf("reading the terminal state: %w", err)
 	}
 
@@ -117,7 +117,7 @@ func (s *Screen) enterRaw() error {
 	raw.Cc[syscall.VMIN] = 1
 	raw.Cc[syscall.VTIME] = 0
 
-	if err := ioctlTermios(s.in.Fd(), syscall.TIOCSETA, &raw); err != nil {
+	if err := ioctlTermios(s.in.Fd(), ioctlSetTermios, &raw); err != nil {
 		return fmt.Errorf("setting raw mode: %w", err)
 	}
 	return nil
@@ -125,7 +125,7 @@ func (s *Screen) enterRaw() error {
 
 // restore puts the terminal back the way it was found.
 func (s *Screen) restore() {
-	ioctlTermios(s.in.Fd(), syscall.TIOCSETA, &s.saved)
+	ioctlTermios(s.in.Fd(), ioctlSetTermios, &s.saved)
 	s.write(seqShowCur + seqExitAlt)
 }
 
@@ -141,7 +141,7 @@ func (s *Screen) Size() (height, width int) {
 
 // refreshSize re-reads the terminal dimensions.
 func (s *Screen) refreshSize() error {
-	h, w, err := windowSize(s.out.Fd())
+	h, w, err := terminalSize(s.out.Fd())
 	if err != nil {
 		return err
 	}
@@ -160,15 +160,14 @@ func (s *Screen) Close() {
 	s.restore()
 }
 
-// windowSize reads the terminal size through the window-size query.
-func windowSize(fd uintptr) (height, width int, err error) {
-	var ws struct {
-		rows, cols, xpixel, ypixel uint16
-	}
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd,
-		uintptr(syscall.TIOCGWINSZ), uintptr(unsafe.Pointer(&ws)))
-	if errno != 0 {
-		return 0, 0, fmt.Errorf("reading the terminal size: %w", errno)
+// terminalSize reads the terminal size through the window-size query.
+//
+// The query is spelled the same on every supported platform; only the termios
+// ioctls differ, so the layout itself lives in the platform files.
+func terminalSize(fd uintptr) (height, width int, err error) {
+	var ws windowSize
+	if err := readWindowSize(fd, &ws); err != nil {
+		return 0, 0, fmt.Errorf("reading the terminal size: %w", err)
 	}
 	return int(ws.rows), int(ws.cols), nil
 }

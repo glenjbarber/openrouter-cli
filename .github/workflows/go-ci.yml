@@ -36,3 +36,9 @@ jobs:
 
       - name: Build
         run: go build ./...
+
+      # The terminal layer names ioctl requests that differ between the BSD
+      # family and System V. A change there breaks a platform that is not the
+      # one running the tests, so every supported target is compiled here.
+      - name: Cross-compile
+        run: make crossbuild

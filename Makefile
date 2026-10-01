@@ -50,7 +50,7 @@ BIN=		${BUILD_DIR}/${PORTNAME}
 
 GO_FILES=	cmd/openrouter-cli/main.go
 
-.PHONY: all build install clean test check lint fmt vet tidy help
+.PHONY: all build install clean test check lint fmt vet tidy crossbuild help
 
 all: build
 
@@ -89,6 +89,18 @@ fmt:
 ## tidy: reconcile go.mod and go.sum with the imports.
 tidy:
 	${GO} mod tidy
+
+## crossbuild: compile for every supported target.
+#
+# The terminal layer names ioctl requests that differ between the BSD family and
+# System V, so a change there breaks a platform that is not the one being
+# developed on. This target is what notices, since nothing else would.
+crossbuild:
+	@for os in freebsd linux darwin netbsd openbsd dragonfly; do \
+		printf '%-10s ' $$os; \
+		GOOS=$$os GOARCH=amd64 $(GO) build ./... || exit 1; \
+		echo ok; \
+	done
 
 ## clean: remove build output.
 clean:

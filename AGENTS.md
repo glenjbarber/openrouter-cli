@@ -37,7 +37,10 @@ so that a later change does not silently reverse it.
 - FreeBSD is the primary target.
 - Best effort is made for other Unix-like systems.
 - macOS is a supported target.
-- Windows is a possible later target and is not yet committed to.
+- Windows is a possible later target and is not yet committed to. It does not
+  build, and the reason is recorded rather than left to be discovered: the
+  device comparison in the bootstrap loader reads `syscall.Stat_t`, which does
+  not exist there.
 
 ### Configuration
 
@@ -332,6 +335,15 @@ A port also expects `distinfo` and `pkg-descr`. The `pkg-descr` is held under
 - `$(shell ...)` is avoided for the same reason. The binary is therefore
   rebuilt whenever the target is requested rather than only when a dependency
   is newer, since a source list cannot be expanded into a dependency.
+- `make crossbuild` compiles every supported target. The terminal layer names
+  ioctl requests that differ between the BSD family and System V, so a change
+  there breaks a platform that is not the one being developed on, and nothing
+  else would notice. Continuous integration runs it.
+- The termios ioctl names live in build-tagged files: the BSD spelling carries a
+  trailing A where System V omits it. The window-size query is spelled the same
+  everywhere, so only the termios constants are split.
+- A platform matching neither family compiles but cannot drive the terminal, and
+  the build is made to say so rather than failing at run time.
 - The Go toolchain version is not repeated in the `Makefile`. The directive in
   `go.mod` is the source of it, and a second copy would drift.
 - Build output is written to `build/`, which is ignored, so that the binary
