@@ -108,6 +108,15 @@ func interface_(out, in *os.File, cfg *config.Config, opts options, doc *bootstr
 	session.Configure(cfg.URLBase, cfg.APIKey, cfg.Model)
 	session.SetBell(cfg.Bell)
 
+	// A marker left by an earlier session is adopted before anything is sent,
+	// so that a session started while the mode is in force records nothing.
+	// The marker is written by /cognito and was never read back, so a reader
+	// who turned the mode on and left recorded every exchange of the next
+	// session while the mode was still meant to be holding nothing.
+	if err := session.AdoptCognito(); err != nil {
+		return err
+	}
+
 	// Mouse reporting is not turned on unless it is asked for, because a
 	// terminal that reports events takes the drag that begins a selection
 	// away from the terminal, and text that cannot be selected is worse than
