@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/glenjbarber/openrouter-cli/internal/bootstrap"
+	"github.com/glenjbarber/openrouter-cli/internal/complete"
 	"github.com/glenjbarber/openrouter-cli/internal/openrouter"
 )
 
@@ -97,6 +98,10 @@ type Session struct {
 	// windows caches the context length of each model seen, so that the
 	// threshold can be evaluated without a call per message.
 	windows *contextLength
+	// completer completes the line being composed when Tab is pressed. It is
+	// built from the command table, so the words it offers are the words the
+	// dispatcher answers to rather than a list that could fall behind it.
+	completer complete.Completer
 
 	// ctx is cancelled when the session leaves, so that an in-flight request
 	// is abandoned rather than left to finish against a terminal that is no
@@ -132,14 +137,15 @@ func Start(out, in *os.File, title string) (*Session, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Session{
-		screen:  screen,
-		editor:  NewLineEditor(in),
-		conv:    NewConversation(),
-		windows: newContextLength(),
-		spinner: NewSpinner(),
-		out:     out,
-		ctx:     ctx,
-		cancel:  cancel,
+		screen:    screen,
+		editor:    NewLineEditor(in),
+		conv:      NewConversation(),
+		windows:   newContextLength(),
+		spinner:   NewSpinner(),
+		out:       out,
+		ctx:       ctx,
+		cancel:    cancel,
+		completer: complete.New(candidates()),
 		frame: Frame{
 			Title: title,
 			Status: Status{
@@ -164,6 +170,12 @@ func Start(out, in *os.File, title string) (*Session, error) {
 		s.frame.Input = line
 		s.draw()
 	}
+	// Tab completes the line rather than inserting a tab into it, since a
+	// reader pressing it is asking what a word might be rather than asking
+	// for whitespace. The editor holds no pane, so what to say about the
+	// candidates is settled here and the editor is handed back the line to
+	// compose.
+	s.editor.OnTab = func(line string) string { return s.completeLine(line) }
 	// The wheel is read on the same goroutine as the keys, since a report
 	// arrives in the same stream. The callback moves the view and repaints,
 	// which is what makes the scroll happen while the line is still being
@@ -343,58 +355,219 @@ func (s *Session) Run() error {
 	}
 }
 
+// command is one entry in the interface vocabulary.
+//
+// The table is the single place the names are written. The dispatcher looks
+// the typed name up in it, the help is rendered from it, and the completer
+// offers it, so the three cannot drift apart as separate lists would.
+type command struct {
+	// names are the words that select the command. A command with a synonym
+	// carries more than one, such as /quit and /exit, and the completer
+	// offers each of them so a prefix such as /ex can be completed.
+	names []string
+	// usage is how the command appears in the help. It is empty unless the
+	// help shows an argument hint beside the name, as in /model [NAME].
+	usage string
+	// description is the one-line summary shown in the help and beside a
+	// candidate when a prefix matches more than one.
+	description string
+	// run performs the command with the words that follow it, and reports
+	// whether the session should end.
+	run func(s *Session, args []string) bool
+}
+
+// commands is the interface vocabulary, in the order the help lists it.
+//
+// The order is the help order rather than an alphabetical one, since the help
+// is where the list is read and the completer lists the matches in the order
+// they are declared.
+//
+// The table is filled in init rather than in a variable initializer because
+// /help renders the help from this same table. A variable initializer that
+// reached cmdHelp would reach helpText and back to this variable, which Go
+// reports as an initialization cycle. init breaks the cycle without resorting
+// to a second copy of the names, which is the thing the table exists to
+// prevent.
+var commands []command
+
+func init() {
+	commands = []command{
+		{names: []string{"/help"}, description: "this list", run: (*Session).cmdHelp},
+		{names: []string{"/connect"}, description: "test the connection and report the key", run: (*Session).cmdConnect},
+		{names: []string{"/key"}, description: "report the usage against the key", run: (*Session).cmdKey},
+		{names: []string{"/search"}, description: "search the pane, filtered as it is typed", run: (*Session).cmdSearch},
+		{names: []string{"/models"}, description: "list the models, filtered as it is typed", run: (*Session).cmdModels},
+		{names: []string{"/freemodels"}, description: "list the models that cost nothing, filtered as typed", run: (*Session).cmdFreeModels},
+		{names: []string{"/model"}, usage: "/model [NAME]", description: "show or choose the model, without an argument to list", run: (*Session).cmdModel},
+		{names: []string{"/new"}, description: "clear the conversation", run: (*Session).cmdNew},
+		{names: []string{"/bell"}, description: "ring the terminal bell on reply, on or off", run: (*Session).cmdBell},
+		{names: []string{"/cognito"}, description: "record nothing, on or off", run: (*Session).cmdCognito},
+		{names: []string{"/verbose"}, description: "report the shape of each streamed turn, on or off", run: (*Session).cmdVerbose},
+		{names: []string{"/delegate"}, usage: "/delegate QUESTION", description: "ask a question alongside, without recording it", run: (*Session).cmdDelegate},
+		{names: []string{"/btw"}, description: "start a thread branched from this conversation", run: (*Session).cmdBtw},
+		{names: []string{"/main"}, description: "leave the thread and return to the conversation", run: (*Session).cmdMain},
+		{names: []string{"/compact"}, description: "summarise the conversation and start again", run: (*Session).cmdCompact},
+		{names: []string{"/mouse"}, description: "turn mouse reporting on or off, for wheel scrolling", run: (*Session).cmdMouse},
+		{names: []string{"/clear"}, description: "clear the pane", run: (*Session).cmdClear},
+		{names: []string{"/info"}, description: "report the session settings", run: (*Session).cmdInfo},
+		{names: []string{"/quit", "/exit"}, description: "leave the interface", run: (*Session).cmdQuit},
+	}
+}
+
 // command handles a slash command, reporting whether the session should end.
+//
+// The name is looked up in the table rather than switched on, so that the set
+// of names is written in one place. A name the table does not carry is
+// reported rather than refused, since what the reader typed looks like a
+// command and is worth answering.
 func (s *Session) command(line string) bool {
 	args := strings.Fields(line)
 	name := args[0]
 
-	switch name {
-	case "/help":
-		s.appendLines(helpText())
-	case "/clear":
-		s.conv.Reset()
-		s.frame.Reply = nil
-		s.resetScroll()
-	case "/quit", "/exit":
-		return true
-	case "/connect":
-		s.connect()
-	case "/key":
-		s.showUsage()
-	case "/search":
-		s.beginSearch()
-	case "/models":
-		s.beginModelList(nil)
-	case "/freemodels":
-		s.beginModelList(func(m openrouter.Model) bool { return m.Free() })
-	case "/model":
-		s.chooseModel(args[1:])
-	case "/new":
-		s.conv.Reset()
-		s.frame.Reply = nil
-		s.resetScroll()
-		s.Note("conversation cleared")
-	case "/bell":
-		s.toggleBell()
-	case "/cognito":
-		s.toggleCognito()
-	case "/verbose":
-		s.toggleVerbose()
-	case "/delegate":
-		s.startDelegate(strings.Join(args[1:], " "))
-	case "/btw":
-		s.beginThread()
-	case "/main":
-		s.endThread()
-	case "/compact":
-		s.compact(true)
-	case "/mouse":
-		s.toggleMouse()
-	case "/info":
-		s.showInfo()
-	default:
-		s.frame.Reply = append(s.frame.Reply, "unknown command: "+name)
+	if c := lookupCommand(name); c != nil {
+		return c.run(s, args[1:])
 	}
+	s.frame.Reply = append(s.frame.Reply, "unknown command: "+name)
+	return false
+}
+
+// lookupCommand returns the entry answering to the given name, or nil.
+//
+// The search is over the declared names rather than a switch, so that a
+// synonym is declared once beside the command it belongs to rather than
+// written a second time in the arm that runs it.
+func lookupCommand(name string) *command {
+	for i, c := range commands {
+		for _, n := range c.names {
+			if n == name {
+				return &commands[i]
+			}
+		}
+	}
+	return nil
+}
+
+// cmdHelp lists the commands.
+func (s *Session) cmdHelp([]string) bool {
+	s.appendLines(helpText())
+	return false
+}
+
+// cmdClear empties the pane and the conversation behind it.
+func (s *Session) cmdClear([]string) bool {
+	s.conv.Reset()
+	s.frame.Reply = nil
+	s.resetScroll()
+	return false
+}
+
+// cmdQuit leaves. The end of the session is reported through the return rather
+// than taken here, so that the dispatcher is the single place that decides it.
+func (s *Session) cmdQuit([]string) bool { return true }
+
+// cmdConnect tests the connection and reports the key.
+func (s *Session) cmdConnect([]string) bool {
+	s.connect()
+	return false
+}
+
+// cmdKey reports the usage against the key.
+func (s *Session) cmdKey([]string) bool {
+	s.showUsage()
+	return false
+}
+
+// cmdSearch opens the pane search.
+func (s *Session) cmdSearch([]string) bool {
+	s.beginSearch()
+	return false
+}
+
+// cmdModels opens the catalogue.
+func (s *Session) cmdModels([]string) bool {
+	s.beginModelList(nil)
+	return false
+}
+
+// cmdFreeModels opens the catalogue narrowed to the models that cost nothing.
+//
+// It is the same listing under a predicate rather than a second listing, so a
+// change to one is a change to both.
+func (s *Session) cmdFreeModels([]string) bool {
+	s.beginModelList(func(m openrouter.Model) bool { return m.Free() })
+	return false
+}
+
+// cmdModel shows or chooses the model.
+func (s *Session) cmdModel(args []string) bool {
+	s.chooseModel(args)
+	return false
+}
+
+// cmdNew clears the conversation and says so, which /clear does not since it
+// clears the very pane the report would be written to.
+func (s *Session) cmdNew([]string) bool {
+	s.conv.Reset()
+	s.frame.Reply = nil
+	s.resetScroll()
+	s.Note("conversation cleared")
+	return false
+}
+
+// cmdBell turns the terminal bell on or off.
+func (s *Session) cmdBell([]string) bool {
+	s.toggleBell()
+	return false
+}
+
+// cmdCognito turns recording off or on.
+func (s *Session) cmdCognito([]string) bool {
+	s.toggleCognito()
+	return false
+}
+
+// cmdVerbose turns the stream report on or off.
+func (s *Session) cmdVerbose([]string) bool {
+	s.toggleVerbose()
+	return false
+}
+
+// cmdDelegate asks a question alongside the conversation.
+//
+// The words that follow are rejoined, since a delegate is a question rather
+// than a flag and a reader who typed it as prose means it as prose.
+func (s *Session) cmdDelegate(args []string) bool {
+	s.startDelegate(strings.Join(args, " "))
+	return false
+}
+
+// cmdBtw starts a thread branched from the conversation.
+func (s *Session) cmdBtw([]string) bool {
+	s.beginThread()
+	return false
+}
+
+// cmdMain leaves the thread and returns to the conversation.
+func (s *Session) cmdMain([]string) bool {
+	s.endThread()
+	return false
+}
+
+// cmdCompact summarises the conversation and starts again.
+func (s *Session) cmdCompact([]string) bool {
+	s.compact(true)
+	return false
+}
+
+// cmdMouse turns mouse reporting on or off.
+func (s *Session) cmdMouse([]string) bool {
+	s.toggleMouse()
+	return false
+}
+
+// cmdInfo reports the session settings.
+func (s *Session) cmdInfo([]string) bool {
+	s.showInfo()
 	return false
 }
 
@@ -415,29 +588,98 @@ func (s *Session) toggleMouse() {
 	}
 }
 
-// helpText lists the commands.
+// helpColumn is the width a command name is padded to in the help.
+//
+// It is one less than the longest name carrying an argument hint, since the
+// hint is part of how a command is written but not of the name that selects
+// it. A name that overruns the column pushes its description along rather
+// than losing it, which is what a hand-aligned list does.
+const helpColumn = 17
+
+// helpText lists the commands, one per line, rendered from the same table the
+// dispatcher and the completer read.
+//
+// The text is rendered rather than written out, so that a command added to the
+// table appears here without a second edit. That is the drift the table
+// exists to prevent, since a hand-written list here is exactly the copy that
+// falls behind.
 func helpText() string {
-	return strings.Join([]string{
-		"/help              this list",
-		"/connect           test the connection and report the key",
-		"/key               report the usage against the key",
-		"/search            search the pane, filtered as it is typed",
-		"/models            list the models, filtered as it is typed",
-		"/freemodels        list the models that cost nothing, filtered as typed",
-		"/model [NAME]      show or choose the model, without an argument to list",
-		"/new               clear the conversation",
-		"/bell              ring the terminal bell on reply, on or off",
-		"/cognito           record nothing, on or off",
-		"/verbose           report the shape of each streamed turn, on or off",
-		"/delegate QUESTION  ask a question alongside, without recording it",
-		"/btw               start a thread branched from this conversation",
-		"/main              leave the thread and return to the conversation",
-		"/compact           summarise the conversation and start again",
-		"/mouse             turn mouse reporting on or off, for wheel scrolling",
-		"/clear             clear the pane",
-		"/info              report the session settings",
-		"/quit, /exit       leave the interface",
-	}, "\n")
+	lines := make([]string, 0, len(commands))
+	for _, c := range commands {
+		lines = append(lines, fmt.Sprintf("%-*s  %s", helpColumn, c.usageLine(), c.description))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// usageLine returns how the command is written in the help, which is its names
+// joined unless an argument hint is declared beside them.
+func (c command) usageLine() string {
+	if c.usage != "" {
+		return c.usage
+	}
+	return strings.Join(c.names, ", ")
+}
+
+// candidates returns the command table as completer candidates, one per name.
+//
+// A command with a synonym becomes more than one candidate, since either word
+// may be typed and the completer has to offer both to complete a prefix that
+// reaches either.
+func candidates() []complete.Candidate {
+	out := make([]complete.Candidate, 0, len(commands))
+	for _, c := range commands {
+		for _, n := range c.names {
+			out = append(out, complete.Candidate{Name: n, Description: c.description})
+		}
+	}
+	return out
+}
+
+// completeLine offers the completion of the line and returns the line to
+// compose in its place.
+//
+// An empty return leaves the line as it is, which is what an ambiguous prefix
+// and one that matches nothing both do: neither should guess at a word. What
+// was found is written to the pane in those cases, since a Tab that changed
+// nothing and said nothing would read as a dead key. The repaint is left to
+// the editor, which reports the line after every key, so that a report with no
+// change to the line is drawn by the same path that draws any other keystroke.
+func (s *Session) completeLine(line string) string {
+	res := s.completer.Complete(line, len(line))
+	switch res.Kind {
+	case complete.Unique:
+		return res.Line
+	case complete.Ambiguous:
+		s.showCandidates(res)
+	case complete.NoMatch:
+		s.appendLines("nothing matches " + res.Prefix)
+	case complete.NotApplicable:
+		s.appendLines("nothing to complete here")
+	}
+	return ""
+}
+
+// showCandidates lists what a prefix matched, so that an ambiguous prefix can
+// be narrowed rather than guessed at.
+//
+// The listing is written as ordinary text rather than drawn, since a selection
+// out of the pane has to yield plain text with no escape sequence set around
+// the match. The names are aligned so the descriptions line up beside them,
+// and a row too wide for the pane is folded by the renderer rather than cut
+// here.
+func (s *Session) showCandidates(res complete.Result) {
+	width := 0
+	for _, c := range res.Candidates {
+		if len(c.Name) > width {
+			width = len(c.Name)
+		}
+	}
+	lines := make([]string, 0, len(res.Candidates)+1)
+	lines = append(lines, res.Set+" matching "+res.Prefix)
+	for _, c := range res.Candidates {
+		lines = append(lines, fmt.Sprintf("%-*s  %s", width, c.Name, c.Description))
+	}
+	s.appendLines(strings.Join(lines, "\n"))
 }
 
 // connect establishes the connection by contacting the key endpoint.

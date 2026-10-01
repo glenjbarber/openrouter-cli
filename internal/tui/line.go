@@ -75,6 +75,15 @@ type LineEditor struct {
 	// mode with echo disabled and so does not draw it. A nil callback draws
 	// nothing, which is the correct behaviour for a non-interactive reader.
 	OnChange func(string)
+	// OnTab is called when the user presses Tab, with the line as it stands.
+	// It returns the line to compose in its place, or an empty string to
+	// leave the line as it is. The editor holds no pane, so whatever the
+	// callback wishes to say about the candidates it says itself rather than
+	// the editor reporting them into a pane it does not own.
+	//
+	// A nil callback inserts a literal tab, which is the only thing a reader
+	// without completion can expect the key to do.
+	OnTab func(line string) string
 	// pendingKeys holds the final bytes of the special key sequences read since
 	// the last keypress, oldest first. They are acted on by the read loop, which
 	// holds the line being composed, rather than by the reader, which does not.
@@ -377,6 +386,28 @@ func (le *LineEditor) ReadLine() (string, error) {
 				return strings.Join(lines, "\n"), nil
 			}
 			return out.String(), nil
+		case keyTab:
+			// A control key abandons a rune that has not arrived whole, so
+			// that a Tab pressed part way through one does not leave a broken
+			// sequence behind to be committed later.
+			pending = pending[:0]
+			if le.OnTab == nil {
+				// Without a completer the key is a tab, which is what a
+				// reader indenting a message may want.
+				out.WriteByte(keyTab)
+				le.notify(&out)
+				continue
+			}
+			// The line is replaced only when a single candidate was found.
+			// An ambiguous prefix and one that matches nothing both return
+			// nothing, so Tab never guesses at a word. The line is reported
+			// either way, so that a Tab which only wrote a report is
+			// repainted by the same path that repaints any other keystroke.
+			if line := le.OnTab(out.String()); line != "" {
+				out.Reset()
+				out.WriteString(line)
+			}
+			le.notify(&out)
 		case keyEscape:
 			// A lone escape is a key rather than the start of a sequence,
 			// since no escape sequence is read as input here.
@@ -384,8 +415,9 @@ func (le *LineEditor) ReadLine() (string, error) {
 				return "", ErrInterrupt
 			}
 		default:
-			if b < 0x20 && b != keyTab {
-				// Another control key, ignored rather than inserted.
+			// Another control key, ignored rather than inserted. Tab is not
+			// among them, since it has a case of its own above.
+			if b < 0x20 {
 				continue
 			}
 			if b < utf8Start {
