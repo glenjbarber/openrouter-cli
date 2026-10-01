@@ -330,6 +330,11 @@ func TestOnlyScrollingDownReturnsToBottom(t *testing.T) {
 // callback wiring is exercised rather than the arithmetic alone.
 func TestScrollByReachesTheView(t *testing.T) {
 	s := newScrollSession()
+	// The pane holds history, since an offset larger than the history is
+	// clamped away and the wheel would then have nothing to move.
+	for i := 0; i < 40; i++ {
+		s.appendLines("a line of output")
+	}
 	s.scrollBy(mouseUp)
 	if s.scroll != scrollStep {
 		t.Errorf("scroll = %d, want %d", s.scroll, scrollStep)

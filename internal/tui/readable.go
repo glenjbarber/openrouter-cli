@@ -1,4 +1,4 @@
-//go:build darwin || dragonfly || freebsd || linux || netbsd || openbsd
+//go:build darwin || freebsd || linux || netbsd || openbsd
 
 package tui
 

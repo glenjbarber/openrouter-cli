@@ -431,7 +431,18 @@ func titleLine(title string, width int, scrolled bool) string {
 //
 // The reply pane is filled from the top and the newest lines are kept when the
 // pane is too short, since the newest exchange is the one being read.
+// Render draws a frame at a size and returns the rows to write.
 func Render(f Frame, height, width int) []string {
+	rows, _ := render(f, height, width)
+	return rows
+}
+
+// render draws a frame and reports the offset it drew it at. The offset is
+// returned because it is clamped here, and the session keeps its own copy of
+// it: an offset the renderer silently reduced would leave the session holding
+// a position the reader cannot see, and coming back down from it would take a
+// notch per line rather than per screen.
+func render(f Frame, height, width int) ([]string, int) {
 	if width < 1 {
 		width = 1
 	}
@@ -675,7 +686,7 @@ func Render(f Frame, height, width int) []string {
 	for i, row := range rows {
 		rows[i] = plainRow(row)
 	}
-	return rows
+	return rows, f.Scroll
 }
 
 // plainRow removes the bytes a terminal would act on from a row.
