@@ -453,19 +453,36 @@ so that a later change does not silently reverse it.
 - A mouse report arriving split across reads is held until it completes, because
   a link delivers it in pieces and returning the leading escape as a key ends the
   line and leaves the session. That is a crash rather than a misread, and it was
-  the failure reported over ssh.
-- A held prefix is waited for with a read deadline, since a prefix at the end of
-  a stream would otherwise wait for a byte that never comes. Only a file can be
-  given a deadline; a reader that is not a file reports the end of its input
-  rather than blocking, so a hold over one returns.
-- The deadline is per read rather than for the whole hold, so a report arriving
+  the failure reported over ssh. A wheel scroll ends the session the same way, and
+  was reported as a crash when scrolling a long way up.
+- One notch in six is split, since a read of sixty-four bytes does not divide the
+  twelve-byte report, and scrolling fast is what fills a queue that splits one.
+  Scrolling slowly produces whole reports, which is why the fault appears only
+  when a reader scrolls hard.
+- The hold is bounded by a read that cannot block, with a short wait between
+  attempts, and not by a read deadline on the file. A prefix at the end of a
+  stream would otherwise wait for a byte that never comes, and Go hands the
+  standard streams to a program through `os.NewFile`, which leaves the descriptor
+  blocking and outside the runtime poller, so a deadline cannot be set on one. A
+  hold that asked for a deadline took the failure for the end of the wait.
+- Only a file can be read this way. A reader that is not a file reports the end of
+  its input rather than blocking, so a hold over one returns.
+- The descriptor is put back the way it was found. The terminal is given to the
+  client as it was handed over, and the mode of a descriptor is not the client's to
+  keep.
+- `select(2)` is not used, since Go spells the descriptor set differently on every
+  BSD it carries and it would take one spelling per system for the sake of a
+  single bit. `poll(2)` is not used either, since on Darwin it ignores its
+  timeout and waits for ever when nothing is ready, which is the one case the
+  bound exists for.
+- The wait is per read rather than for the whole hold, so a report arriving
   over several reads is assembled rather than cut short after the first gap.
 - A prefix too short to recognise is still held. Requiring three bytes was what
   returned the opening escape as a key when a report arrived one byte at a time.
 - Beyond the bracket the form decides. An arrow or another escape sequence is
   not held, or the key would be swallowed rather than a report. The up arrow is
   the shortest sequence that begins like a report and is not one.
-- A prefix that does not complete within the deadline is handed back as keys, so
+- A prefix that does not complete within the wait is handed back as keys, so
   a lone escape interrupts and an arrow reaches the key handler, rather than
   either being reported as the end of the input.
 - The six-byte mouse form is not held, since it is a fixed width and is taken

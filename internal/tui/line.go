@@ -55,6 +55,13 @@ const readChunk = 64
 // going to complete.
 const prefixTimeout = 60 * time.Millisecond
 
+// errPrefixUnfinished reports that a held prefix was not completed in the time
+// the wait allowed.
+//
+// The caller hands the bytes back as keys rather than treating this as the end
+// of the input, since the prefix was never shown not to be a report.
+var errPrefixUnfinished = errorString("the held prefix never arrived")
+
 // LineEditor reads a single line of text.
 type LineEditor struct {
 	r io.Reader
@@ -151,31 +158,38 @@ func (le *LineEditor) holdable() bool { return true }
 
 // fillHeld reads one block while a report prefix is held.
 //
-// The read is given a deadline, so a prefix at the end of a stream waits a
-// bounded time rather than forever. On the deadline the bytes are handed back
-// as keys, since a prefix that never completed was not a report.
+// The read waits for the rest of a report rather than being made on the spot,
+// and the wait is bounded, so that a prefix which is never completed is handed
+// back as keys instead of sitting in the buffer for ever. A lone escape is a
+// key the reader pressed, so it has to come back rather than be waited on.
+//
+// The bound is a read that cannot block rather than a read deadline on the
+// file. Go hands the standard streams to a program through os.NewFile, which
+// leaves the terminal blocking and outside the runtime poller, and a deadline
+// cannot be set on a descriptor the runtime is not watching: SetReadDeadline
+// fails on every terminal, and the failure was taken for the end of the wait. A
+// report arriving in pieces was therefore handed back as keys the moment it was
+// split, and its opening escape ended the line. One wheel notch out of every six
+// was split, since a read of sixty-four bytes does not divide the twelve-byte
+// report, and scrolling fast is what filled the queue that splits one.
+//
+// The wait is per read rather than for the whole hold, so a report arriving over
+// several reads is assembled rather than cut short after the first gap.
 func (le *LineEditor) fillHeld() error {
 	if !le.held {
 		le.held = true
 	}
 	if le.src == nil {
-		// Without a file there is no deadline to set, and the read reports
+		// Without a file there is no descriptor to read, and the read reports
 		// the end of a stream rather than blocking, so it returns.
 		return le.fill()
 	}
-
-	// The deadline is per read rather than for the whole hold, so a report
-	// arriving over several reads is assembled rather than cut short after the
-	// first gap.
-	if err := le.src.SetReadDeadline(time.Now().Add(prefixTimeout)); err != nil {
-		le.held = false
+	n, err := readWithin(int(le.src.Fd()), prefixTimeout, le.chunkFor())
+	if err != nil {
 		return err
 	}
-	defer le.src.SetReadDeadline(time.Time{})
-
-	n, err := le.src.Read(le.chunkFor())
 	le.buf = append(le.buf, le.chunk[:n]...)
-	return err
+	return nil
 }
 
 // chunkFor returns the read buffer, allocating it on first use.

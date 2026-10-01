@@ -110,6 +110,7 @@ Merged into `main`.
 | Input audit | `d669b05` | Sequences read from their shape rather than a table of lengths. |
 | Conversation audit | `aa149ac` | Four races, the cognito marker, and a summary that outlived `/new`. |
 | Model filter completion | `f3b7e47` | Tab completes the filter and cycles through what it matched. |
+| Split mouse report | `eb57cbb` | A wheel notch split across reads no longer ends the session. |
 
 ## In progress
 
@@ -1066,3 +1067,42 @@ The record's claim that `/update` does not exist is also correct, and is
 recorded honestly at `AGENTS.md`, in the open decisions: no source file
 mentions the instruction file names, the only path that exists is
 `--bootstrap FILE`, and a later commit narrowed that search to one document.
+
+## Scrolling the wheel hard ended the session
+
+Reported as a crash when scrolling far up. It was not a fault in the scroll
+arithmetic, which has been clamped in the renderer since the rendering audit,
+and it was not a fault in the bound on the pane either. The offset ran to any
+value the wheel could reach and the renderer settled it against the history it
+had, so a far offset was clamped and drawn.
+
+The crash was in the input path, and it had been there since the hold was
+written for the ssh failure. A mouse report that arrives in two pieces is held,
+so that its opening escape is not read as the interrupt it looks like. Bounding
+that hold used a read deadline on the file. A terminal cannot take one: Go
+hands the standard streams to a program through `os.NewFile`, which leaves the
+descriptor blocking and outside the runtime poller, and `SetReadDeadline` on a
+descriptor the runtime is not watching fails with `ErrNoDeadline`. The hold
+took that failure for the end of its wait, handed the report back as keys, and
+the escape ended the line. On an empty line, which is where a reader is while
+scrolling, that is `ErrQuit` and the session is over.
+
+One notch in six was split, since the read is sixty-four bytes and the SGR
+report is twelve, and the queue that splits one is filled by scrolling fast.
+Scrolling slowly delivers whole reports and never reaches the fault, which is
+why it read as a scroll bug and not as an input bug.
+
+Two ways of bounding the wait were measured rather than assumed. `poll(2)` on
+Darwin ignores its timeout and waits for ever when nothing is ready, which is
+the one case the bound exists for. `select(2)` honours the timeout everywhere,
+but Go carries the descriptor set under a different name and element width on
+every BSD it supports, so it takes one spelling per system for the sake of one
+bit. What is used is a read that cannot block with a short wait between
+attempts, which needs no request number and no structure from either, and the
+descriptor is put back the way it was found.
+
+The test that pins it uses a socket pair built with `os.NewFile` rather than
+`os.Pipe`, because a pipe is a descriptor the runtime does watch and would pass
+a hold that asked for a deadline. It is the same case a terminal is in: a
+descriptor the program was handed rather than one it opened. On the old code it
+fails with `interrupted`, which is the crash.
