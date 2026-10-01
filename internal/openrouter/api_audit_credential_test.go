@@ -218,3 +218,74 @@ func TestRedactRemovesAKeyEmbeddedInText(t *testing.T) {
 		t.Errorf("redact = %q, want the surrounding text kept", got)
 	}
 }
+
+// A body that cannot be decoded is a diagnostic like any other, so it goes
+// through the same filter as the rest. The text of a decoding failure carries
+// no part of the body, so what is asserted here is that the filter is on the
+// path at all: an error built outside it is unfiltered by construction, and a
+// test reading only the text could not tell the two apart.
+func TestDecodeFailuresPassThroughTheCredentialFilter(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		call func(*Client) error
+	}{
+		{
+			name: "a listing that is not JSON",
+			body: `<html>maintenance</html>`,
+			call: func(c *Client) error {
+				_, err := c.Models(context.Background())
+				return err
+			},
+		},
+		{
+			name: "a listing whose data is not a list",
+			body: `{"data":"none"}`,
+			call: func(c *Client) error {
+				_, err := c.Models(context.Background())
+				return err
+			},
+		},
+		{
+			name: "a listing holding something that is not a model",
+			body: `{"data":[1]}`,
+			call: func(c *Client) error {
+				_, err := c.Models(context.Background())
+				return err
+			},
+		},
+		{
+			name: "an allowance whose figure is not a figure",
+			body: `{"data":{"usage":"a lot"}}`,
+			call: func(c *Client) error {
+				_, err := c.KeyUsage(context.Background())
+				return err
+			},
+		},
+		{
+			name: "an allowance that is not JSON",
+			body: `[]`,
+			call: func(c *Client) error {
+				_, err := c.KeyUsage(context.Background())
+				return err
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+				io.WriteString(w, tc.body)
+			})
+
+			err := tc.call(c)
+			if err == nil {
+				t.Fatalf("the call decoded %s, want a failure", tc.body)
+			}
+			mustNotCarry(t, "the decoding diagnostic", err.Error())
+			var filtered *redactedError
+			if !errors.As(err, &filtered) {
+				t.Errorf("err = %v of type %T, want it built through the filter",
+					err, err)
+			}
+		})
+	}
+}

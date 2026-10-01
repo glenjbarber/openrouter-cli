@@ -3,7 +3,6 @@ package openrouter
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strconv"
 )
 
@@ -75,7 +74,7 @@ func (c *Client) Models(ctx context.Context) ([]Model, error) {
 		Data []Model `json:"data"`
 	}
 	if err := json.Unmarshal(data, &envelope); err != nil {
-		return nil, fmt.Errorf("decoding the model list: %w", err)
+		return nil, c.wrapf(err, "decoding the model list")
 	}
 	return envelope.Data, nil
 }
@@ -90,7 +89,7 @@ func (c *Client) KeyUsage(ctx context.Context) (*Usage, error) {
 		Data Usage `json:"data"`
 	}
 	if err := json.Unmarshal(data, &envelope); err != nil {
-		return nil, fmt.Errorf("decoding the key usage: %w", err)
+		return nil, c.wrapf(err, "decoding the key usage")
 	}
 	return &envelope.Data, nil
 }
