@@ -43,6 +43,10 @@ type Session struct {
 	// leaving a thread restores it without a snapshot being taken here.
 	thread   *Ephemeral
 	mainConv *Conversation
+	// delegates are the background questions still running. They are tracked so
+	// that leaving does not leave one writing to a frame nobody is drawing on,
+	// and so that the count can be reported.
+	delegates map[*Delegate]bool
 	// bellWanted reports that the terminal bell is rung when a reply arrives.
 	// It is a preference read from the configuration and changed at runtime,
 	// so that a user who did not ask for it never hears one.
@@ -320,6 +324,8 @@ func (s *Session) command(line string) bool {
 		s.toggleBell()
 	case "/cognito":
 		s.toggleCognito()
+	case "/delegate":
+		s.startDelegate(strings.Join(args[1:], " "))
 	case "/btw":
 		s.beginThread()
 	case "/main":
@@ -364,6 +370,7 @@ func helpText() string {
 		"/new               clear the conversation",
 		"/bell              ring the terminal bell on reply, on or off",
 		"/cognito           record nothing, on or off",
+		"/delegate QUESTION  ask a question alongside, without recording it",
 		"/btw               start a thread branched from this conversation",
 		"/main              leave the thread and return to the conversation",
 		"/compact           summarise the conversation and start again",

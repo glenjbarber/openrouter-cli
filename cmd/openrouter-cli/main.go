@@ -192,6 +192,7 @@ Commands, typed inside the interface:
   /info              Report the session settings.
   /bell              Ring the terminal bell when a reply arrives.
   /cognito           Record nothing, on or off.
+  /delegate Q        Ask a question alongside, without recording it.
   /btw               Start a thread branched from this conversation.
   /main              Leave the thread and return to the conversation.
   /new               Clear the conversation.

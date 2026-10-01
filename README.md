@@ -225,6 +225,7 @@ model:
 | `/info`          | Report the model, the endpoint, and whether a key is set. |
 | `/bell`          | Ring the terminal bell when a reply arrives, on or off. |
 | `/cognito`       | Record nothing from now on, or record again.        |
+| `/delegate Q`    | Ask a question alongside, without recording it.     |
 | `/btw`           | Start a thread branched from this conversation.      |
 | `/main`          | Leave the thread and return to the conversation.    |
 | `/new`           | Clear the conversation, keeping the bootstrap document. |
@@ -246,6 +247,12 @@ the text received before the failure and reports the error beneath it.
 
 `/new` clears the conversation but keeps the bootstrap document in force, since
 losing it would silently change how the model behaves.
+
+`/delegate QUESTION` asks a question from a copy of the conversation while the
+main one stays open. The prompt remains live, so a message can be typed while
+the answer is still arriving. The answer is shown in the pane and is not added to
+either conversation: a delegate records nothing, which is what lets it be used
+while `/cognito` is on.
 
 `/btw` starts a thread branched from the current conversation. It begins with
 the history it branched from, so the model has the context, but records nothing

@@ -172,6 +172,10 @@ type Frame struct {
 	Partial string
 	// Busy reports that a request is in flight, which the status bar shows.
 	Busy bool
+	// Delegate is the partial answer of a background question, shown below the
+	// conversation while it arrives. It is kept apart from the reply because it
+	// belongs to neither conversation and would be misleading among them.
+	Delegate string
 	// Spinner is the twiddle shown while work is in progress, empty when
 	// idle. It is drawn beside the partial reply rather than in the status
 	// bar, so that it moves where the eye already is.
@@ -272,6 +276,11 @@ func Render(f Frame, height, width int) []string {
 		// to contain a fence, so folding it separately would reflow code that
 		// must keep its own lines.
 		reply = append(reply, WrapBlock(f.Partial, width)...)
+	}
+	if f.Delegate != "" {
+		// A delegate that is still answering is labelled, so a line in the
+		// pane is not mistaken for the answer to what was just asked.
+		reply = append(reply, strings.TrimRight(f.Delegate, "\n"))
 	}
 	if f.Spinner != "" {
 		// The twiddle leads the line it belongs to. It is placed before the
