@@ -166,10 +166,16 @@ func (s *Session) startDelegate(task string) {
 		s.frame.Delegate = ""
 		// The finished answer joins the pane as ordinary text. It is not
 		// added to the conversation, since a delegate keeps nothing.
-		if err != nil {
+		switch {
+		case err != nil:
 			s.frame.Reply = append(s.frame.Reply,
 				fmt.Sprintf("/delegate %s (error) %v", task, err))
-		} else {
+		case answer == "":
+			// An empty line would be indistinguishable from a question that
+			// was never asked, so the absence is said in the same words the
+			// request path uses.
+			s.frame.Reply = append(s.frame.Reply, "(the model returned nothing)")
+		default:
 			s.frame.Reply = append(s.frame.Reply, answer)
 		}
 		s.mu.Unlock()

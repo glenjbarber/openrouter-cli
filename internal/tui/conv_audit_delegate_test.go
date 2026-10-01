@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -33,5 +34,41 @@ func TestDelegateDoesNotReadTheConversationWhileItRuns(t *testing.T) {
 	}
 	if got := s.delegatePending(); got != 0 {
 		t.Fatalf("%d delegates still running after the release", got)
+	}
+}
+
+// A delegate that produced nothing says so. An empty line in the pane is
+// indistinguishable from a question that was never asked, and the reader has
+// no other way to tell.
+func TestDelegateSaysWhenNothingCameBack(t *testing.T) {
+	// A stream that terminates at once carries no text.
+	s, _ := auditSession(t, "data: [DONE]\n\n")
+	s.conv.Record("a question", "an answer")
+
+	s.startDelegate("what next")
+
+	deadline := time.Now().Add(10 * time.Second)
+	for s.delegatePending() > 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := s.delegatePending(); got != 0 {
+		t.Fatalf("%d delegates still running", got)
+	}
+
+	s.mu.Lock()
+	lines := append([]string{}, s.frame.Reply...)
+	s.mu.Unlock()
+
+	found := false
+	for _, line := range lines {
+		if line == "" {
+			t.Errorf("the pane carries an empty line: %q", lines)
+		}
+		if strings.Contains(line, "returned nothing") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("pane = %q, want the absence of an answer stated", lines)
 	}
 }
