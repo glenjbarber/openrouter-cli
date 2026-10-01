@@ -754,14 +754,24 @@ two goroutines takes a second goroutine that the production paths do not create,
 so such a test would document a hazard rather than catch a regression. `make
 check` passes on the unmodified tree.
 
-## A fourth branch is held off main, and is superseded
+## A duplicate branch was verified and discarded
 
-A concurrent session worked the same delegate shutdown defect in its own
-worktree, on the branch `fix/close-waits-delegate-fix`, and committed it there.
-The defect has since been fixed and merged here, so that branch carries a
-duplicate of work already on `main` and must not be merged. It is recorded here
-rather than deleted, since the worktree belongs to another session.
+A concurrent session worked the same delegate shutdown defect in a worktree of
+its own, on `fix/close-waits-delegate-fix`. That branch has since been removed,
+rather than merged: the defect was fixed and merged here first, so the branch
+carried a duplicate, and merging it would have removed the closing flag from a
+merge that had just added it.
 
-The three branches held off `main` are now: `feature/upload-withdrawn`,
-`feature/model-list-cache-withdrawn`, and `fix/close-waits-delegate-fix`, the last
-of which is a duplicate rather than a withdrawal.
+**What was checked before it was discarded.** The merged fix was confirmed from
+both directions rather than taken on trust. Removing the wait makes the merged
+test fail with `1 delegates still tracked after Close returned`. Holding `mu`
+across the wait, which is the mistake the ordering forbids, makes it fail
+instead with `Close did not return once the delegate had been cancelled`. With
+the fix in place the whole of the `internal/tui` suite passes under the race
+detector, three runs in a row, with no run hanging. The discarded branch carried
+a second test covering the lock-held wait on its own, which the merged suite
+also detects, by timing out rather than by asserting.
+
+The branches still held off `main` are `feature/upload-withdrawn` and
+`feature/model-list-cache-withdrawn`, both withdrawals rather than duplicates,
+and `wip/repaint-as-landed`, which is superseded rather than withdrawn.
