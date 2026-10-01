@@ -65,124 +65,6 @@ runtime, and are not build dependencies.
 
 Installation instructions are pending and are added once a release is published.
 
-### Key handling
-
-A key sequence is consumed whole, so pressing an arrow, Home, End, or Delete
-does not end the line. The up and down arrows walk the input history and do
-nothing at all when there is none, stopping at each end rather than wrapping.
-Walking forward past the newest resumes the line that was being composed. The
-left and right arrows are reserved for input toggles and do nothing yet.
-
-The frame is repainted at most twenty-five times a second. A reply arrives a
-token at a time, and drawing every one of them makes a fast reply read as a
-flicker rather than as text arriving.
-
-### Key handling
-
-A mouse report arriving in pieces over a slow link is held until it completes,
-rather than being read as a keypress. An arrow key or a lone Escape is handed
-back as a key as soon as it is known not to be a report, so neither is swallowed
-and neither is mistaken for the end of the input.
-
-### Pasted input
-
-Pasting several lines at once sends one message rather than one message per
-line. The terminal is put into bracketed paste mode so that a newline inside a
-paste is not mistaken for pressing Enter, and the pasted lines are shown above
-the prompt while they wait.
-
-Text pasted after the prompt is joined to whatever was typed, in the order it
-was entered, and sent as a single message. A paste of more than a few lines is
-cut on screen with the remainder reported, so that a very large paste cannot
-push the status bar off the screen.
-
-The frame is kept inside the terminal at any size. A short window drops the
-title before it drops the pane or the prompt, a large paste gives up rows
-rather than the prompt, and a terminal too narrow to hold the prompt marker
-shows the line being typed instead. The prompt is the last thing still on
-screen, since a reader who cannot see it cannot send the next message.
-
-Resizing the window takes effect on the next repaint rather than at the next
-keystroke. A frame is drawn to the size the terminal has at the moment it is
-drawn, so shrinking the window shrinks the frame instead of leaving part of it
-below the bottom of the screen.
-
-A terminal without bracketed paste support still works: the text is taken as
-typed, which means a multi-line paste from such a terminal is submitted line by
-line.
-
-### Input box
-
-The prompt sits in its own box at the foot of the screen, separated from the
-conversation by a full-width rule with a blank row either side:
-
-```
-Provider: openrouter.ai | Model: stealth/space-bunny-alpha | Status: idle | Credits: 0.42/5
-
-────────────────────────────────────────────────
-
-> what does this project do?
-```
-
-The rule keeps a reply and the prompt from reading as one block, which they do
-when a reply ends mid-sentence directly above the prompt. On a terminal too
-short to hold the rule, it is dropped rather than drawn, since a frame taller
-than the screen would push the status bar off it.
-
-### Wrapping
-
-A reply wider than the terminal is folded to fit rather than cut, so nothing is
-lost past the edge. A word too wide to fold, such as a long URL, is placed on a
-line of its own instead of being split.
-
-A fenced code block is left unwrapped. Code keeps its own line breaks, since
-reflowing it changes what it means. A code line too wide for the terminal is cut
-with an ellipsis, so it is clear that it continues past the edge rather than
-having ended there.
-
-### Terminal behavior
-
-The terminal is driven through `syscall` rather than through a terminal library,
-so that the alternate screen, the cursor, and the input mode are under direct
-control. No third-party dependency is introduced.
-
-The BSD family and System V spell the termios ioctls differently, so those names
-live in build-tagged files. `make crossbuild` compiles every supported target,
-and continuous integration runs it, since a change to the terminal layer
-otherwise breaks only the platforms that are not being developed on. FreeBSD,
-Linux, macOS, NetBSD, OpenBSD, and DragonFly build. Windows does not, and
-`AGENTS.md` records why.
-
-The keys the line editor acts on are:
-
-| Key       | Effect                                                    |
-| --------- | --------------------------------------------------------- |
-| `Enter`   | Submit the line.                                          |
-| `Backspace`, `Delete` | Remove the character before the cursor.          |
-| `Ctrl-U`  | Clear the whole line.                                     |
-| `Ctrl-W`  | Clear the word before the cursor.                         |
-| `Ctrl-C`  | Abandon the line, or leave the interface if it is empty.  |
-| `Ctrl-D`  | Leave the interface when the line is empty.               |
-
-A multibyte character arriving one byte at a time is held until the sequence is
-complete, so a character is never committed half written.
-
-A binary is built from a checkout with the Makefile, which is written in the
-syntax common to BSD make and GNU make:
-
-```sh
-make build          # compile into build/openrouter-cli
-make test           # run the test suite
-make check          # run the test suite under the race detector
-make lint           # static analysis and the format check
-make crossbuild     # compile for every supported target
-make install        # copy into /usr/local/bin, honouring PREFIX
-make help           # list the targets
-```
-
-The build is stamped with the version through the linker, so `make build`
-followed by `openrouter-cli -version` reports the port version.
-
 ## Usage
 
 Running the client with no options opens the interactive interface:
@@ -345,6 +227,122 @@ since exact counting needs the model tokenizer. The estimate is deliberately
 generous, so compaction begins before a request would fail rather than after.
 A model whose window the endpoint does not report falls back to a common one.
 
+### Key handling
+
+A key sequence is consumed whole, so pressing an arrow, Home, End, or Delete
+does not end the line. The up and down arrows walk the input history and do
+nothing at all when there is none, stopping at each end rather than wrapping.
+Walking forward past the newest resumes the line that was being composed. The
+left and right arrows are reserved for input toggles and do nothing yet.
+
+A mouse report arriving in pieces over a slow link is held until it completes,
+rather than being read as a keypress. An arrow key or a lone Escape is handed
+back as a key as soon as it is known not to be a report, so neither is swallowed
+and neither is mistaken for the end of the input.
+
+The frame is repainted at most twenty-five times a second. A reply arrives a
+token at a time, and drawing every one of them makes a fast reply read as a
+flicker rather than as text arriving.
+
+### Pasted input
+
+Pasting several lines at once sends one message rather than one message per
+line. The terminal is put into bracketed paste mode so that a newline inside a
+paste is not mistaken for pressing Enter, and the pasted lines are shown above
+the prompt while they wait.
+
+Text pasted after the prompt is joined to whatever was typed, in the order it
+was entered, and sent as a single message. A paste of more than a few lines is
+cut on screen with the remainder reported, so that a very large paste cannot
+push the status bar off the screen.
+
+The frame is kept inside the terminal at any size. A short window drops the
+title before it drops the pane or the prompt, a large paste gives up rows
+rather than the prompt, and a terminal too narrow to hold the prompt marker
+shows the line being typed instead. The prompt is the last thing still on
+screen, since a reader who cannot see it cannot send the next message.
+
+Resizing the window takes effect on the next repaint rather than at the next
+keystroke. A frame is drawn to the size the terminal has at the moment it is
+drawn, so shrinking the window shrinks the frame instead of leaving part of it
+below the bottom of the screen.
+
+A terminal without bracketed paste support still works: the text is taken as
+typed, which means a multi-line paste from such a terminal is submitted line by
+line.
+
+### Input box
+
+The prompt sits in its own box at the foot of the screen, separated from the
+conversation by a full-width rule with a blank row either side:
+
+```
+Provider: openrouter.ai | Model: stealth/space-bunny-alpha | Status: idle | Credits: 0.42/5
+
+────────────────────────────────────────────────
+
+> what does this project do?
+```
+
+The rule keeps a reply and the prompt from reading as one block, which they do
+when a reply ends mid-sentence directly above the prompt. On a terminal too
+short to hold the rule, it is dropped rather than drawn, since a frame taller
+than the screen would push the status bar off it.
+
+### Wrapping
+
+A reply wider than the terminal is folded to fit rather than cut, so nothing is
+lost past the edge. A word too wide to fold, such as a long URL, is placed on a
+line of its own instead of being split.
+
+A fenced code block is left unwrapped. Code keeps its own line breaks, since
+reflowing it changes what it means. A code line too wide for the terminal is cut
+with an ellipsis, so it is clear that it continues past the edge rather than
+having ended there.
+
+### Terminal behavior
+
+The terminal is driven through `syscall` rather than through a terminal library,
+so that the alternate screen, the cursor, and the input mode are under direct
+control. No third-party dependency is introduced.
+
+The BSD family and System V spell the termios ioctls differently, so those names
+live in build-tagged files. `make crossbuild` compiles every supported target,
+and continuous integration runs it, since a change to the terminal layer
+otherwise breaks only the platforms that are not being developed on. FreeBSD,
+Linux, macOS, NetBSD, OpenBSD, and DragonFly build. Windows does not, and
+`AGENTS.md` records why.
+
+The keys the line editor acts on are:
+
+| Key       | Effect                                                    |
+| --------- | --------------------------------------------------------- |
+| `Enter`   | Submit the line.                                          |
+| `Backspace`, `Delete` | Remove the character before the cursor.          |
+| `Ctrl-U`  | Clear the whole line.                                     |
+| `Ctrl-W`  | Clear the word before the cursor.                         |
+| `Ctrl-C`  | Abandon the line, or leave the interface if it is empty.  |
+| `Ctrl-D`  | Leave the interface when the line is empty.               |
+
+A multibyte character arriving one byte at a time is held until the sequence is
+complete, so a character is never committed half written.
+
+A binary is built from a checkout with the Makefile, which is written in the
+syntax common to BSD make and GNU make:
+
+```sh
+make build          # compile into build/openrouter-cli
+make test           # run the test suite
+make check          # run the test suite under the race detector
+make lint           # static analysis and the format check
+make crossbuild     # compile for every supported target
+make install        # copy into /usr/local/bin, honouring PREFIX
+make help           # list the targets
+```
+
+The build is stamped with the version through the linker, so `make build`
+followed by `openrouter-cli -version` reports the port version.
+
 ### Bootstrap documents
 
 A session may be started from a bootstrap document, which supplies the opening
@@ -431,6 +429,7 @@ external dependency. These keys are recognized:
 | `OPENROUTER_URL_BASE` | No       | The base URL of the backend.                                        |
 | `OPENROUTER_MODEL`    | No       | The model requests are sent to, such as `stealth/space-bunny-alpha`. |
 | `OPENROUTER_MOUSE`    | No       | Set to `true` to ask for mouse reporting, so the wheel scrolls.     |
+| `OPENROUTER_BELL`     | No       | Set to `true` to ring the terminal bell when a reply arrives.       |
 
 The keys are given in the same form as the equivalent environment variables,
 which keeps a value transferable between the file and the environment.
@@ -593,16 +592,20 @@ An interactive session displays a status bar showing the following fields:
 
 - Provider
 - Model
-- Reasoning
-- Branch
 - Status
-- Approval Method
+- Credits
 - Context used
 - Tokens used (input and output)
 - Hostname
 
-The final field set and ordering are not yet settled, and whether the ordering is
-configurable is also undecided.
+The field set and the order are fixed rather than configurable. A bar that
+reorders itself between runs cannot be read at a glance. A field with no value
+yet is shown as a dash, so the layout does not shift as values arrive.
+
+`Reasoning`, `Branch`, and `Approval Method` were removed rather than shown as a
+permanent dash. The client has no reasoning parameter, no branching, and no tool
+execution, so there would be nothing for any of them to report. A dash that can
+never be filled is noise.
 
 ### Usage and quota meter
 
@@ -630,10 +633,11 @@ the manner in which they are restored, listed, and resumed is not yet settled.
 
 Commands and configuration options are completed with the Tab key.
 
-### Terminal behavior
+### Terminal and mouse
 
 The interface is designed to behave correctly with a combination of terminal and
-mouse, and within tmux.
+mouse, and within tmux. The details are under
+[Terminal behavior](#terminal-behavior) and [Scrollback](#scrollback).
 
 ### Scrollback
 
