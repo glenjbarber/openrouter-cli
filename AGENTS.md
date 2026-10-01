@@ -63,12 +63,17 @@ so that a later change does not silently reverse it.
   stale value elsewhere. This matters on the maintainer's host, where
   `OPENROUTER_API_KEY` is exported in the environment and would otherwise defeat
   the file.
-- `go.mod` is ignored by git. The maintainer asked for this explicitly. The
-  consequence is accepted and recorded: `go install github.com/glenjbarber/
-  openrouter-cli@latest` cannot work without a `go.mod` on the remote, so
-  installation by users is served by a FreeBSD port or a release artifact rather
-  than by `go install`. If `go install` support is wanted later, the file must be
-  un-ignored.
+- `go.mod` is tracked, and was briefly ignored by explicit instruction before
+  that was reversed. The reversal is recorded because the reason is the lesson:
+  an ignored module file makes a fresh clone unbuildable, breaks continuous
+  integration, and makes `go install` impossible, so no other user could build
+  the project. A module file is part of a Go program's source, not a local
+  artifact.
+- `go.sum` is not ignored either, so a dependency added later yields a committed
+  checksum file rather than a silently unpinned build. It is currently absent
+  because the module has no external dependencies.
+- The `go` directive is a minor version, `go 1.26`, not a patch pin. A patch pin
+  is unusual and needlessly excludes users on a lower patch release.
 - An override carrying a path is used verbatim. The `/api/v1` suffix is appended
   only to a bare scheme and host, such as `http://localhost:3000`.
 - Unknown keys are ignored, so a file written for a newer version stays readable

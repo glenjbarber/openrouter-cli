@@ -31,7 +31,9 @@ go.work.sum
 # .idea/
 # .vscode/
 
-# Module definition. This project is built as a single binary and the module
-# file is generated locally rather than tracked, so it is ignored here.
-go.mod
-go.sum
+# The module file is source, not a local artifact, and is tracked so that a
+# fresh clone builds and `go install` works.
+#
+# go.sum is absent only while the module has no external dependencies. It is
+# deliberately not ignored, so that a dependency added later produces a
+# committed checksum file rather than a silently unpinned build.
