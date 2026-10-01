@@ -54,6 +54,29 @@ the record, as the ground rule at the top says.
 Choices made during implementation that the maintainer has not confirmed are
 recorded under Awaiting confirmation.
 
+Two read-only audits were run after that, against the configuration layer and
+against the command surface. Both have landed their findings here and are at
+the end of this file. Neither changed a line of code or of documentation.
+
+The configuration audit found one defect, which is a missing branch in the
+default write and is the only finding in either audit that is a defect against
+the record rather than a question. It also found a mechanism the record
+describes in detail and the code does not have at all, a first-time setup
+prompt that nothing implements, and three passages that contradict either the
+code or each other.
+
+The command audit found that the command table, the completion set, the hint
+row, and the packaging directories all hold, and recorded five divergences,
+the serious one being that the usage text omits the command the code twice
+tells the reader to use.
+
+The scanning toolchain finding already recorded above was extended rather
+than repeated: the CI workflow runs none of the six either, so the merge gate
+has never run them.
+
+Nothing was pushed. The instruction stands that the maintainer handles
+pushes.
+
 ## Ground rules
 
 - Feature work happens in a git worktree under `~/openrouter-cli-worktrees`, one
@@ -416,6 +439,13 @@ rather than part of it, since neither has a schema to work against either way.
 The choice alters the dependency set and the merge gate, so it is the
 maintainers to make rather than the implementers.
 
+A second audit later confirmed the above against the CI workflow rather than
+only the Makefile, and spelled out the consequence. The workflow invokes none
+of the six either, so the merge gate is three targets and none of them runs a
+scanner beyond `go vet`. Neither a local gate nor a push has run the toolchain
+either document describes. It is recorded at the end of this file, under The
+command surface was audited against the record.
+
 ### A command argument is discarded rather than used
 
 Dispatch already parses the line and hands the fields after the command to its
@@ -775,3 +805,256 @@ also detects, by timing out rather than by asserting.
 The branches still held off `main` are `feature/upload-withdrawn` and
 `feature/model-list-cache-withdrawn`, both withdrawals rather than duplicates,
 and `wip/repaint-as-landed`, which is superseded rather than withdrawn.
+
+## The configuration layer was audited against the record
+
+A read-only audit ran the whole configuration layer against the record: every
+field, every key, every writer and every reader, compared with the
+Configuration section of `AGENTS.md` and with `README.md`. Nothing was changed
+while this was recorded.
+
+Six keys are recognised in total. Five are documented as settings: the API
+key, the URL base, the model, the mouse, and the bell. The sixth,
+`setup_complete`, is load bearing and appears in no key table. Nothing outside
+`internal/config` reads the file. `internal/tui` reaches it only through
+`config.SearchPaths()`.
+
+### A mechanism the record describes and the code does not have
+
+`AGENTS.md`, under Configuration, says that when no file is found, or the file
+lacks the setup-complete key, "the client prompts for the API key and offers a
+skip, which records that setup was done and suppresses the prompt without
+storing a credential." `README.md` repeats it.
+
+There is no prompt. Nothing in the module reads a line from the terminal
+outside the interface, and nothing writes a key. The only writer of the
+configuration file is `InstallDefault` and `InstallDefaultAt`, called once
+from `main.go`, and it writes a default carrying the URL base and nothing else.
+
+The same two passages also claim a second circumstance in which the file is
+written, "again during first-time setup". There is one circumstance, not two.
+
+The premise is also unreachable as written. The record offers "when no file is
+found" as a prompt trigger, but a default is written before the file is
+loaded, so by the time a load happens a file always exists at the primary path.
+
+Building this is not a small change, and it is not proposed here. There is no
+prompt mechanism to extend, so a call site is needed between the default write
+and the load, a line reader outside the interface, and a writer that persists
+either the key or the skip. The record also does not say whether the prompt
+runs before or after the alternate screen is entered, and that changes where
+it reads from.
+
+### The code has half-answered an open decision
+
+`Config.Skipped` is assigned at load and read by nothing outside the tests.
+`AGENTS.md` lists the name of the setup-complete key, and whether a skipped
+configuration is recorded distinctly from a completed one, as an open
+decision. The code has settled part of it without saying so: the key is named
+`setup_complete`, and a single boolean carries both "setup done" and
+"deliberately skipped". The comment at the declaration acknowledges the
+borrowing, the record does not.
+
+The distinction the record says is needed is already drawn by the loader, which
+returns a populated configuration for a file carrying the key and no API key,
+and `ErrNoAPIKey` for the same file without it. Only the consumer is missing,
+and it would be one branch in `main.go` after the load. That branch would
+answer the open decision by reading the flag rather than by choosing a name,
+which is why it has not been written.
+
+### One defect in the default write
+
+`AGENTS.md` says a directory at the configuration path is reported as an error
+rather than treated as an absent file, "since the path could not be written in
+any case and a silent skip would suggest the configuration was in place".
+
+`InstallDefault` walks every search path and its switch has no branch for a
+directory. A directory therefore matches none of the cases and is skipped. If
+the primary path is absent and a later path is a directory, a fresh default is
+then written at the primary path, and the search stops at the first match and
+does not merge, so the newly written file shadows the directory from then on,
+silently.
+
+The comment above the loop says the directory case is left for `InstallDefaultAt`
+to report. It is only ever handed the primary path, so it can only ever report
+a directory there.
+
+This is the one finding in the audit that is a defect against the record rather
+than a question for the maintainer. The fix is one branch.
+
+### Three passages are wrong about a missing key
+
+`AGENTS.md`, under Configuration, and `README.md` both say an absent or empty
+API key is an error and the client stops. The code catches that error and
+opens the interface, reporting the absence as an ordinary message.
+
+A third passage in `AGENTS.md`, under API, already says the opposite and
+matches the code in both halves: a missing key is not a startup failure, and a
+file that cannot be parsed remains one. Invalid JSON is fatal, and the mode
+check is enforced.
+
+The contradiction is therefore inside `AGENTS.md`, not between the record and
+the code. The two stale passages are the ones under Configuration.
+
+### Four bullets filed under the wrong heading
+
+Four bullets under the Terminal bell heading in `AGENTS.md` describe
+discarding recorded exchanges, the instructions surviving being discarded, and
+the token counters going with the discarded work. None of it is about the bell,
+and the section closes by saying that nothing else in the client changes
+because of the bell.
+
+All four are implemented under `/cognito`. They belong under the In-cognito
+mode heading, which does not carry them.
+
+### Four normalisations the record does not mention
+
+Each is deliberate in the code, and each answers a question the record left
+open without saying it had:
+
+1. A relative `XDG_CONFIG_HOME` is dropped and the default location is used.
+   Both documents say the variable is honoured in place of `~/.config`, which
+   reads as unconditional.
+2. A base URL that does not parse, or that carries no scheme and host, is
+   passed through verbatim and fails at the point of use rather than at load.
+   Both documents describe only the rule that appends the path suffix.
+3. The base URL is trimmed of surrounding whitespace, although `AGENTS.md`
+   calls a path-bearing override used verbatim.
+4. A trailing slash is trimmed from the base URL after it is resolved.
+
+Two more pieces of state the code holds on its own authority, with no reader:
+
+1. `Config.Path` records the path that was loaded and is read by nothing. The
+   interface recomputes the locations from `config.SearchPaths()` rather than
+   naming the file it read. The record does not say where the loaded path
+   should surface.
+2. When the home directory cannot be found, the search paths degrade to
+   relative ones, and those are what the missing-key hint reports. A relative
+   path in a hint telling a reader where to put a credential cannot be acted
+   on. The load itself treats a missing home directory as fatal, so this is
+   reachable only from the hint.
+
+### Three timing windows
+
+1. The exclusive create protects the primary path only. A configuration created
+   at a later search path between the loop and the write is shadowed
+   permanently, since the search stops at the first match and does not merge.
+   `AGENTS.md` scopes the exclusivity to a file appearing between the check and
+   the write, which is true of the primary path alone.
+2. The permission check stats the file and the loader then reads it by a
+   separate call. The mode verified is not necessarily the mode of the bytes
+   read. The window is narrow and the file is one the reader owns, but the
+   mode is the only credential protection in the design.
+3. The cleanup path discards the returns from its own close and remove calls.
+   A failed remove after a partial write leaves a truncated file at `0600`
+   that loads as a missing key on every later run, and the default write leaves
+   an existing file alone, so the client cannot recover it. The comment
+   claims the file is removed rather than left behind; that is not checked.
+
+A fourth is worth naming because it looks like one and is not. The permission
+check is a hard refusal requiring the mode to be exactly `0600`, so on a
+filesystem that cannot express it, such as a CIFS or FAT mount of the home
+directory, the client refuses to start against its own home directory. That is
+the recorded behaviour, but the record settles it without noting the
+consequence, and it may not have been intended to be reachable from a mount
+choice.
+
+### What the audit looked for and did not find
+
+No nil dereference: the loader's error is guarded before its fields are read,
+and the interface guards a nil client.
+
+No value reaching the wire before validation, save for the deliberate pass
+through of an unparseable base URL.
+
+No bypassable permission check. `os.Stat` follows symlinks, so a symlink at
+the configuration path is accepted when its target is `0600`. The record
+settles symlink handling for instruction files and bootstrap documents and is
+silent for the configuration file, which is counted as a gap rather than a
+defect.
+
+No file written at a mode the loader would refuse. The default is chmodded on
+the open descriptor rather than left to the umask, and is removed if that
+fails.
+
+No race on the bell preference. It is set and read on the one goroutine that
+runs the request loop, and the spinner does not touch it.
+
+## The command surface was audited against the record
+
+A read-only audit ran the command table, the completion set, the hint row, the
+usage text, the flags in `README.md`, and the port packaging directories
+against the record. Nothing was changed while this was recorded.
+
+Most of it holds, and the parts that hold are worth naming because they were
+expected to fail.
+
+The command table defines nineteen entries and twenty names, and `README.md`
+documents all nineteen in the same order. Nothing is documented and not
+defined.
+
+Completion cannot drift from the table, because it holds no second copy. The
+completer is handed the candidate list and the only producer iterates the
+table itself, emitting one candidate per name with aliases included.
+
+The hint row names only keys that act. History is offered only once there is
+history to recall, interrupt only while a request is in flight, and the wheel
+only while reporting is on. Tab is named in the compose overlay and correctly
+not named in the model listing, where the filter path has no tab case and
+naming it would promise nothing.
+
+The hint row and the usage text agree with the line editor on the control
+keys: the trailing prose about `Ctrl-C` and `Ctrl-D` matches what the editor
+does at both boundaries.
+
+The packaging directories are as the record says they are. `files/`, `doc/`,
+and `test/` each hold only a placeholder, and there is no `distinfo` and no
+`pkg-descr` anywhere in the tree.
+
+Five findings.
+
+1. `/info` carries two descriptions. `README.md` describes it as reporting the
+   model, the endpoint, and whether a key is set. The table describes it as
+   reporting the session settings.
+
+2. The usage text omits four commands: `/help`, `/search`, `/freemodels`, and
+   `/verbose`. `/help` is the serious one, since two places in the code point
+   a reader at it: the message shown when no key is configured tells the
+   reader to read `/help`, and the hint row says `/help` lists the commands. A
+   reader who runs `-help` and does not find `/help` in it has been sent to a
+   command the help does not mention.
+
+3. The usage text omits the positional subcommands `version` and `help`, which
+   the argument parser accepts as bare words. The usage line shows only an
+   option. `README.md` documents `-version`, so the divergence is between the
+   usage text and the README rather than being absent everywhere.
+
+4. `README.md` names `--config` in a sentence about flag precedence. The flag
+   does not exist. The sentence marks the precedence as an open decision, but
+   it reads as a real flag name, and a reader skimming for the option list
+   would find it there and not in `-help`.
+
+5. The scanning toolchain claim is false in a stronger place than the two
+   already recorded. `README.md` writes it as present fact, down to the module
+   paths said to provide the two generators, and neither module is in the
+   dependency graph, since there is no dependency graph. `AGENTS.md` is also
+   false but hedges differently: it says the tools are tracked and names the
+   two module paths that were decided on and never applied to `go.mod` at all.
+
+   The audit also found that the divergence is not confined to the Makefile.
+   The CI workflow runs formatting, vet, a race test, a build, and the
+   cross-build, and invokes none of the six. It does not install the protobuf
+   compiler or the C compiler either.
+
+   The consequence is worth stating plainly, since it widens what was already
+   recorded: the merge gate is three targets, and none of them runs a scanner
+   beyond `go vet`. So neither a local gate nor a push has ever run the
+   toolchain the two documents describe.
+
+One `AGENTS.md` claim in the toolchain section is correct and is left alone.
+The race detector does need a C compiler, and `README.md` lists one.
+
+The record's claim that `/update` does not exist is also correct, and is
+recorded honestly at `AGENTS.md`, in the open decisions: no source file
+mentions the instruction file names, the only path that exists is
+`--bootstrap FILE`, and a later commit narrowed that search to one document.
