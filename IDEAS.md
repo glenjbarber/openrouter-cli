@@ -11,8 +11,13 @@ itself.
 
 ## Last updated
 
-At `main` commit `7c511b2`, seven commits ahead of `origin/main` and not
+At `main` commit `b4b0652`, eight commits ahead of `origin/main` and not
 pushed.
+
+The eight commits were rewritten once, before the audit, to add a missing
+`Co-Authored-By: Space Bunny Alpha` trailer to the completion and markdown
+merge commits. Nothing was pushed before that, so nothing was rewritten on a
+remote. The merge hashes named below are the rewritten ones.
 
 Tab completion, markdown rendering, and the key hint row have landed, each
 merged with `--no-ff` behind `make lint`, `make check`, and `make crossbuild`,
@@ -58,9 +63,9 @@ Merged into `main`.
 | Terminal resize | `ccf34c1` | Size re-read per repaint rather than cached. |
 | Pty test tag fix | `cef05a9` | FreeBSD-only helper, and the crossbuild target now vets. |
 | Working list | `5ed0eb1` | `IDEAS.md` at the repository root. |
-| Slash command completion | `c453b63` | Tab completes, from one table of command names. |
-| Markdown rendering | `3189907` | Headings, lists, and emphasis, rendered as plain text. |
-| Key hint row | `7c511b2` | Names the keys that act, on one row above the prompt. |
+| Slash command completion | `4a8cb83` | Tab completes, from one table of command names. |
+| Markdown rendering | `4152bf7` | Headings, lists, and emphasis, rendered as plain text. |
+| Key hint row | `ccef2b0` | Names the keys that act, on one row above the prompt. |
 
 ## In progress
 
@@ -112,6 +117,69 @@ work in progress, and the distinction is recorded under Worktrees in
 `AGENTS.md`.
 
 ## Notes
+
+### The two session captures
+
+`notes.txt` and `notes2.txt` were session captures, not project files. Both
+were read, and what they carried was written down here. Both were then
+deleted, since a capture left in the checkout is noise that a later reader
+would have to work out was not part of the project.
+
+`notes.txt` carried a status line and a three-line greeting exchange. The
+status line is the one the client draws, showing `Credits: -` against a key
+whose limit the endpoint had not reported and `Context: 0%` against an empty
+conversation, which is what the record under Interface already says happens
+when a field has no value yet. The `{"isNewTopic":...}` lines interleaved with
+the exchange belong to a topic-tagging sidecar and not to this project, and
+nothing in them describes the client. Nothing from that file needed to be
+recorded beyond the confirmation.
+
+`notes2.txt` carried one defect report and one backlog item. The backlog item
+is the file upload, recorded below. The defect is the next entry.
+
+### A reply that arrives and is never drawn
+
+Raised by the maintainer, from `notes2.txt`. This is a defect, not an
+observation to be tested, and it is the most serious thing found so far.
+
+What was reported: a message was sent, the twiddle appeared, and then nothing
+else was drawn. The pane sat on the last twiddle frame until text was typed,
+at which point the whole reply appeared at once. Turning the bell on with
+`/bell` confirmed the reply had in fact been returned, since the bell is rung
+when a reply finishes arriving rather than when the request is sent. So the
+reply was there and the interface was not showing it, which means the client
+stopped drawing rather than stopped receiving.
+
+The mechanism follows from `internal/tui/session.go`, and it is a gap rather
+than a fault in any one line:
+
+- `paint` coalesces. A repaint asked for within `minPaintInterval`, which is
+  40 milliseconds, sets `paintPending` and returns without drawing.
+- `paintDue` is what flushes that. It is called from exactly one place, which
+  is `stream`, and `stream` runs once per streamed delta.
+- When the stream ends, `send` runs its deferred cleanup, clearing `Busy` and
+  `Partial`, and then `endWork`, which stops the spinner goroutine, clears
+  `Spinner` from the frame, and calls `draw`.
+- That final `draw` arrives within 40 milliseconds of the last delta's paint,
+  so it is deferred rather than drawn. Nothing is left to flush it: the delta
+  stream has ended, so `stream` will not be called again, and the spinner has
+  been stopped, so the goroutine that would have drawn on the next tick is
+  gone.
+- The frame carrying the reply in place, the status back to `idle`, and no
+  twiddle is therefore never written. The next keystroke repaints, and the
+  reply appears at once, which is what was seen.
+
+What this means for the record. The rule under Repainting, that a repaint
+inside the interval is deferred rather than refused so that nothing is lost,
+is right, and the deferred repaint has no owner once the thing that asked for
+it has stopped. The fix is not to stop deferring, since the bound on the
+repaint rate is what makes a fast reply readable. It is to make sure a
+deferred repaint is always owed a flush by something that is still running,
+and that the end of a turn is not itself allowed to be the thing that is
+deferred.
+
+This is recorded before it is fixed. It is the first thing the audit takes up,
+and a test that fails on the current code is what decides the fix.
 
 ### Accepting a large paste with Ctrl-J
 
