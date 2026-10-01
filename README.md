@@ -212,9 +212,28 @@ carried out, so the prompt is not shown again, while no credential is stored.
 The setup key name, and whether a skipped configuration is recorded distinctly
 from a completed one, are not yet settled.
 
-The client writes the configuration file when setup is completed or skipped, which
-is the only circumstance in which the file is written. The file is created with
-mode `0600`.
+On start, the client writes a default configuration file when none exists, so
+that the location and the file mode are established before a key is ever
+entered:
+
+```json
+{
+  "OPENROUTER_URL_BASE": "https://openrouter.ai/api/v1"
+}
+```
+
+The default is written only when the file is absent. An existing file is left
+exactly as it is, whether it is complete, empty, malformed, or missing the key.
+No merge is attempted, since a partial merge of a credential file can produce a
+file that parses but is wrong, and a wrong credential fails later at the point
+of use rather than where it was introduced. A file that already exists is
+reported by the client as it stands, and correcting it is left to the user.
+
+The file is created with mode `0600`, which is the only mode the loader accepts.
+A default written at a more permissive mode would be rejected by the client
+that wrote it.
+
+The client also writes the file when setup is completed or skipped.
 
 ### Model instruction files
 

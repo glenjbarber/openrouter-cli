@@ -84,8 +84,26 @@ so that a later change does not silently reverse it.
 - When no file is found, or the file lacks the setup-complete key, the client
   prompts for the API key and offers a skip, which records that setup was done
   and suppresses the prompt without storing a credential.
-- Writing the configuration file occurs only during first-time setup. This is the
-  single exception to the otherwise read-only treatment of the file.
+- The configuration file is written at startup when no file exists, and again
+  during first-time setup. These are the only two circumstances in which it is
+  written. The rest of the time the file is treated as read-only.
+- The default written at startup sets `OPENROUTER_URL_BASE` only. No key is
+  written, because a placeholder key would be indistinguishable from a real one
+  and would be sent to the backend.
+- The default is written only when the file is absent. An existing file is left
+  exactly as it is, whether complete, empty, malformed, or missing the key.
+- A merge was considered and rejected. A partial merge of a credential file can
+  produce a file that parses but is wrong, and a wrong credential fails later at
+  the point of use rather than where it was introduced. Doing nothing is the
+  reversible outcome, so doing nothing is what happens.
+- The default is created at `0600`, since the loader refuses any other mode and a
+  default written at a permissive mode would be rejected by the client that
+  wrote it.
+- The creation is exclusive, so a file that appears between the existence check
+  and the write is not overwritten.
+- A directory at the configuration path is reported as an error rather than
+  treated as an absent file, since the path could not be written in any case and
+  a silent skip would suggest the configuration was in place.
 
 ### Model instruction files
 
@@ -210,7 +228,11 @@ These are unsettled. Each is listed so that it is not mistaken for a decision.
 - The name of the setup-complete key, and whether a skipped configuration is
   recorded distinctly from a completed one. A skip marks setup done while storing
   no credential, so without a distinct state the client believes itself
-  configured and fails later at the point of use.
+  configured and fails later at the point of use. The startup default sharpens
+  this, since a freshly installed file also holds no credential, so the skipped
+  case and the not-yet-entered case have to be told apart. The startup default makes this
+  more visible rather than less, since a freshly installed file also holds no
+  credential, so the two cases need to be told apart.
 - Precedence between the configuration file and command-line flags. The
   environment is settled and is not consulted at all, so that question is
   narrowed rather than open. The bootstrap document is unaffected, since it
