@@ -393,6 +393,29 @@ so that a later change does not silently reverse it.
   paste. A large paste is cut to a fixed number of rows, and the overflow is
   reported rather than pushing the status bar off the screen.
 
+### Input sequences
+
+- A mouse report arriving split across reads is held until it completes, because
+  a link delivers it in pieces and returning the leading escape as a key ends the
+  line and leaves the session. That is a crash rather than a misread, and it was
+  the failure reported over ssh.
+- A held prefix is waited for with a read deadline, since a prefix at the end of
+  a stream would otherwise wait for a byte that never comes. Only a file can be
+  given a deadline; a reader that is not a file reports the end of its input
+  rather than blocking, so a hold over one returns.
+- The deadline is per read rather than for the whole hold, so a report arriving
+  over several reads is assembled rather than cut short after the first gap.
+- A prefix too short to recognise is still held. Requiring three bytes was what
+  returned the opening escape as a key when a report arrived one byte at a time.
+- Beyond the bracket the form decides. An arrow or another escape sequence is
+  not held, or the key would be swallowed rather than a report. The up arrow is
+  the shortest sequence that begins like a report and is not one.
+- A prefix that does not complete within the deadline is handed back as keys, so
+  a lone escape interrupts and an arrow reaches the key handler, rather than
+  either being reported as the end of the input.
+- The six-byte mouse form is not held, since it is a fixed width and is taken
+  whole or not at all.
+
 ### Threads and retention
 
 - `/btw` starts an ephemeral thread branched from the current conversation, and

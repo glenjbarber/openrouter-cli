@@ -65,6 +65,13 @@ runtime, and are not build dependencies.
 
 Installation instructions are pending and are added once a release is published.
 
+### Key handling
+
+A mouse report arriving in pieces over a slow link is held until it completes,
+rather than being read as a keypress. An arrow key or a lone Escape is handed
+back as a key as soon as it is known not to be a report, so neither is swallowed
+and neither is mistaken for the end of the input.
+
 ### Pasted input
 
 Pasting several lines at once sends one message rather than one message per

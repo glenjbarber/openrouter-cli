@@ -2,7 +2,9 @@ package tui
 
 import (
 	"io"
+	"os"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -44,9 +46,25 @@ func (e errorString) Error() string { return string(e) }
 // that a report typed alongside a keystroke is still read whole.
 const readChunk = 64
 
+// prefixTimeout is how long a possible report prefix is waited for before it
+// is assumed not to be one.
+//
+// The figure is short enough that a lone escape feels immediate and long enough
+// that a report split across a slow link arrives whole. A terminal writes a
+// report in one piece, so the delay only applies to a prefix that was never
+// going to complete.
+const prefixTimeout = 60 * time.Millisecond
+
 // LineEditor reads a single line of text.
 type LineEditor struct {
 	r io.Reader
+	// src is the underlying file when there is one. A read deadline can only
+	// be set on a file, and the deadline is what keeps a held report prefix
+	// from waiting on input that never arrives.
+	src *os.File
+	// held is true while the buffer holds a possible report prefix that is
+	// waiting for the rest of itself.
+	held bool
 	// OnPaste is called with the lines of a paste as it lands, so that the
 	// interface can show them. Without it a paste would appear to do nothing
 	// until it was submitted, which for a large one reads as a frozen
@@ -82,7 +100,56 @@ type LineEditor struct {
 
 // NewLineEditor reads lines from r.
 func NewLineEditor(r io.Reader) *LineEditor {
-	return &LineEditor{r: r}
+	le := &LineEditor{r: r}
+	if f, ok := r.(*os.File); ok {
+		le.src = f
+	}
+	return le
+}
+
+// holdable reports whether a report prefix may be held across a read.
+//
+// Every reader may be held for. A reader that is a file is given a deadline so
+// that a prefix at the end of a stream does not wait forever, and a reader that
+// is not a file reports the end of its input rather than blocking, so its read
+// always returns.
+func (le *LineEditor) holdable() bool { return true }
+
+// fillHeld reads one block while a report prefix is held.
+//
+// The read is given a deadline, so a prefix at the end of a stream waits a
+// bounded time rather than forever. On the deadline the bytes are handed back
+// as keys, since a prefix that never completed was not a report.
+func (le *LineEditor) fillHeld() error {
+	if !le.held {
+		le.held = true
+	}
+	if le.src == nil {
+		// Without a file there is no deadline to set, and the read reports
+		// the end of a stream rather than blocking, so it returns.
+		return le.fill()
+	}
+
+	// The deadline is per read rather than for the whole hold, so a report
+	// arriving over several reads is assembled rather than cut short after the
+	// first gap.
+	if err := le.src.SetReadDeadline(time.Now().Add(prefixTimeout)); err != nil {
+		le.held = false
+		return err
+	}
+	defer le.src.SetReadDeadline(time.Time{})
+
+	n, err := le.src.Read(le.chunkFor())
+	le.buf = append(le.buf, le.chunk[:n]...)
+	return err
+}
+
+// chunkFor returns the read buffer, allocating it on first use.
+func (le *LineEditor) chunkFor() []byte {
+	if le.chunk == nil {
+		le.chunk = make([]byte, readChunk)
+	}
+	return le.chunk
 }
 
 // readKey returns the next key, consuming any mouse report that comes first.
@@ -120,17 +187,36 @@ func (le *LineEditor) readKey() (byte, error) {
 			}
 			// Bytes at the front that could still become a report are held
 			// rather than returned as keys. A reader is free to return a
-			// short block, and a report split across two blocks would
-			// otherwise be handed over as the escape that opens one, which
-			// ends the line. A lone escape does not look like a report
-			// prefix, so it is still returned at once.
-			if mousePrefix(le.buf) {
-				break
+			// short block, and over a slow link a report arrives one byte at
+			// a time. Returning the leading escape as a key would end the line
+			// and leave the session, which is a crash rather than a misread.
+			//
+			// A lone escape does not look like a report prefix, so it is
+			// still returned at once.
+			if mousePrefix(le.buf) && le.holdable() {
+				if err := le.fillHeld(); err != nil {
+					// Nothing more arrived before the deadline, so the
+					// prefix was never a report. The bytes are handed back
+					// as keys below, which makes a lone escape interrupt
+					// and an arrow reach the key handler, rather than either
+					// being reported as the end of the input.
+					break
+				}
+				continue
 			}
 			b := le.buf[0]
 			le.buf = le.buf[1:]
 			return b, nil
 		}
+		// The buffer holds a prefix that was not completed. The bytes are
+		// handed back as keys, which is what a lone escape and an arrow are.
+		if mousePrefix(le.buf) {
+			b := le.buf[0]
+			le.buf = le.buf[1:]
+			le.held = false
+			return b, nil
+		}
+
 		// The block held no key to return, which is what a block of mouse
 		// reports looks like. The next block is read rather than returning
 		// nothing, since an empty key would end the line.
@@ -150,10 +236,7 @@ func (le *LineEditor) readKey() (byte, error) {
 // would leave the tail of the report to be read as keys, and the escape at its
 // head would end the line.
 func (le *LineEditor) fill() error {
-	if le.chunk == nil {
-		le.chunk = make([]byte, readChunk)
-	}
-	n, err := le.r.Read(le.chunk)
+	n, err := le.r.Read(le.chunkFor())
 	le.buf = append(le.buf, le.chunk[:n]...)
 	return err
 }

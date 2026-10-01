@@ -429,14 +429,24 @@ func TestRenderScrollPastTopFillsThePane(t *testing.T) {
 	for i := range lines {
 		lines[i] = fmt.Sprintf("line%02d", i)
 	}
-	const height = 10
+	const height = 12
 	f := Frame{Reply: lines, Scroll: 500}
 	out := Render(f, height, 40)
 
-	pane := out[1 : height-2]
-	if len(pane) != height-3 {
-		t.Fatalf("pane = %d lines, want %d", len(pane), height-3)
+	// The pane is everything between the title and the status bar. It is found
+	// by content rather than by arithmetic, since the rows below it depend on
+	// whether the division above the prompt was drawn.
+	barAt := -1
+	for i, l := range out {
+		if strings.Contains(l, "Provider") {
+			barAt = i
+			break
+		}
 	}
+	if barAt < 1 {
+		t.Fatalf("no status bar found in %d rows", len(out))
+	}
+	pane := out[1:barAt]
 	// Every pane row must be filled, or the frame is showing blank rows
 	// above the history rather than the history itself.
 	for i, line := range pane {
