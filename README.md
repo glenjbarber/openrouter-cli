@@ -65,6 +65,22 @@ runtime, and are not build dependencies.
 
 Installation instructions are pending and are added once a release is published.
 
+### Pasted input
+
+Pasting several lines at once sends one message rather than one message per
+line. The terminal is put into bracketed paste mode so that a newline inside a
+paste is not mistaken for pressing Enter, and the pasted lines are shown above
+the prompt while they wait.
+
+Text pasted after the prompt is joined to whatever was typed, in the order it
+was entered, and sent as a single message. A paste of more than a few lines is
+cut on screen with the remainder reported, so that a very large paste cannot
+push the status bar off the screen.
+
+A terminal without bracketed paste support still works: the text is taken as
+typed, which means a multi-line paste from such a terminal is submitted line by
+line.
+
 ### Wrapping
 
 A reply wider than the terminal is folded to fit rather than cut, so nothing is

@@ -47,11 +47,20 @@ const readChunk = 64
 // LineEditor reads a single line of text.
 type LineEditor struct {
 	r io.Reader
+	// OnPaste is called with the lines of a paste as it lands, so that the
+	// interface can show them. Without it a paste would appear to do nothing
+	// until it was submitted, which for a large one reads as a frozen
+	// interface.
+	OnPaste func(lines []string)
 	// OnChange is called with the line as it stands after each keystroke. It
 	// is what makes the composed line visible, since the terminal is in raw
 	// mode with echo disabled and so does not draw it. A nil callback draws
 	// nothing, which is the correct behaviour for a non-interactive reader.
 	OnChange func(string)
+	// pasted holds the lines of a paste that has landed, kept out of the
+	// typed line so that a multi-line paste is one input rather than one
+	// message per line.
+	pasted []string
 	// OnMouse is called with the wheel direction of each mouse report read
 	// alongside the keys. It is what lets the view be scrolled without
 	// ending the line, since a report shares the input stream with the keys
@@ -93,6 +102,17 @@ func (le *LineEditor) readKey() (byte, error) {
 			}
 		}
 		for len(le.buf) > 0 {
+			// A pasted block is taken whole. Treating its bytes as keys would
+			// submit on the first newline inside it and send half a paste as
+			// a message.
+			if text, rest, ok := takePaste(le.buf); ok {
+				le.buf = rest
+				le.pasted = append(le.pasted, normalisePaste(text)...)
+				if le.OnPaste != nil {
+					le.OnPaste(le.pasted)
+				}
+				continue
+			}
 			if seq, rest, ok := takeMouseSequence(le.buf); ok {
 				le.buf = rest
 				le.mouse(seq)
@@ -202,6 +222,18 @@ func (le *LineEditor) ReadLine() (string, error) {
 			if len(pending) > 0 {
 				out.Write(pending)
 				pending = pending[:0]
+			}
+			// A paste that has landed is returned as part of the message, so
+			// that a multi-line paste reaches the model whole. It is joined
+			// with newlines rather than sent as several messages, since the
+			// user pasted one thing.
+			if len(le.pasted) > 0 {
+				lines := le.pasted
+				le.pasted = nil
+				if typed := out.String(); typed != "" {
+					lines = append(lines, typed)
+				}
+				return strings.Join(lines, "\n"), nil
 			}
 			return out.String(), nil
 		case keyEscape:
