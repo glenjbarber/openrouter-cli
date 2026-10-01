@@ -102,6 +102,11 @@ rather than the prompt, and a terminal too narrow to hold the prompt marker
 shows the line being typed instead. The prompt is the last thing still on
 screen, since a reader who cannot see it cannot send the next message.
 
+Resizing the window takes effect on the next repaint rather than at the next
+keystroke. A frame is drawn to the size the terminal has at the moment it is
+drawn, so shrinking the window shrinks the frame instead of leaving part of it
+below the bottom of the screen.
+
 A terminal without bracketed paste support still works: the text is taken as
 typed, which means a multi-line paste from such a terminal is submitted line by
 line.

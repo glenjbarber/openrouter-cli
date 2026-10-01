@@ -791,6 +791,15 @@ so that a later change does not silently reverse it.
   and paste length, rather than one axis at a time. The rows written are
   bounded on both axes at once, so a check of one alone would pass a frame
   that is correct in width and too tall.
+- The terminal size is re-read on every repaint rather than being cached from
+  startup. A window resized while the client runs was drawn to the size it had
+  when it opened, which left the prompt below the bottom of the screen.
+- A size that cannot be read keeps the last one rather than reporting nothing.
+  A frame drawn to a stale size is better than no frame at all.
+- A size that reads as zero is not adopted, since a frame drawn to it is empty.
+- The resize is tested against a pseudo-terminal rather than a regular file. A
+  file reports a fixed size, so a test against one passes whether the value is
+  cached or re-read, which is the distinction the test exists to make.
 
 ### Layout
 
