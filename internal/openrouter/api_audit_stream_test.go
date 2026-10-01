@@ -114,6 +114,52 @@ func TestParserIgnoresUnknownFields(t *testing.T) {
 	}
 }
 
+// A data field holding no value carries no payload, in the manner of a
+// comment. It is passed over rather than decoded, since a failure reported
+// against it would end a reply that is arriving perfectly well.
+func TestParserPassesOverAnEmptyDataField(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{name: "a field with nothing after it", body: "data:\n\n"},
+		{name: "a field with only space after it", body: "data:   \n\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := "data: \n\n" +
+				`data: {"choices":[{"delta":{"content":"a"}}]}` + "\n\n" +
+				tc.body +
+				"data: [DONE]\n\n"
+			events := parseStream(t, body)
+			if got := strings.Join(kinds(events), ","); got != "delta,done" {
+				t.Errorf("kinds = %v, want an empty field to carry nothing", events)
+			}
+			if joined(events) != "a" {
+				t.Errorf("content = %q, want %q", joined(events), "a")
+			}
+		})
+	}
+}
+
+// A stream cut short at an empty data field is still reported as cut, since the
+// terminating marker is what tells a complete reply from a cut one, and
+// passing the empty field over must not be mistaken for the end of a reply.
+func TestParserReportsATruncationAtAnEmptyDataField(t *testing.T) {
+	body := `data: {"choices":[{"delta":{"content":"half"}}]}` + "\n\n" +
+		"data:\n"
+	events := parseStream(t, body)
+	if joined(events) != "half" {
+		t.Errorf("content = %q, want the text kept", joined(events))
+	}
+	last := events[len(events)-1]
+	if last.Kind != EventError || last.Err == nil {
+		t.Fatalf("last = %+v, want the truncation reported", last)
+	}
+	if !strings.Contains(last.Err.Error(), "before it was complete") {
+		t.Errorf("err = %q, want it to name the missing terminator", last.Err)
+	}
+}
+
 // A data field holding something that is not JSON is reported rather than
 // skipped, since a stream that cannot be read is a stream that was cut.
 func TestParserReportsInvalidJSON(t *testing.T) {

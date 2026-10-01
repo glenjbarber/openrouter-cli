@@ -304,6 +304,15 @@ func (c *Client) readStream(body io.Reader, onEvent func(StreamEvent)) error {
 			continue
 		}
 		payload = strings.TrimSpace(payload)
+		// A data field with no value carries no payload, in the manner of a
+		// comment. It is passed over rather than decoded, since there is
+		// nothing in it to decode and a failure reported against it would end
+		// a reply that is arriving perfectly well. A stream truncated at such
+		// a field is still reported, since the terminating marker is what
+		// tells a complete reply from a cut one.
+		if payload == "" {
+			continue
+		}
 
 		if payload == "[DONE]" {
 			sawDone = true
