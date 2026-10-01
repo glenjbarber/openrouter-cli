@@ -104,9 +104,32 @@ func (c *Client) wrapf(err error, format string, args ...any) error {
 	return &redactedError{msg: c.redact(msg), err: err}
 }
 
+// maxQuote bounds how much of a body is quoted in a diagnostic.
+//
+// A diagnostic is shown in the pane and stays in the scrollback, so quoting a
+// whole body would put up to maxResponse of a server's text into the terminal.
+// The figure is far above any message the backend writes, and what falls past it
+// is not read for a decision.
+const maxQuote = 512
+
+// quote returns what a body has to say, ready to be shown.
+//
+// The whole body is filtered before any of it is kept, so what is quoted has
+// already had the credential removed from it rather than being filtered after a
+// part of it was dropped. The cut falls on a character boundary, since a
+// diagnostic is read as text and half a character would show as a replacement
+// mark.
+func (c *Client) quote(body []byte) string {
+	text := c.redact(detail(body))
+	if len(text) <= maxQuote {
+		return text
+	}
+	return strings.ToValidUTF8(text[:maxQuote], "") + "..."
+}
+
 // withDetail returns err carrying the detail the server reported.
 func (c *Client) withDetail(err error, body []byte) error {
-	return &redactedError{msg: c.redact(err.Error() + ": " + detail(body)), err: err}
+	return &redactedError{msg: err.Error() + ": " + c.quote(body), err: err}
 }
 
 // readLimited reads at most limit bytes of a body and reports rather than
@@ -197,7 +220,7 @@ func (c *Client) statusError(code int, body []byte) error {
 	case http.StatusTooManyRequests:
 		return c.withDetail(ErrRateLimited, body)
 	default:
-		return c.wrapf(nil, "the server returned HTTP %d: %s", code, detail(body))
+		return c.wrapf(nil, "the server returned HTTP %d: %s", code, c.quote(body))
 	}
 }
 
