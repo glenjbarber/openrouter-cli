@@ -559,3 +559,55 @@ func TestStreamIsReadWithTheCallersContext(t *testing.T) {
 		t.Errorf("content = %q, want all three deltas", got.String())
 	}
 }
+
+// A single line longer than the buffer ends the reply, since the buffer is
+// finite and the line is not. The text that arrived before it is kept and the
+// end is reported through the callback, so a reader is never left with a reply
+// that stops mid-sentence and nothing saying that it did. The limit is named in
+// the source so that this test exceeds the figure the parser actually uses
+// rather than a copy of it that could drift.
+func TestParserReportsALineLongerThanTheBuffer(t *testing.T) {
+	c := New("https://example.invalid", "k")
+	body := oneDelta + "\n\n" +
+		"data: " + strings.Repeat("y", maxStreamLine) + "\n\n" +
+		"data: [DONE]\n\n"
+
+	var events []StreamEvent
+	if err := c.readStream(strings.NewReader(body), func(e StreamEvent) {
+		events = append(events, e)
+	}); err != nil {
+		t.Fatalf("readStream returned %v, want the failure reported to the callback", err)
+	}
+	if joined(events) != "x" {
+		t.Errorf("content = %q, want the text before the long line kept", joined(events))
+	}
+	last := events[len(events)-1]
+	if last.Kind != EventError || last.Err == nil {
+		t.Fatalf("last = %+v, want the long line reported", last)
+	}
+	if !strings.Contains(last.Err.Error(), "reading the stream") {
+		t.Errorf("err = %q, want it to name the failed read", last.Err)
+	}
+	for _, e := range events {
+		if e.Done {
+			t.Error("a reply cut by a long line was reported as complete")
+		}
+	}
+}
+
+// A line that fits the buffer is read whole however long it is, since the bound
+// is there to stop an endless line rather than to cut a long one.
+func TestParserReadsALineAsLongAsTheBufferAllows(t *testing.T) {
+	content := strings.Repeat("a", 1<<20)
+	body := `data: {"choices":[{"delta":{"content":"` + content + `"}}]}` + "\n\n" +
+		"data: [DONE]\n\n"
+
+	events := parseStream(t, body)
+	if len(joined(events)) != len(content) {
+		t.Errorf("content is %d characters, want the whole delta of %d",
+			len(joined(events)), len(content))
+	}
+	if last := events[len(events)-1]; !last.Done {
+		t.Errorf("last = %+v, want the terminator after a long but readable line", last)
+	}
+}

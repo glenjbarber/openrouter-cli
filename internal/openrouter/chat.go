@@ -252,6 +252,15 @@ type streamChunk struct {
 	} `json:"error"`
 }
 
+// maxStreamLine bounds a single line of the event stream.
+//
+// A line longer than this ends the reply rather than being cut without saying
+// so, since a delta missing its tail is text that is wrong with nothing to show
+// that it is. The figure is well above any delta a model writes, and the end is
+// reported the way every other failure on this path is reported, which is
+// through the callback with the text that did arrive kept.
+const maxStreamLine = 8 << 20
+
 // readStream decodes a server-sent event stream.
 //
 // The encoding is a sequence of lines, each prefixed with a field name. A line
@@ -266,7 +275,7 @@ func (c *Client) readStream(body io.Reader, onEvent func(StreamEvent)) error {
 	// A single event may exceed the default limit when a model returns a long
 	// completion in one delta, so the buffer is raised rather than letting
 	// the scan fail partway through a reply.
-	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxStreamLine)
 
 	for scanner.Scan() {
 		line := scanner.Text()
