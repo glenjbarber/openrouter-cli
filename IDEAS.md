@@ -37,9 +37,17 @@ commits already merged into `main`, so they never carried the work. The
 hint row has since been written again from its description and has landed. The
 `completion` and `markdown` work was written again before it landed.
 
-The instruction search is blocked on a decision. The audit has not started. It
-waits on the backlog, since reviewing code that is about to change is wasted
-effort.
+The instruction search is blocked on a decision. The audit is done, so the
+backlog it recorded is the open work rather than work waiting behind it. Three
+of the findings it left unfixed are being read now, one worker each, read only:
+the instruction search itself, the compaction contradiction, and the credential
+on a redirect.
+
+This pass also corrected two statements in this file that had been left behind
+by the work landing: a paragraph still describing `completion` and `markdown` as
+unlanded after both had merged, and a sentence saying the audit had not started
+after all six areas had merged. A record that contradicts itself is a bug in
+the record, as the ground rule at the top says.
 
 Choices made during implementation that the maintainer has not confirmed are
 recorded under Awaiting confirmation.
@@ -113,12 +121,10 @@ Written but not landed. The checkout exists and holds the work.
 | none | none | Nothing remains in this section. |
 
 `completion` and `markdown` were listed here with uncommitted work in their
-worktrees. They have landed, see Shipped. The uncommitted code was not
-recoverable on this host and was written again from the description above.
-
-`completion` and `markdown` have uncommitted work in them. `completion` is 129
-lines with no test file at all. `markdown` is 297 lines, unwired, also untested.
-Both need a rebase before they can land, and both need tests written.
+worktrees. Both have landed, see Shipped: the completion table as `4a8cb83` and
+the markdown renderer as `4152bf7`, each with tests, which the unlanded work had
+none of. The uncommitted code was not recoverable on this host, so both were
+written again from the description above.
 
 `cmdqueue`, `mfilterfix`, `noninteractive`, `stopcancel`, and `instructions` held
 no changes and were removed, along with their branches. Nothing referenced them
@@ -197,6 +203,14 @@ exit from a turn ends on a repaint of its own that draws whatever the rate bound
 says. The bound is unchanged: it is what makes a fast reply readable, and the end
 of a turn is a bounded number of extra repaints rather than an unbounded rate. A
 repaint owed when the session closes is dropped rather than written.
+
+**The superseded branch.** `wip/repaint-as-landed` holds an earlier fix for this
+same defect, written before the audit took it up. It is not in the history of
+`main` and is not to be merged: the same fix landed by the session audit, under
+a different field name and with its own tests, so merging the branch would land
+a second timer for one job. It is kept rather than deleted until the withdrawn
+upload branch is decided, since both were branches taken off `main` and should
+be read together.
 
 ### Accepting a large paste with Ctrl-J
 
