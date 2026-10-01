@@ -1079,6 +1079,12 @@ func (s *Session) send(line string) {
 		}
 	}()
 
+	// failed records that the stream reported a failure of its own partway
+	// through. A request that fails this way still returns nil, so the reply
+	// below would otherwise be appended a second time, and the exchange
+	// recorded as though the turn had ended cleanly.
+	failed := false
+
 	err := s.client.Chat(s.ctx, openrouter.ChatRequest{
 		Model:    s.conv.Model(),
 		Messages: s.conv.Pending(line),
@@ -1091,10 +1097,11 @@ func (s *Session) send(line string) {
 		if e.Err != nil {
 			// A stream that failed partway still produced text, and that text
 			// is kept: it is usually more useful than an error alone.
+			failed = true
 			if reply.Len() > 0 {
-				s.frame.Reply = append(s.frame.Reply, strings.TrimRight(reply.String(), "\n"))
+				s.addReply(strings.TrimRight(reply.String(), "\n"))
 			}
-			s.frame.Reply = append(s.frame.Reply, "(error) "+e.Err.Error())
+			s.addReply("(error) " + e.Err.Error())
 			return
 		}
 		if e.Done {
@@ -1106,6 +1113,17 @@ func (s *Session) send(line string) {
 
 	if err != nil {
 		s.addReply("(error) " + err.Error())
+		return
+	}
+
+	// The text and the error have already been shown above. Appending the
+	// reply again would paint it twice, and recording the exchange would
+	// leave a truncated answer in the conversation for the next request to
+	// replay as though it were the whole of what the model said. A turn that
+	// failed leaves no exchange behind, which is what the record under API
+	// settles: a user turn travels with the request but is not recorded
+	// until a reply has finished arriving.
+	if failed {
 		return
 	}
 
