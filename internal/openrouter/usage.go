@@ -9,6 +9,10 @@ package openrouter
 // sends nothing and the counters would otherwise be permanently blank.
 type usageBody struct {
 	ChatRequest
+	// Stream is set here rather than carried by the request, since a reply is
+	// always streamed. It is sent because the endpoint expects it, not
+	// because a caller may turn it off.
+	Stream bool `json:"stream"`
 	// Usage is an object rather than a boolean because the endpoint expects
 	// the object form, and an object carrying include is the narrowest thing
 	// that can be asked for.
@@ -21,6 +25,7 @@ type usageBody struct {
 func withUsage(req ChatRequest) usageBody {
 	var body usageBody
 	body.ChatRequest = req
+	body.Stream = true
 	body.Usage.Include = true
 	return body
 }

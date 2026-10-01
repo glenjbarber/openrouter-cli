@@ -23,6 +23,36 @@ type Model struct {
 	CompletionPrice string `json:"completion"`
 }
 
+// UnmarshalJSON decodes a model, tolerating a price the endpoint quotes as a
+// number rather than as a string.
+//
+// The price is carried as a string so that a figure written in exponent form
+// survives intact, which is the form the endpoint uses. A catalogue is decoded
+// as a whole, so one model quoted differently would otherwise fail the entire
+// list and leave the listing with nothing to show. A price that is not a
+// figure at all is carried as the text it arrived as, so that Free can refuse
+// it rather than have to see an absent field.
+func (m *Model) UnmarshalJSON(b []byte) error {
+	var raw struct {
+		ID            string          `json:"id"`
+		Name          string          `json:"name"`
+		Description   string          `json:"description"`
+		ContextLength json.RawMessage `json:"context_length"`
+		Prompt        json.RawMessage `json:"prompt"`
+		Completion    json.RawMessage `json:"completion"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	m.ID = raw.ID
+	m.Name = raw.Name
+	m.Description = raw.Description
+	m.ContextLength = tokenCount(raw.ContextLength)
+	m.PromptPrice = scalarText(raw.Prompt)
+	m.CompletionPrice = scalarText(raw.Completion)
+	return nil
+}
+
 // Usage is what the key endpoint reports about a key.
 type Usage struct {
 	Usage float64 `json:"usage"`
