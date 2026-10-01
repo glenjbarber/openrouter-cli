@@ -122,3 +122,36 @@ func TestCognitoMarkerHoldsOnlyTheProcess(t *testing.T) {
 		}
 	}
 }
+
+// The mode is a statement about the session, so turning it on inside a thread
+// must reach the conversation that is returned to when the thread is left. The
+// thread records nothing on its own account, so marking only it would leave the
+// main conversation recording the whole time the mode is on.
+func TestCognitoOnInsideAThreadCoversTheMainConversation(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	s, _ := auditSession(t, "")
+	s.conv.Record("earlier", "earlier reply")
+
+	s.beginThread()
+	if s.thread == nil {
+		t.Fatal("beginThread did not start a thread")
+	}
+	s.toggleCognito()
+	if !s.cognito {
+		t.Fatal("cognito = false after the mode was turned on")
+	}
+
+	s.endThread()
+	if s.conv != s.mainConv {
+		t.Fatal("endThread did not return to the main conversation")
+	}
+	s.conv.Record("a question", "an answer")
+
+	if s.conv.Turns() != 2 {
+		t.Errorf("turns = %d, want only the exchange recorded before the mode went on", s.conv.Turns())
+	}
+	if s.conv.Recording() {
+		t.Error("the main conversation records while the mode is on")
+	}
+}

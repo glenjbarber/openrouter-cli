@@ -139,6 +139,14 @@ func (s *Session) toggleCognito() {
 		return
 	}
 	s.cognito = true
+	// Both conversations are marked, since the mode is a statement about the
+	// session rather than about whichever conversation happens to be in force.
+	// Marking only the one in force would leave the main conversation
+	// recording, so a thread left open at the time would return the reader to a
+	// conversation that keeps what the mode promised to discard.
+	if s.mainConv != nil {
+		s.mainConv.setEphemeral()
+	}
 	s.conv.setEphemeral()
 	// A thread is already unrecorded, so saying so avoids the impression that
 	// the mode changed anything while it is in one.
