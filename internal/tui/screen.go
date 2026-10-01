@@ -158,7 +158,17 @@ func (s *Screen) write(seq string) {
 }
 
 // Size returns the terminal dimensions in rows and columns.
+//
+// The dimensions are re-read on every call rather than being cached from
+// startup. A terminal resized while the client is running would otherwise be
+// drawn to the size it had when it opened, which leaves rows of the prompt
+// below the bottom of the window or cuts the reply pane short of its edge. A
+// call that cannot read the size keeps the last one rather than reporting
+// nothing, since a frame drawn to a stale size is better than no frame at all.
 func (s *Screen) Size() (height, width int) {
+	if h, w, err := terminalSize(s.out.Fd()); err == nil && h > 0 && w > 0 {
+		s.height, s.width = h, w
+	}
 	return s.height, s.width
 }
 
