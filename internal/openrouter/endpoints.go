@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 )
 
 // Model is one model the endpoint offers.
@@ -62,4 +63,23 @@ func (c *Client) KeyUsage(ctx context.Context) (*Usage, error) {
 		return nil, fmt.Errorf("decoding the key usage: %w", err)
 	}
 	return &envelope.Data, nil
+}
+
+// Free reports whether the model costs nothing to call.
+//
+// A price is quoted as a decimal string, so a model is free when both prices are
+// zero. A price that cannot be read is not treated as free, since a model whose
+// cost is unknown is not one to spend an allowance on by accident.
+func (m Model) Free() bool {
+	zero := func(s string) bool {
+		if s == "" {
+			// A model that quotes no price is not assumed to be free. The
+			// endpoint omits the field for a model it does not price, and
+			// assuming otherwise would list a paid model as free.
+			return false
+		}
+		v, err := strconv.ParseFloat(s, 64)
+		return err == nil && v == 0
+	}
+	return zero(m.PromptPrice) && zero(m.CompletionPrice)
 }

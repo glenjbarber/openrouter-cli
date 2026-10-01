@@ -246,7 +246,8 @@ model:
 | ---------------- | ----------------------------------------------------- |
 | `/connect`       | Test the connection and report the key.              |
 | `/key`           | Report the usage against the key.                    |
-| `/models`        | List the models the endpoint offers.                 |
+| `/models`        | List the models, filtered as it is typed.           |
+| `/freemodels`    | List the models that cost nothing to call.          |
 | `/model NAME`    | Choose the model. Without an argument, report it.    |
 | `/info`          | Report the model, the endpoint, and whether a key is set. |
 | `/bell`          | Ring the terminal bell when a reply arrives, on or off. |
@@ -260,6 +261,12 @@ model:
 | `/clear`         | Clear the pane.                                      |
 | `/help`          | List the commands.                                   |
 | `/quit`, `/exit` | Leave the interface.                                 |
+
+`/models` opens the catalogue and narrows it as the filter is typed, without a
+separate submit. Escape leaves the listing and Enter chooses what the filter
+names. `/freemodels` is the same listing narrowed to the models that cost nothing,
+which are the ones whose quoted prompt and completion prices are both zero. A
+model whose price is not reported is not treated as free.
 
 `/connect` contacts the key endpoint rather than running a completion, since it
 is cheap and it distinguishes a rejected key from a rejected model, which is the

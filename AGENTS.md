@@ -508,6 +508,24 @@ so that a later change does not silently reverse it.
   doing anything at all, so seeding over a copy would discard it whenever the
   conversation carried no instructions.
 
+### Model listing
+
+- `/models` opens the catalogue and filters it as it is typed, rather than
+  listing it and leaving the reader to scan. A catalogue is long enough that
+  narrowing it by hand beats reading it.
+- `/freemodels` is the same listing narrowed to the models that cost nothing,
+  so the two are one code with a predicate rather than two listings.
+- A model is free when both quoted prices are zero. A price that is absent or
+  cannot be read is not treated as free, since the endpoint omits the field for
+  a model it does not price and assuming otherwise would list a paid model as
+  free.
+- The filter is matched without regard to case, since a model identifier is typed
+  in whatever case the user happens to use.
+- A filter matching nothing says so rather than showing an empty pane.
+- The listing is cut with the remainder reported rather than silently dropped.
+- Escape closes the listing and restores the pane. Enter chooses what the filter
+  names, which saves typing an identifier that is already on screen.
+
 ### In-cognito mode
 
 - The mode is recorded by a marker file in the home directory rather than by a
