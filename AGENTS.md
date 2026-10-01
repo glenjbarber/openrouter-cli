@@ -856,9 +856,12 @@ These are unsettled. Each is listed so that it is not mistaken for a decision.
 ## Working notes
 
 - The local git identity is unset. The clone did not carry the maintainer's
-  identity, and a commit will not be made until it is set. The value to use is
-  `Glen Barber <glen.j.barber@gmail.com>`, matching the initial commit, set with
+  identity, and a commit will not be made until it is set. It is set with
   `--local` so the global configuration is untouched.
+- The maintainer is `Glen Barber`, reached at `gjb@FreeBSD.org`. That address is
+  the one recorded in the `MAINTAINER` field of the `Makefile`, which is where a
+  port expects to find it. The git identity is separate from it and is not
+  changed with it.
 - The first draft of the API client, written before the design discussion, was
   discarded at the maintainer's instruction and is not in the repository.
 - `AGENTS.md` is tracked in this repository. The file at `~/agents.md` is a

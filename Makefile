@@ -16,7 +16,7 @@ PORTREV=	0
 CATEGORIES=	devel
 MASTER_SITES=	# to be filled in at release
 
-MAINTAINER=	glen.j.barber@gmail.com
+MAINTAINER=	gjb@FreeBSD.org
 COMMENT=	Terminal client for the OpenRouter.AI API
 WWW=		https://github.com/glenjbarber/openrouter-cli
 
