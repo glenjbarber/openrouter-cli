@@ -62,7 +62,29 @@ type StreamEvent struct {
 	// as a return value, since the text received before the failure is
 	// still worth keeping.
 	Err error
+	// Kind names what the event carried, so that a caller watching a stream
+	// can tell a text delta from metadata without inferring it from the
+	// fields it happens to set. It is one of the EventKind constants. The
+	// fields above are unchanged and remain the payload; Kind is the label
+	// describing them.
+	Kind string
+	// Finish is the reason the model gave for ending the turn, reported on a
+	// final choice alongside an empty delta. It is empty on every other
+	// event.
+	Finish string
 }
+
+// The kinds a stream event can carry.
+//
+// The names are short because they are shown in a verbose listing, and a
+// reader scanning a stream wants the shape rather than a sentence.
+const (
+	EventDelta = "delta"
+	EventUsage = "usage"
+	EventDone  = "done"
+	EventError = "error"
+	EventEnd   = "finish"
+)
 
 // Chat streams a completion.
 //
@@ -166,7 +188,7 @@ func readStream(body io.Reader, onEvent func(StreamEvent)) error {
 
 		if payload == "[DONE]" {
 			sawDone = true
-			onEvent(StreamEvent{Done: true})
+			onEvent(StreamEvent{Done: true, Kind: EventDone})
 			return nil
 		}
 
@@ -174,19 +196,25 @@ func readStream(body io.Reader, onEvent func(StreamEvent)) error {
 		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
 			// A payload that is not JSON is reported rather than skipped, so
 			// a truncated reply is not presented as a complete one.
-			onEvent(StreamEvent{Err: fmt.Errorf("decoding a stream event: %w", err)})
+			onEvent(StreamEvent{Err: fmt.Errorf("decoding a stream event: %w", err), Kind: EventError})
 			return nil
 		}
 		if chunk.Error != nil {
-			onEvent(StreamEvent{Err: fmt.Errorf("the stream reported an error: %s", chunk.Error.Message)})
+			onEvent(StreamEvent{
+				Err:  fmt.Errorf("the stream reported an error: %s", chunk.Error.Message),
+				Kind: EventError,
+			})
 			return nil
 		}
 		if chunk.Usage != nil {
-			onEvent(StreamEvent{Usage: chunk.Usage})
+			onEvent(StreamEvent{Usage: chunk.Usage, Kind: EventUsage})
 		}
 		for _, choice := range chunk.Choices {
+			if choice.FinishReason != "" {
+				onEvent(StreamEvent{Kind: EventEnd, Finish: choice.FinishReason})
+			}
 			if choice.Delta.Content != "" {
-				onEvent(StreamEvent{Content: choice.Delta.Content})
+				onEvent(StreamEvent{Content: choice.Delta.Content, Kind: EventDelta})
 			}
 		}
 	}
@@ -196,7 +224,8 @@ func readStream(body io.Reader, onEvent func(StreamEvent)) error {
 	}
 	if !sawDone {
 		onEvent(StreamEvent{
-			Err: fmt.Errorf("the stream ended before it was complete"),
+			Err:  fmt.Errorf("the stream ended before it was complete"),
+			Kind: EventError,
 		})
 	}
 	return nil

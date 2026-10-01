@@ -252,6 +252,7 @@ model:
 | `/info`          | Report the model, the endpoint, and whether a key is set. |
 | `/bell`          | Ring the terminal bell when a reply arrives, on or off. |
 | `/cognito`       | Record nothing from now on, or record again.        |
+| `/verbose`       | Report the shape of each streamed turn, on or off.  |
 | `/delegate Q`    | Ask a question alongside, without recording it.     |
 | `/btw`           | Start a thread branched from this conversation.      |
 | `/main`          | Leave the thread and return to the conversation.    |
@@ -305,6 +306,14 @@ runtime, and `OPENROUTER_BELL` in the configuration file sets it for every
 session. The bell is rung when a reply has finished arriving rather than when
 the request was sent, and it is written only when the output is a terminal, so a
 redirected run carries no stray control character.
+
+`/verbose` is off unless asked for. It adds one line beneath each reply
+describing how that turn arrived: the number of deltas, the character count, the
+reason the model gave for stopping, and whether the token accounting was
+reported. A turn that was cut short or that failed says so, and one that carried
+no accounting says that too, so a line is never read as a complete exchange
+when it was not. It is a display preference and changes nothing about what is
+asked for or what is recorded, so it can be left on while working.
 
 A long conversation is compacted automatically. Once it passes 75% of the
 model's window, the next message triggers a summarisation before the request is
