@@ -424,6 +424,28 @@ so that a later change does not silently reverse it.
 - The six-byte mouse form is not held, since it is a fixed width and is taken
   whole or not at all.
 
+### Delegates
+
+- `/delegate QUESTION` asks a question from a copy of the conversation while the
+  main one stays open. The prompt remains live throughout, so a user can keep
+  typing rather than waiting for the answer.
+- A delegate is not a thread and not a spawned worker. It is a second request
+  made from a copy, whose answer is shown in the pane.
+- A delegate records nothing. Its text goes to the pane and nowhere else: no
+  file, no history, and nothing kept once it finishes. That is what lets it
+  coexist with the guarantee that /cognito makes, since display is not
+  persistence.
+- The answer joins the pane as ordinary text rather than as a turn, so it is
+  never replayed to the model as though the user had asked it.
+- The partial answer is kept apart from the reply while it arrives, so a line in
+  the pane is not mistaken for the answer to the last question. It replaces the
+  previous partial rather than appending, so a growing answer does not fill the
+  pane with copies of itself.
+- A running delegate is tracked, so that leaving does not leave one writing to a
+  frame nobody is drawing on.
+- The delegate takes the model and the instructions of the conversation it
+  branched from, so that it answers about the work in hand.
+
 ### Threads and retention
 
 - `/btw` starts an ephemeral thread branched from the current conversation, and
