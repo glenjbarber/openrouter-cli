@@ -96,6 +96,12 @@ was entered, and sent as a single message. A paste of more than a few lines is
 cut on screen with the remainder reported, so that a very large paste cannot
 push the status bar off the screen.
 
+The frame is kept inside the terminal at any size. A short window drops the
+title before it drops the pane or the prompt, a large paste gives up rows
+rather than the prompt, and a terminal too narrow to hold the prompt marker
+shows the line being typed instead. The prompt is the last thing still on
+screen, since a reader who cannot see it cannot send the next message.
+
 A terminal without bracketed paste support still works: the text is taken as
 typed, which means a multi-line paste from such a terminal is submitted line by
 line.
@@ -711,4 +717,3 @@ A port additionally expects a `Makefile` carrying the port metadata, such as
 `PORTNAME`, `DISTVERSION`, `CATEGORIES`, and `MAINTAINER`, along with the
 `distinfo` and `pkg-descr` entries. Those files are not yet written, and the
 `PORTVERSION` field is held until the first release is defined.
-

@@ -74,7 +74,7 @@ func StatusLine(s Status, width int) string {
 
 	line := strings.Join(parts, sep)
 	if width > 0 && len(line) > width {
-		line = trimToWidth(parts, sep, width)
+		line = trimToWidth(parts, sep, runeWidth(line, width))
 	}
 	if host != "" && (width <= 0 || len(line)+len(host)+len(sep) <= width) {
 		line += sep + host
@@ -129,6 +129,39 @@ func join(parts []string, sep string) string {
 	return strings.Join(parts, sep)
 }
 
+// runeWidth returns how many columns a line occupies on the terminal, which is
+// not the same as its length in bytes.
+//
+// The rule is drawn from a box-drawing character, which is three bytes and one
+// column, and a rule a byte count reports as three times too wide is a rule that
+// runs off the terminal and wraps.
+func runeWidth(s string, max int) int {
+	n := 0
+	for range s {
+		n++
+		if n >= max {
+			return n
+		}
+	}
+	return n
+}
+
+// tail returns the last n columns of s, marked with an ellipsis so that a
+// reader can tell the line was cut rather than begun there.
+func tail(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	if n <= 3 {
+		return string(r[len(r)-n:])
+	}
+	return "..." + string(r[len(r)-(n-3):])
+}
+
 // truncate shortens a string to width, marking the cut with an ellipsis.
 func truncate(s string, width int) string {
 	if width <= 0 {
@@ -153,6 +186,11 @@ const (
 	inputRowsBare    = 2
 	inputRowsDivided = 5
 )
+
+// maxPasteRows is how many lines of a pasted block are shown before the rest
+// are reported as a count instead. A paste of a thousand lines would otherwise
+// fill the screen.
+const maxPasteRows = 5
 
 // Frame is the whole interface at one moment.
 type Frame struct {
@@ -228,9 +266,6 @@ func titleLine(title string, width int, scrolled bool) string {
 // The reply pane is filled from the top and the newest lines are kept when the
 // pane is too short, since the newest exchange is the one being read.
 func Render(f Frame, height, width int) []string {
-	if height < 3 {
-		height = 3
-	}
 	if width < 1 {
 		width = 1
 	}
@@ -241,20 +276,31 @@ func Render(f Frame, height, width int) []string {
 	// terminal and push the status bar off the screen.
 	divided := height >= minHeightForDivision
 
-	// The rows the input block takes depend on whether the division is drawn.
-	// A frame on a short terminal therefore gives more of itself to the
-	// conversation rather than to decoration, since a pane with no rows is not
-	// a pane.
+	// The rows the input block takes depend on whether the division is drawn
+	// and on how much was pasted. A frame on a short terminal therefore gives
+	// more of itself to the conversation rather than to decoration, since a
+	// pane with no rows is not a pane, and a pasted block takes only what is
+	// left once the prompt has been accounted for.
 	inputRows := inputRowsBare
 	if divided {
 		inputRows = inputRowsDivided
 	}
+	inputRows += pasteRows(f.Pasted, height-inputRows)
 
 	// The header is the model name, a rule, and the status bar. It is drawn
 	// above the conversation and outside the scrolled slice, so it stays put
 	// while the reader scrolls back through earlier output. At the foot it
 	// scrolled away at exactly the moment the figures in it were wanted.
+	//
+	// The title is the first thing dropped on a terminal too short to hold
+	// the whole header, since the pane is what a reader is reading and the
+	// status bar carries the figures worth keeping. A frame that runs past
+	// the bottom pushes the prompt off the screen, which leaves no way to type
+	// a next message, so something in the header has to yield.
 	headerRows := 3
+	if height < headerRows+inputRows+1 {
+		headerRows = maxInt(1, height-inputRows)
+	}
 
 	paneHeight := height - headerRows - inputRows
 	if paneHeight < 1 {
@@ -262,9 +308,15 @@ func Render(f Frame, height, width int) []string {
 	}
 
 	body := make([]string, 0, height)
-	body = append(body, titleLine(f.Title, width, f.scrolled()))
-	body = append(body, rule(width))
-	body = append(body, StatusLine(f.Status, width))
+	header := []string{
+		titleLine(f.Title, width, f.scrolled()),
+		rule(width),
+		StatusLine(f.Status, width),
+	}
+	if headerRows < len(header) {
+		header = header[len(header)-headerRows:]
+	}
+	body = append(body, header...)
 
 	// Every reply entry is folded before the pane is filled, since folding
 	// changes how many rows a reply occupies. Truncating instead would lose
@@ -365,21 +417,53 @@ func Render(f Frame, height, width int) []string {
 	// pane is filled, so the pane gives up the rows rather than the frame
 	// overflowing and pushing the status bar off the screen.
 	for i, line := range f.Pasted {
-		if i >= 5 {
-			body = append(body, fmt.Sprintf("  ... %d more pasted lines",
-				len(f.Pasted)-5))
+		if i >= maxPasteRows {
+			// The notice is indented the same way the lines it counts, so it
+			// is read as part of the block rather than as another message.
+			body = append(body, indent("", "  ", fmt.Sprintf(
+				"... %d more pasted lines", len(f.Pasted)-maxPasteRows), width))
 			break
 		}
-		body = append(body, "  "+truncate(line, maxInt(0, width-4)))
+		body = append(body, indent("", "  ", line, width))
 	}
-	body = append(body, "> "+truncate(f.Input, maxInt(0, width-2)))
+	body = append(body, indent("> ", "", f.Input, width))
 
 	// The row below the prompt is added only when the frame has not already
 	// filled the height, so a short terminal is not pushed one row over.
 	if len(body) < height {
 		body = append(body, "")
 	}
-	return body
+	// The frame is cut to the height as a last resort. Every row above is
+	// placed with a budget, but a terminal shorter than the prompt block
+	// leaves nothing to cut, and a frame past the bottom pushes the prompt
+	// off the screen and leaves the reader unable to continue.
+	return body[:minInt(len(body), height)]
+}
+
+// indent returns a row carrying a marker, a body, and a prefix, fitted to the
+// width.
+//
+// The marker and the prefix are dropped before the body is cut, in that order,
+// since the body is the part a reader typed. What is left is the tail of what
+// was typed rather than a marker alone, which on a terminal of one or two
+// columns would otherwise be all that could be shown.
+func indent(marker, prefix, body string, width int) string {
+	room := width - runeWidth(marker, width)
+	if room < 0 {
+		room = 0
+	}
+	room -= runeWidth(prefix, room)
+	if room < 0 {
+		room = 0
+	}
+	fit := truncate(body, room)
+	// A body that did not fit keeps its tail. The marker leads the row, so the
+	// part dropped from the front is the one already spoken for, and the part
+	// at the end is the line being composed.
+	if runeWidth(body, room+1) > room {
+		fit = tail(body, room)
+	}
+	return truncate(marker+prefix+fit, width)
 }
 
 // ruleRune is the character a rule is drawn with. It is a box-drawing
@@ -405,6 +489,24 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// pasteRows returns how many rows a pasted block will occupy, which is the
+// lines shown plus the row reporting anything cut.
+//
+// The count is bounded by the room left after the prompt, since the prompt is
+// what a reader needs in order to type the next message. A paste that cannot
+// fit is cut and reported rather than allowed to push the prompt off the
+// bottom of the screen, which would leave no way to continue the session.
+func pasteRows(pasted []string, room int) int {
+	if len(pasted) == 0 || room < 1 {
+		return 0
+	}
+	rows := minInt(len(pasted), maxPasteRows)
+	if len(pasted) > rows {
+		rows++
+	}
+	return minInt(rows, maxInt(0, room))
 }
 
 // Draw writes the frame to w, one line per row, home first.
@@ -435,6 +537,13 @@ func (s *Screen) Draw(lines []string) {
 	// The cursor is placed after the prompt on the last row, so that the
 	// caret sits where the next character will appear. The column is taken
 	// from the input row rather than from the first row, which is the title.
+	//
+	// A frame with no rows leaves the cursor where it is. There is no last row
+	// to place it against, and a terminal too short to hold the frame is the
+	// one case where guessing would put the caret somewhere meaningless.
+	if len(lines) == 0 {
+		return
+	}
 	last := lines[len(lines)-1]
 	s.write(fmt.Sprintf("\x1b[%d;%dH", len(lines), minInt(len(last)+1, s.width)))
 }

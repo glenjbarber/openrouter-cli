@@ -722,6 +722,35 @@ so that a later change does not silently reverse it.
   does not contain that command, so tracking the parent is not sufficient.
 - The race detector needs a C compiler, so `cc` is a build dependency.
 
+### Frame bounds
+
+- The frame is never taller than the terminal, and no row is ever wider than
+  it. A frame that runs past the bottom pushes the prompt off the screen and
+  leaves the reader no way to type a next message, and a row past the right
+  edge wraps and pushes everything below it down.
+- The frame is cut to the height rather than padded up to a minimum. Writing
+  rows the terminal does not have is what causes the overflow, so the answer
+  is fewer rows rather than a frame insisting on its own.
+- The header yields before the prompt does. The title is the first row
+  dropped, since the pane is what a reader is reading and the status bar
+  carries the figures worth keeping on a short terminal.
+- A pasted block takes only what is left once the prompt has been accounted
+  for, and is cut and reported rather than allowed to cost the prompt.
+- Width is counted in columns rather than in bytes. The rule is drawn from a
+  box-drawing character, which is three bytes and one column, and a rule a
+  byte count reports as three times too wide wraps and breaks the layout.
+- A row narrower than its own markers shows the body rather than the marker.
+  On a terminal of one or two columns the marker is all that could otherwise
+  be shown, which tells a reader nothing about what they typed.
+- A body that does not fit keeps its tail, since the marker leads the row and
+  the end of the line is the part still being composed.
+- An empty frame leaves the caret where it is. There is no last row to place
+  it against, and guessing would put it somewhere the reader cannot see it.
+- Both bounds are checked together across every width, height, scroll offset
+  and paste length, rather than one axis at a time. The rows written are
+  bounded on both axes at once, so a check of one alone would pass a frame
+  that is correct in width and too tall.
+
 ### Layout
 
 The tree follows what a FreeBSD port expects.
