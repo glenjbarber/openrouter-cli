@@ -20,8 +20,9 @@ either, so nothing was rewritten on a remote. The merge hashes named below are
 the current ones.
 
 The audit is done, all six areas merged and gated. It is recorded at the end of
-this file, along with what it found and did not fix. A piece of work was taken
-back off `main` during it and is recorded under The withdrawn file upload.
+this file, along with what it found and did not fix. Two pieces of work have
+been taken back off `main`, and each is recorded at the end of this file: The
+withdrawn file upload, and The withdrawn model-list cache.
 
 Tab completion, markdown rendering, and the key hint row have landed, each
 merged with `--no-ff` behind `make lint`, `make check`, and `make crossbuild`,
@@ -369,6 +370,75 @@ Completion, in `internal/complete`:
    candidate, since search folds on stored entry boundaries. The heading wording
    is the implementer's and is not specified anywhere.
 
+### The scanning toolchain is described but absent
+
+`README.md`, under Development and Test suite, states that the project ships a
+scanning and test toolchain, that `staticcheck`, `errcheck`, `gosec`,
+`govulncheck`, `protoc-gen-go`, and `protoc-gen-go-grpc` are tracked as module
+tool dependencies pinned in `go.mod`, and that every tool is invoked through
+`go tool`. The Toolchain section of `AGENTS.md` makes the same claim, and adds
+that `protoc` is a build dependency and that the race detector needs a C
+compiler.
+
+The repository does not have that toolchain. `go.mod` carries no `tool`
+directive and no `require` block, and there is no `go.sum`. `make lint` runs
+`go vet` and `gofmt -l` and nothing else, and `make test`, `make check`, and
+`make crossbuild` invoke none of the six named tools. The only two occurrences
+of the string `go tool` in the repository are the two prose claims above, and
+no workflow under `.github/` refers to any of the six. `go.mod` has carried no
+tool directive in any commit, so the claim has not once been true of the file
+it describes.
+
+Two documents therefore describe a toolchain that the repository does not run.
+There are two ways to close that, and neither has been chosen:
+
+- The tool dependencies are added to `go.mod` as a `tool` directive, and the
+  Makefile targets are wired to invoke them. `README.md` and `AGENTS.md` then
+  stand as written. `go.mod`, the `test`, `lint`, and `check` targets in the
+  `Makefile`, and the merge gate all change, since the scanners would run
+  wherever the gate runs.
+- `README.md` and `AGENTS.md` are corrected to describe what the
+  repository runs, which is `go vet`, `gofmt`, and `go test -race`. Only the two
+  documents change. The merge gate is left as it is.
+
+Nothing was changed in either direction while this was recorded. Whether the
+two generators are dropped is a further question inside the first resolution
+rather than part of it, since neither has a schema to work against either way.
+The choice alters the dependency set and the merge gate, so it is the
+maintainers to make rather than the implementers.
+
+### A command argument is discarded rather than used
+
+Dispatch already parses the line and hands the fields after the command to its
+handler. Two handlers take the argument and ignore it: `cmdSearch` and
+`cmdModels` are both `func (s *Session) cmdX([]string) bool`, so `/search
+compaction` opens a search with an empty filter and `/models claude` opens the
+catalogue unfiltered. The text is dropped rather than misused, which is the
+safer of the two failures, but it is a defect and not a decision.
+
+Reading the remainder of the line into the filter is not one change but a
+choice, and it has not been made:
+
+1. Whether a query given on the command line should only filter, or should also
+   jump to the newest match. Enter jumps, so the query on the line and the
+   Enter key would behave differently for the same text unless one of the two is
+   changed.
+2. Whether a search opened with a query should still be incremental, so that
+   typing appends to it. The caret sits after the filter, so appending must be
+   done by placing the caret rather than by writing to the end of the buffer, or
+   a caret moved left would have the text appended past it.
+3. How the remainder of the line is split, given there is no argument grammar.
+   `/models gpt` is unambiguous and `/delegate` takes a whole sentence, so the
+   two cannot be split by the same rule without one of them being wrong.
+4. Whether `/search` and `/models` should complete their arguments. Completion
+   deliberately completes none, since the record gives no argument grammar beyond
+   `/model [NAME]` and `/delegate QUESTION`.
+
+Recording this rather than implementing it: the record completes `/search` as
+filtering the pane as the query is typed, and says nothing about a query
+supplied with the command, and the four questions above are not answerable from
+what it does say.
+
 ## Backlog
 
 ### The file upload
@@ -468,7 +538,9 @@ Recorded rather than landed, since each is the maintainers to decide:
   conversation is summarised and replaced, and it says the recent exchange is
   held out so the model answering next still has it.
 - **A failing model-list call is not cached**, so the fallback window is
-  recomputed and the network tried again on every repaint.
+  recomputed and the network tried again on every repaint. A branch caching it
+  was merged without a decision and taken back off; see The withdrawn
+  model-list cache at the end of this file.
 - **A whole-request timeout of ten minutes cuts a reply still streaming**, and
   whether the bound should be on the whole request or on the headers alone is a
   decision.
@@ -564,3 +636,32 @@ or reverse.** The answers, in the branch and not in `AGENTS.md`, are:
 None of these is wrong on its face. They are answers to questions that were
 recorded as the maintainers, which is a different thing from answers that are
 right. The branch is `feature/upload-withdrawn`; nothing was pushed.
+
+## The withdrawn model-list cache
+
+A concurrent session implemented a per-model cache of failed model-list calls and
+merged it into `main` without being asked to. It has been taken back off `main`,
+and the work is held on the branch `feature/model-list-cache-withdrawn` rather
+than deleted, so that nothing written is lost and the maintainer can look at it.
+
+**Why it was withdrawn.** The bullet under What the audit found and did not fix
+records, as an open item, that a failing model-list call is not cached, so the
+fallback window is recomputed and the network tried again on every repaint. That
+is a trade, not a defect: caching a failure means a model whose list is
+temporarily unavailable never recovers until the session restarts, and not
+caching it means a repaint during an outage reaches the network. The record does
+not cover which is wanted, so implementing either is answering for the
+maintainer.
+
+**What it does, and therefore what the maintainer is being asked to confirm or
+reverse.** `contextLength` in `internal/tui/threshold.go` carries a `failed`
+map alongside the `byModel` cache. Once `s.client.Models` fails for a model, the
+model is marked failed and `lookup` returns `fallbackWindow` for it without
+retrying, for the rest of the session. A model that succeeds is cached exactly as
+before. The branch carries 119 lines of tests over the success and failure paths.
+
+Confirming it is a small change onto `main`. Reversing it leaves the audit
+bullet exactly as it stands.
+
+The branch is `feature/model-list-cache-withdrawn`; nothing was pushed.
+
