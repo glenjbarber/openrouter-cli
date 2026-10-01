@@ -29,10 +29,10 @@ func resolve(path string) (string, error) {
 			return current, nil
 		}
 
-		// Stat the link itself and the target, then compare devices. Lstat
-		// gives the link without following it, so the comparison is between
-		// the two objects rather than the target with itself.
-		linkInfo, err := os.Stat(current)
+		// Compare the link itself against its target. Lstat is what gives
+		// the link without following it; Stat would return the target and
+		// so would compare the target with itself.
+		linkInfo, err := os.Lstat(current)
 		if err != nil {
 			return "", fmt.Errorf("resolving %s: %w", current, err)
 		}
@@ -49,7 +49,7 @@ func resolve(path string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("resolving %s to %s: %w", current, dest, err)
 		}
-		if sameDevice(linkInfo, targetInfo) {
+		if !sameDevice(linkInfo, targetInfo) {
 			return "", fmt.Errorf(
 				"%s is a link to %s, which is on another filesystem: "+
 					"a link that leaves its own filesystem is refused",
@@ -68,6 +68,8 @@ func sameDevice(a, b os.FileInfo) bool {
 	as, aok := a.Sys().(*syscall.Stat_t)
 	bs, bok := b.Sys().(*syscall.Stat_t)
 	if !aok || !bok {
+		// Without a device identifier there is nothing to compare, so the
+		// link is followed rather than refused on a guess.
 		return true
 	}
 	return as.Dev == bs.Dev
