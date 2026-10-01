@@ -88,3 +88,105 @@ func TestMissingKeyCarriesResolvedURLBase(t *testing.T) {
 		t.Errorf("URLBase = %q, want %q", noKey.URLBase, DefaultURLBase)
 	}
 }
+
+// The search order is fixed and is asserted literally, so that a change to a
+// path is a deliberate act rather than an accident in a hand-written copy.
+//
+// A relative XDG_CONFIG_HOME is ignored rather than resolved against the
+// working directory, since the specification requires an absolute path and a
+// relative one would let a directory someone else wrote supply the credential
+// file. A trailing separator is ordinary and is cleaned by Join.
+func TestSearchPaths(t *testing.T) {
+	home := filepath.Join(string(filepath.Separator), "home", "user")
+	xdg := filepath.Join(string(filepath.Separator), "xdg")
+
+	for _, tc := range []struct {
+		xdg  string
+		name string
+		want []string
+	}{
+		{"", "unset", []string{
+			filepath.Join(home, ".openrouter-cli.json"),
+			filepath.Join(home, ".config", "openrouter-cli", "openrouter-cli.json"),
+		}},
+		{xdg, "absolute", []string{
+			filepath.Join(home, ".openrouter-cli.json"),
+			filepath.Join(xdg, "openrouter-cli", "openrouter-cli.json"),
+		}},
+		{xdg + string(filepath.Separator), "trailing separator", []string{
+			filepath.Join(home, ".openrouter-cli.json"),
+			filepath.Join(xdg, "openrouter-cli", "openrouter-cli.json"),
+		}},
+		{"relative/config", "relative ignored", []string{
+			filepath.Join(home, ".openrouter-cli.json"),
+			filepath.Join(home, ".config", "openrouter-cli", "openrouter-cli.json"),
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("XDG_CONFIG_HOME", tc.xdg)
+			got := searchPaths(home)
+			if len(got) != len(tc.want) {
+				t.Fatalf("searchPaths = %q, want %q", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("searchPaths[%d] = %q, want %q", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+// A configuration waiting at a later search path is a configuration. Writing
+// the default at the first path would shadow it, since the search stops at the
+// first match and does not merge, so a reader who keeps their file under
+// XDG_CONFIG_HOME would lose it on the first run and see no credential at all.
+func TestInstallDefaultDoesNotShadowConfigurationAtALaterPath(t *testing.T) {
+	home := t.TempDir()
+	xdg := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+
+	dir := filepath.Join(xdg, "openrouter-cli")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	existing := `{"OPENROUTER_API_KEY":"sk-or-v1-in-xdg"}`
+	if err := os.WriteFile(filepath.Join(dir, "openrouter-cli.json"), []byte(existing), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	written, err := InstallDefault()
+	if err != nil {
+		t.Fatalf("InstallDefault: %v", err)
+	}
+	if written {
+		t.Error("written = true, want false while a configuration exists")
+	}
+	if _, err := os.Stat(filepath.Join(home, DefaultFileName)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("Stat at the primary path = %v, want no default written there", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.APIKey != "sk-or-v1-in-xdg" {
+		t.Errorf("APIKey = %q, want the file under XDG_CONFIG_HOME", cfg.APIKey)
+	}
+}
+
+// A directory at the primary path is still reported rather than skipped, since
+// the search alone must not swallow the case the installer names as an error.
+func TestInstallDefaultStillReportsDirectory(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	if err := os.Mkdir(filepath.Join(home, DefaultFileName), 0o700); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+
+	if _, err := InstallDefault(); err == nil {
+		t.Fatal("InstallDefault accepted a directory, want an error")
+	}
+}

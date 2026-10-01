@@ -155,11 +155,15 @@ func Load() (*Config, error) {
 func searchPaths(home string) []string {
 	paths := make([]string, 0, len(fileNames))
 	for _, name := range fileNames {
+		// The XDG check comes first, since it matches the relative name and is
+		// re-rooted by itself. Joining first would compare a home-qualified
+		// path against a relative one and never match.
+		if resolved, ok := xdgOverride(name); ok {
+			paths = append(paths, resolved)
+			continue
+		}
 		if !filepath.IsAbs(name) {
 			name = filepath.Join(home, filepath.FromSlash(name))
-		}
-		if resolved, ok := xdgOverride(name); ok {
-			name = resolved
 		}
 		paths = append(paths, name)
 	}
@@ -178,14 +182,17 @@ func xdgOverride(name string) (string, bool) {
 		return "", false
 	}
 	base := os.Getenv("XDG_CONFIG_HOME")
-	if base == "" {
+	if base == "" || !filepath.IsAbs(base) {
 		return "", false
 	}
-	if !filepath.IsAbs(base) {
+	// The leading .config element is exactly what the variable replaces, so
+	// what remains of the search path is the part below it. It is derived
+	// rather than written out a second time, since two copies of one path
+	// drift apart the moment either is edited.
+	rel, err := filepath.Rel(filepath.FromSlash(".config"), fileNames[1])
+	if err != nil {
 		return "", false
 	}
-	// Strip the leading ".config" component and re-root it.
-	rel := filepath.FromSlash("openrouter-cli/openrouter-cli.json")
 	return filepath.Join(base, rel), true
 }
 
