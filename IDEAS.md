@@ -11,9 +11,15 @@ itself.
 
 ## Last updated
 
-At `main` commit `f8ecbac`, with a clean working tree. Work in progress is
-`hintrow` and `instructions`; `completion` and `markdown` hold written but
-untested work; four worktrees are stale. The audit has not started.
+At `main` commit `cef05a9`, with a clean working tree, 20 commits ahead of
+`origin/main`. Nothing is pushed yet.
+
+Work in progress is `hintrow`, which does not build, and `instructions`, which
+is empty and blocked on a decision. `completion` and `markdown` hold written but
+untested work. Four stale worktrees were removed.
+
+The audit has not started. It waits on the backlog, since reviewing code that
+is about to change is wasted effort.
 
 ## Ground rules
 
@@ -205,6 +211,24 @@ finished rather than that it has stopped.
 
 Small, and no decision needed beyond whether the gap is ever long enough to be
 worth drawing.
+
+### The lesson from the pty test
+
+Found and fixed. Recorded because the mistake is easy to repeat and the gate
+that now catches it is worth knowing about.
+
+`internal/tui/pty_bsd_test.go` was written for the resize fix and tagged for the
+whole BSD family, but it names `syscall.TIOCPTMASTER`, which only FreeBSD
+carries. It broke darwin, netbsd, openbsd, and dragonfly.
+
+`make crossbuild` passed the whole time, because `go build` does not typecheck
+test files. It was caught only by running `GOOS=linux go vet ./...` by hand
+while checking whether a push was safe. Had that not been checked, continuous
+integration would have failed it after the push instead.
+
+`make crossbuild` now runs `go vet` as well as `go build` for every target. The
+helper is FreeBSD-only and the other platforms skip. Both facts are recorded
+under Build in `AGENTS.md`.
 
 ## Outstanding
 
