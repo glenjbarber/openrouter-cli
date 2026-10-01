@@ -310,6 +310,24 @@ so that a later change does not silently reverse it.
 - The conversation is left untouched when a summary fails, since a
   half-summarised history is worse than a long one.
 
+### Progress
+
+- A twiddle is shown while work is in progress: a request, a compaction, or a
+  connection test. It uses braille figures rather than dots, at one column each,
+  so that the frame does not jitter as it turns.
+- The first frame is drawn before the goroutine starts, so something is on
+  screen the moment work begins rather than after the first interval.
+- The twiddle runs on its own goroutine, so the frame is guarded by a mutex
+  shared with the request loop. The lock is released before the terminal is
+  written, since holding it across the write would serialise the twiddle
+  against the work it is reporting on.
+- Stopping waits for the goroutine to finish. Returning early would let a late
+  frame paint over the interface after the work had ended.
+- Starting an already-running twiddle does nothing, so a caller need not track
+  whether one is running.
+- The twiddle leads the line rather than trailing it, since a trailing one
+  would shift the text sideways on every step.
+
 ### Echo
 
 - The terminal is in raw mode with echo disabled, so the composed line is drawn

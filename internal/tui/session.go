@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/glenjbarber/openrouter-cli/internal/bootstrap"
@@ -21,8 +22,13 @@ type Session struct {
 
 	// client is nil until a connection is established, so that the interface
 	// can be used for composition before a key is configured.
+	// mu guards the frame, which the spinner goroutine writes while the
+	// request loop writes it too.
+	mu     sync.Mutex
 	client *openrouter.Client
 	conv   *Conversation
+	// spinner turns the twiddle while work is in progress.
+	spinner *Spinner
 	// windows caches the context length of each model seen, so that the
 	// threshold can be evaluated without a call per message.
 	windows *contextLength
@@ -65,6 +71,7 @@ func Start(out, in *os.File, title string) (*Session, error) {
 		editor:  NewLineEditor(in),
 		conv:    NewConversation(),
 		windows: newContextLength(),
+		spinner: NewSpinner(),
 		ctx:     ctx,
 		cancel:  cancel,
 		frame: Frame{
@@ -250,6 +257,9 @@ func (s *Session) connect() {
 	ctx, cancel := context.WithTimeout(s.ctx, 10*time.Second)
 	defer cancel()
 
+	s.beginWork()
+	defer s.endWork()
+
 	usage, err := s.client.KeyUsage(ctx)
 	if err != nil {
 		s.frame.Reply = append(s.frame.Reply, "connect failed: "+err.Error())
@@ -397,6 +407,12 @@ func (s *Session) send(line string) {
 	// window is refused outright and the turn is lost with it.
 	s.maybeCompact()
 
+	// The twiddle turns for the whole request, including the wait for the
+	// first token, since that wait is where the interface would otherwise
+	// look frozen.
+	s.beginWork()
+	defer s.endWork()
+
 	var reply strings.Builder
 	// The streaming fields are cleared on every exit from the request,
 	// including a failure, so that a stale partial reply is not left on
@@ -495,8 +511,28 @@ func keyState(c *openrouter.Client) string {
 	return "configured"
 }
 
+// beginWork starts the twiddle.
+func (s *Session) beginWork() {
+	s.spinner.Start(func(frame string) {
+		s.mu.Lock()
+		s.frame.Spinner = frame
+		s.mu.Unlock()
+		s.draw()
+	})
+}
+
+// endWork stops the twiddle and clears it from the frame.
+func (s *Session) endWork() {
+	s.spinner.Stop()
+	s.mu.Lock()
+	s.frame.Spinner = ""
+	s.mu.Unlock()
+	s.draw()
+}
+
 // draw repaints the frame.
 func (s *Session) draw() {
+	s.mu.Lock()
 	// The pane carries a hint only while it is empty. Once a conversation has
 	// started the hint is in the way, and the opening instructions are what
 	// should be read.
@@ -505,8 +541,15 @@ func (s *Session) draw() {
 	} else {
 		s.frame.Hint = ""
 	}
+	// The frame is copied before the lock is released, so that rendering,
+	// which writes to the terminal, does not hold it. Holding the lock across
+	// the write would serialise the spinner against the request loop, which
+	// is the opposite of what the spinner is for.
+	frame := s.frame
+	s.mu.Unlock()
+
 	height, width := s.screen.Size()
-	s.screen.Draw(Render(s.frame, height, width))
+	s.screen.Draw(Render(frame, height, width))
 }
 
 // hint reports what to do next, which differs depending on what is missing.

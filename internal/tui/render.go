@@ -153,6 +153,10 @@ type Frame struct {
 	Partial string
 	// Busy reports that a request is in flight, which the status bar shows.
 	Busy bool
+	// Spinner is the twiddle shown while work is in progress, empty when
+	// idle. It is drawn beside the partial reply rather than in the status
+	// bar, so that it moves where the eye already is.
+	Spinner string
 }
 
 // Render draws the frame and returns the lines to write.
@@ -187,6 +191,12 @@ func Render(f Frame, height, width int) []string {
 		// partial text is drawn there rather than appended as a new line for
 		// every token.
 		reply = append(append([]string{}, reply...), f.Partial)
+	}
+	if f.Spinner != "" {
+		// The twiddle leads the line it belongs to. It is placed before the
+		// text so that the text does not shift sideways as the twiddle turns,
+		// which a trailing one would cause.
+		reply = append(append([]string{}, reply...), f.Spinner+" thinking")
 	}
 	if len(reply) == 0 && f.Hint != "" {
 		reply = []string{f.Hint}

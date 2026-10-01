@@ -176,7 +176,9 @@ is cheap and it distinguishes a rejected key from a rejected model, which is the
 first thing worth knowing when nothing works.
 
 A reply streams into the pane a token at a time rather than appearing all at
-once, so that a slow model does not look idle. A stream that fails partway keeps
+once, so that a slow model does not look idle. A twiddle turns beside the reply
+while a request, a compaction, or a connection test is in progress, and the
+status field reads `Working` for the same period. A stream that fails partway keeps
 the text received before the failure and reports the error beneath it.
 
 `/new` clears the conversation but keeps the bootstrap document in force, since
