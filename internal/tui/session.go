@@ -1223,7 +1223,15 @@ func keyState(c *openrouter.Client) string {
 }
 
 // beginWork starts the twiddle.
+//
+// The state is set here rather than by the first streamed delta, since the
+// wait for that first delta is the longest part of a turn and is where the
+// interface would otherwise look finished while it waited.
 func (s *Session) beginWork() {
+	s.mu.Lock()
+	s.frame.Busy = true
+	s.frame.Status.State = stateWorking
+	s.mu.Unlock()
 	s.spinner.Start(func(frame string) {
 		s.mu.Lock()
 		s.frame.Spinner = frame
@@ -1233,10 +1241,17 @@ func (s *Session) beginWork() {
 }
 
 // endWork stops the twiddle and clears it from the frame.
+//
+// The busy bit is cleared here rather than by each caller that started the
+// work, since a caller that forgot would leave the interface reporting work in
+// progress for the rest of the session. A connection test clears it the same
+// way a request does, because it is work in progress either way.
 func (s *Session) endWork() {
 	s.spinner.Stop()
 	s.mu.Lock()
 	s.frame.Spinner = ""
+	s.frame.Busy = false
+	s.frame.Status.State = stateIdle
 	s.mu.Unlock()
 	s.draw()
 }

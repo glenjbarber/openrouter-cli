@@ -422,3 +422,37 @@ func TestStatusReportsIdleWithNoRequestInFlight(t *testing.T) {
 		t.Errorf("the state is %q with no request in flight, want %q", state, stateIdle)
 	}
 }
+
+// The twiddle and the state are set together, so the bar cannot show work in
+// progress with nothing turning or a twiddle turning with the bar idle.
+//
+// The wait for the first streamed delta is the longest part of a turn, and it
+// is the part where an interface that reports itself idle looks finished while
+// it is working.
+func TestWorkInProgressIsReportedBeforeTheFirstDelta(t *testing.T) {
+	s, _ := auditSession(t, auditStream)
+
+	s.beginWork()
+
+	s.mu.Lock()
+	busy, state := s.frame.Busy, s.frame.Status.State
+	s.mu.Unlock()
+	if !busy {
+		t.Error("a request in flight is not reported as one")
+	}
+	if state != stateWorking {
+		t.Errorf("the state is %q before the first delta arrives, want %q", state, stateWorking)
+	}
+
+	s.endWork()
+
+	s.mu.Lock()
+	busy, state = s.frame.Busy, s.frame.Status.State
+	s.mu.Unlock()
+	if busy {
+		t.Error("the request is still reported as in flight after the work ended")
+	}
+	if state != stateIdle {
+		t.Errorf("the state is %q after the work ended, want %q", state, stateIdle)
+	}
+}
