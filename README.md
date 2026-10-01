@@ -221,6 +221,7 @@ model:
 | `/models`        | List the models the endpoint offers.                 |
 | `/model NAME`    | Choose the model. Without an argument, report it.    |
 | `/info`          | Report the model, the endpoint, and whether a key is set. |
+| `/bell`          | Ring the terminal bell when a reply arrives, on or off. |
 | `/cognito`       | Record nothing from now on, or record again.        |
 | `/btw`           | Start a thread branched from this conversation.      |
 | `/main`          | Leave the thread and return to the conversation.    |
@@ -254,6 +255,12 @@ session.
 directory holding a process identifier and nothing else, so that a marker left
 behind by a crash is noticed at the next start and reported rather than
 honoured silently.
+
+The terminal bell is off unless asked for. `/bell` turns it on or off at
+runtime, and `OPENROUTER_BELL` in the configuration file sets it for every
+session. The bell is rung when a reply has finished arriving rather than when
+the request was sent, and it is written only when the output is a terminal, so a
+redirected run carries no stray control character.
 
 A long conversation is compacted automatically. Once it passes 75% of the
 model's window, the next message triggers a summarisation before the request is

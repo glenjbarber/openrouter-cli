@@ -67,7 +67,7 @@ func run(args []string) error {
 		// The model and the mouse preference are preserved from the file
 		// even though the key is not, so that a file carrying a preference
 		// is not treated as unread.
-		cfg = config.EmptyMouse(keyErr.Model, keyErr.Mouse)
+		cfg = config.EmptyMouse(keyErr.Model, keyErr.Mouse, keyErr.Bell)
 	}
 	_ = cfg
 
@@ -95,6 +95,7 @@ func interface_(out, in *os.File, cfg *config.Config, opts options) error {
 	// that the interface opens even when the key is absent and reports the
 	// absence as an ordinary message rather than refusing to open.
 	session.Configure(cfg.URLBase, cfg.APIKey, cfg.Model)
+	session.SetBell(cfg.Bell)
 
 	// Mouse reporting is not turned on unless it is asked for, because a
 	// terminal that reports events takes the drag that begins a selection
@@ -189,6 +190,7 @@ Commands, typed inside the interface:
   /models            List the models the endpoint offers.
   /model NAME        Choose the model to send to.
   /info              Report the session settings.
+  /bell              Ring the terminal bell when a reply arrives.
   /cognito           Record nothing, on or off.
   /btw               Start a thread branched from this conversation.
   /main              Leave the thread and return to the conversation.

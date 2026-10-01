@@ -504,6 +504,24 @@ so that a later change does not silently reverse it.
 - A test that finds the status bar must do so by content rather than by
   position, since the division now sits between it and the prompt.
 
+### Terminal bell
+
+- The bell is a byte in the output stream rather than a terminal feature, so it
+  needs no terminal support beyond an output that is a terminal.
+- It is rung when a reply has finished arriving rather than when the request was
+  sent, since the point of it is to say the answer is ready.
+- It is off unless asked for. A user who did not ask for a bell would find one
+  startling, so the default is silence.
+- The preference is read from `OPENROUTER_BELL` in the configuration file and
+  can be changed at runtime with `/bell`, since a user reaching for a bell
+  mid-session wants it now and would not want to restart to get it.
+- It is written only when the output is a terminal. A redirected run has no
+  terminal to ring and the byte would be noise in the capture.
+- The preference survives a file that carries no credential, since a file
+  holding a preference is not unread for want of a key.
+- Nothing else in the client changes because of the bell. It is a preference,
+  not a mode.
+
 ### Progress
 
 - A twiddle is shown while work is in progress: a request, a compaction, or a
