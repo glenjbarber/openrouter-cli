@@ -11,12 +11,13 @@ itself.
 
 ## Last updated
 
-At `main` commit `cef05a9`, with a clean working tree, 20 commits ahead of
-`origin/main`. Nothing is pushed yet.
+At `main` commit `4e8e481`, clean and in sync with `origin/main`. The three
+branches holding work are pushed: `feature/hintrow`, `feature/completion`, and
+`feature/markdown`.
 
-Work in progress is `hintrow`, which does not build, and `instructions`, which
-is empty and blocked on a decision. `completion` and `markdown` hold written but
-untested work. Four stale worktrees were removed.
+Work in progress is `hintrow`, which does not build. `completion` and `markdown`
+hold written but untested work. The instruction search is blocked on a decision
+and has no worktree. Five stale worktrees were removed.
 
 The audit has not started. It waits on the backlog, since reviewing code that
 is about to change is wasted effort.
@@ -42,6 +43,8 @@ Merged into `main`.
 | Pane search, `/search` | `3a7a10a` | Filters the conversation as the query is typed. |
 | Port maintainer address | `82be445` | `MAINTAINER= gjb@FreeBSD.org`. |
 | Terminal resize | `ccf34c1` | Size re-read per repaint rather than cached. |
+| Pty test tag fix | `cef05a9` | FreeBSD-only helper, and the crossbuild target now vets. |
+| Working list | `5ed0eb1` | `IDEAS.md` at the repository root. |
 
 ## In progress
 
@@ -71,11 +74,9 @@ is current. Only the renderer side is missing, not the base.
 
 ### The instruction file search
 
-Worktree `~/openrouter-cli-worktrees/instructions`, branch
-`feature/instructions`. Created and empty. Nothing written, not even a failing
-test, so it is a placeholder rather than work.
-
 Intended to be an `/update` command that re-reads the model instruction file.
+No worktree exists. One was created and removed, since an empty checkout is a
+stale one rather than work in progress.
 
 **Blocked on a discrepancy.** `AGENTS.md` describes a search over
 `AGENTS.md`, `OPENROUTER.md`, `RULES.md`, and `SHARED.md` in the working
@@ -109,13 +110,11 @@ Written but not landed. The checkout exists and holds the work.
 lines with no test file at all. `markdown` is 297 lines, unwired, also untested.
 Both need a rebase before they can land, and both need tests written.
 
-`instructions` is not listed here. It is empty, but it is blocked on a decision
-rather than abandoned, so it sits under In progress.
-
-`cmdqueue`, `mfilterfix`, `noninteractive`, and `stopcancel` held no changes and
-were removed, along with their branches, since nothing referenced them. A
-checkout with no changes is a stale one rather than work in progress, and the
-distinction is recorded under Worktrees in `AGENTS.md`.
+`cmdqueue`, `mfilterfix`, `noninteractive`, `stopcancel`, and `instructions` held
+no changes and were removed, along with their branches. Nothing referenced them
+and none had been pushed. A checkout with no changes is a stale one rather than
+work in progress, and the distinction is recorded under Worktrees in
+`AGENTS.md`.
 
 ## Notes
 
