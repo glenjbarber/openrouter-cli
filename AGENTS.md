@@ -371,6 +371,28 @@ so that a later change does not silently reverse it.
 - The conversation is left untouched when a summary fails, since a
   half-summarised history is worse than a long one.
 
+### Pasted input
+
+- Bracketed paste is enabled on the alternate screen and turned off before it
+  is left, so that a paste arriving after the interface closes is not swallowed
+  by a mode the terminal still believes is on.
+- Without the markers a paste is indistinguishable from someone typing very
+  fast, and a newline inside one would submit the line halfway through and send
+  half the paste as a message. A terminal without the mode sends the text bare,
+  which still works rather than being mangled.
+- A pasted block is taken whole out of the input buffer before any of its bytes
+  are treated as keys.
+- A paste is joined with what is typed after it and returned as one message,
+  since the user pasted one thing. The paste comes first, being what was in the
+  buffer before the typing began.
+- A carriage return and newline together are one break, since that is what a
+  terminal sends for a single newline. A trailing break belongs to the paste
+  rather than asking for an empty line, and is dropped.
+- A landed paste is reported and shown above the prompt, since a paste cannot
+  fit on one row and a prompt that silently swallowed it would read as a lost
+  paste. A large paste is cut to a fixed number of rows, and the overflow is
+  reported rather than pushing the status bar off the screen.
+
 ### Threads and retention
 
 - `/btw` starts an ephemeral thread branched from the current conversation, and

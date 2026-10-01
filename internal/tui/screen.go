@@ -49,6 +49,11 @@ const (
 	seqClearLine = "\x1b[K"
 	seqHome      = "\x1b[H"
 	seqResetAttr = "\x1b[0m"
+	// Bracketed paste is private mode 2004. Without it a pasted block is
+	// indistinguishable from typing, and a newline inside a paste would submit
+	// the line halfway through and send half of it as a message.
+	seqPasteOn  = "\x1b[?2004h"
+	seqPasteOff = "\x1b[?2004l"
 	// Mouse reporting is turned on and off with the private mode 1000, which
 	// is the button-event mode the wheel reports arrive in. The alternative
 	// modes are not used: 1002 also reports a motion drag, and 1003 reports
@@ -103,7 +108,7 @@ func NewScreen(out, in *os.File) (*Screen, error) {
 		os.Exit(1)
 	}()
 
-	s.write(seqEnterAlt + seqHideCur + seqClear + seqHome)
+	s.write(seqEnterAlt + seqHideCur + seqClear + seqHome + seqPasteOn)
 	if err := s.refreshSize(); err != nil {
 		s.Close()
 		return nil, err

@@ -106,6 +106,12 @@ func Start(out, in *os.File, title string) (*Session, error) {
 	// the keystrokes are held until the line is submitted and appear to do
 	// nothing at all.
 	s.mainConv = s.conv
+	s.editor.OnPaste = func(lines []string) {
+		s.mu.Lock()
+		s.frame.Pasted = lines
+		s.mu.Unlock()
+		s.draw()
+	}
 	s.editor.OnChange = func(line string) {
 		s.frame.Input = line
 		s.draw()
@@ -240,6 +246,7 @@ func (s *Session) Run() error {
 	for {
 		line, err := s.editor.ReadLine()
 		s.frame.Input = ""
+		s.frame.Pasted = nil
 		switch {
 		case errors.Is(err, ErrEndOfInput):
 			return nil

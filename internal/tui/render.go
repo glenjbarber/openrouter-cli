@@ -157,6 +157,11 @@ type Frame struct {
 	// idle. It is drawn beside the partial reply rather than in the status
 	// bar, so that it moves where the eye already is.
 	Spinner string
+	// Pasted holds the lines of a paste that has landed but not yet been
+	// submitted. They occupy their own rows above the prompt, since a paste
+	// cannot be shown on one row and a prompt that silently swallowed it
+	// would read as a lost paste.
+	Pasted []string
 	// Scroll is how many lines the pane is scrolled up from the newest
 	// output. Zero means the view is following the bottom, which is the only
 	// behaviour the pane had before scrolling existed.
@@ -275,6 +280,18 @@ func Render(f Frame, height, width int) []string {
 	}
 
 	body = append(body, StatusLine(f.Status, width))
+
+	// A paste occupies the rows above the prompt. They are appended after the
+	// pane is filled, so the pane gives up the rows rather than the frame
+	// overflowing and pushing the status bar off the screen.
+	for i, line := range f.Pasted {
+		if i >= 5 {
+			body = append(body, fmt.Sprintf("  ... %d more pasted lines",
+				len(f.Pasted)-5))
+			break
+		}
+		body = append(body, "  "+truncate(line, maxInt(0, width-4)))
+	}
 	body = append(body, "> "+truncate(f.Input, maxInt(0, width-2)))
 	return body
 }
