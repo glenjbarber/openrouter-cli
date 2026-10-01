@@ -666,24 +666,28 @@ func Render(f Frame, height, width int) []string {
 // A tab is kept. It is a column of space rather than a sequence, nothing acts
 // on it, and dropping it would fold a line that was laid out with one.
 func plainRow(s string) string {
-	if !strings.ContainsFunc(s, isShownByte) {
+	if !strings.ContainsFunc(s, isDroppedByte) {
 		return s
 	}
 	return strings.Map(func(r rune) rune {
-		if isShownByte(r) {
+		if isDroppedByte(r) {
 			return -1
 		}
 		return r
 	}, s)
 }
 
-// isShownByte reports whether a byte is one the frame is allowed to carry.
+// isDroppedByte reports whether a rune is one the frame drops.
 //
 // The range is the control characters and the two blocks that are treated as
 // controls: the C0 set at the start of the byte range, and the C1 set at the
 // end of Latin-1. Everything else is text, including the box-drawing and
 // braille figures the interface draws with.
-func isShownByte(r rune) bool {
+//
+// The name says what it answers rather than what it selects, since plainRow
+// drops a rune this reports and keeps one it does not, and a name reading the
+// other way round would have a reader keep exactly the bytes meant to go.
+func isDroppedByte(r rune) bool {
 	if r == '\t' {
 		return false
 	}
