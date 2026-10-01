@@ -692,6 +692,50 @@ so that a later change does not silently reverse it.
 - A test that finds the status bar must do so by content rather than by
   position, since the division now sits between it and the prompt.
 
+### Hint row
+
+- A row names the keys that do something in the state the interface is in. It
+  is the only place the client says what a key is for, so a key the reader does
+  not know about is one they will conclude does nothing.
+- Only a key that acts is named. A row that promised a key which did nothing
+  would be worse than no row, since a reader would press it and conclude the
+  client had hung. The arrows are named only once there is history to recall,
+  escape only while a request is in flight, and the wheel only while reporting
+  is on, which is off unless the reader asked for it.
+- The row sits above the prompt, inside the input block, rather than below it
+  as a footer. The caret is placed on the last row, so a footer would move the
+  caret off the prompt, and the frame carries one budget of rows rather than a
+  second index into it. An earlier design put the row below the prompt and was
+  not carried out.
+- Against the prompt it reads as a caption for the input line, which is what
+  it describes.
+- The row is budgeted with the rest of the input block, after the paste, so
+  that a landed paste is still reported. A paste the reader cannot see reads as
+  a lost paste, where a missing hint costs nothing beyond its own row.
+- The row is dropped whole before the prompt is. A session with no way to type
+  a next message is not one the reader can carry on in.
+- Entries are dropped whole rather than cut when the row is too narrow. Half a
+  phrase names a key and not what the key does, which is the one thing the row
+  exists to say, and the status bar avoids the same thing by dropping fields
+  whole.
+- The row is budgeted from the rendered line rather than from the entries, so a
+  terminal too narrow for even one entry does not give up a pane row for a row
+  that is never drawn. A test comparing the frame with and without hints at
+  every size is what caught it.
+- The state is carried on the session under its lock rather than read out of
+  the line editor at paint time, since the editor belongs to the input goroutine
+  and the row is also drawn from the spinner goroutine. The busy bit is read
+  from the frame, which the request loop writes under the same lock, so the two
+  cannot disagree.
+- The overlay is derived at paint time from flags that are already guarded,
+  rather than recorded at each site that opens or closes one, since six call
+  sites would be six chances to leave one of them out.
+- Tab is not named in the model filter. The filter reads a byte at a time and
+  takes characters only, so naming a completion key there would promise
+  something that does not happen.
+- `PROVISIONAL` The wording of the entries, and the two-space separator between
+  them, are the implementer's. Nothing in the record specifies them.
+
 ### Terminal bell
 
 - The bell is a byte in the output stream rather than a terminal feature, so it

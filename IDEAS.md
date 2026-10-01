@@ -11,23 +11,26 @@ itself.
 
 ## Last updated
 
-At `main` commit `3189907`, four commits ahead of `origin/main` and not pushed.
+At `main` commit `7c511b2`, seven commits ahead of `origin/main` and not
+pushed.
 
-Tab completion and markdown rendering have landed, merged with `--no-ff` behind
-`make lint`, `make check`, and `make crossbuild`. Each was built in a worktree
-on its own branch and each was verified after the merge rather than before it.
+Tab completion, markdown rendering, and the key hint row have landed, each
+merged with `--no-ff` behind `make lint`, `make check`, and `make crossbuild`,
+each built in a worktree on its own branch, and each verified after the merge
+rather than before it.
 
-**The worktrees this file described do not exist on this host.** There was no
+**The worktrees this file described did not exist on this host.** There was no
 `~/openrouter-cli-worktrees`, no `hintrow` source, and no uncommitted `hintrow`,
 `completion`, or `markdown` code to recover: no stash, no dangling objects, and
 nothing anywhere under `/Users/gjb`. The three remote branches all pointed at
 commits already merged into `main`, so they never carried the work. The
-`hintrow` files described below existed on another machine and are gone.
+`hintrow` files described below existed on another machine and were gone. The
+hint row has since been written again from its description and has landed. The
+`completion` and `markdown` work was written again before it landed.
 
-Work in progress is therefore `hintrow`, which has to be rebuilt from its
-description rather than resumed. The instruction search is blocked on a decision.
-The audit has not started. It waits on the backlog, since reviewing code that
-is about to change is wasted effort.
+The instruction search is blocked on a decision. The audit has not started. It
+waits on the backlog, since reviewing code that is about to change is wasted
+effort.
 
 Choices made during implementation that the maintainer has not confirmed are
 recorded under Awaiting confirmation.
@@ -57,39 +60,9 @@ Merged into `main`.
 | Working list | `5ed0eb1` | `IDEAS.md` at the repository root. |
 | Slash command completion | `c453b63` | Tab completes, from one table of command names. |
 | Markdown rendering | `3189907` | Headings, lists, and emphasis, rendered as plain text. |
+| Key hint row | `7c511b2` | Names the keys that act, on one row above the prompt. |
 
 ## In progress
-
-### The key hint row
-
-**The worktree and its files do not exist on this host and were not recoverable
-from it.** There is no `internal/tui/hintrow.go`, no `hintrow_test.go`, and no
-reference to `Hints` anywhere in the tree. Nothing is stashed, no dangling
-objects exist, and the remote branch `origin/feature/hintrow` points at the
-Terminal resize merge already shipped. The work below has to be written again
-from its description.
-
-Worktree `~/openrouter-cli-worktrees/hintrow`, branch `feature/hintrow`.
-
-A footer row naming the keys that currently do something, changing with the
-state. Only keys that act in the state are named, so the row never promises a
-key that does nothing.
-
-State: **written but not integrated, and does not build.** The files are
-`internal/tui/hintrow.go` and `internal/tui/hintrow_test.go`, both complete, and
-`session.go` is edited to fill `frame.Hints`. What is missing is the renderer
-side: the `Hints` field on `Frame` and the row budget in `Render`.
-
-Three tests fail against the current state, and there is no working version of
-the renderer change to fall back on. An earlier attempt at this merge produced
-an infinite loop in a row-trimming loop and was reset rather than half-landed.
-
-The layout question that has to be settled first: the row sits below the prompt,
-so it competes with the pasted rows and with the pane for the same height. The
-frame bounds work landed since then and already owns that budget.
-
-The worktree has been rebased onto `ccf34c1`, so the renderer it is merging into
-is current. Only the renderer side is missing, not the base.
 
 ### The instruction file search
 
@@ -295,6 +268,40 @@ Completion, in `internal/complete`:
 6. The candidate listing is one multi-line pane entry rather than one entry per
    candidate, since search folds on stored entry boundaries. The heading wording
    is the implementer's and is not specified anywhere.
+
+## Backlog
+
+### The file upload
+
+Raised by the maintainer, from `notes2.txt`. Not started, and no worktree
+exists. An `/upload` that sends a file to the model through the OpenRouter
+Files API.
+
+The design has not been settled, and the pieces below are what the decision
+needs rather than a decision already taken.
+
+The client executes nothing and has no tools, so there is no file browser and
+no way to attach a file that the reader did not name. The file is therefore
+taken as an argument, which makes the command read as
+`/upload PATH`, and the question that follows is what the pane shows
+afterwards: the identifier the endpoint returns, since that is what a later
+turn refers to, and the size, since a reader who cannot see the size cannot
+tell a wrong file from the right one.
+
+What the file becomes in a message is the same question. The Files API stores
+a file and returns an identifier, and a later turn refers to that identifier
+rather than carrying the bytes, so an upload is a reference the backend holds
+rather than conversation state. That has a consequence worth settling before
+the code is written: whether the reference survives `/new`, since `/new` clears
+the conversation and keeps only the bootstrap document.
+
+The model matters as much as the command. A turn carrying a file part is
+refused by a model that does not accept one, which is a different failure from
+a rejected file and would read as the upload having failed.
+
+`/upload` has no argument grammar in the record beyond the two commands the
+completion section names, so completing a path would be guessing, the same
+reason command arguments are not completed.
 
 ## Outstanding
 
