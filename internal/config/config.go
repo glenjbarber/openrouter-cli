@@ -32,6 +32,10 @@ type rawFile struct {
 	Model   string `json:"OPENROUTER_MODEL"`
 	// SetupKey keeps its name from the open decision about the setup state.
 	SetupKey bool `json:"setup_complete"`
+	// Mouse asks for mouse reporting. It is a preference rather than a
+	// setting, since the decision is settled per session by where the
+	// session is running and by whether the reader can select text.
+	Mouse bool `json:"OPENROUTER_MOUSE"`
 }
 
 // Config is the resolved configuration.
@@ -47,6 +51,10 @@ type Config struct {
 	// Skipped reports that setup was carried out and deliberately skipped,
 	// which is distinct from a completed setup holding a usable credential.
 	Skipped bool
+	// Mouse reports that the file asks for mouse reporting. It is honoured
+	// only outside tmux, since inside tmux the drag that begins a selection
+	// is the one gesture a reader is most likely to want.
+	Mouse bool
 }
 
 // ErrNotFound reports that no configuration file exists at any search path.
@@ -63,6 +71,10 @@ type ErrNoAPIKey struct {
 	// Model is the model the file prefers, carried through so that the
 	// caller can stand in a configuration without losing the preference.
 	Model string
+	// Mouse is the mouse preference the file carries, carried through on the
+	// same reasoning as the model: a file that cannot be read for its key has
+	// still been read.
+	Mouse bool
 }
 
 // Error implements the error interface.
@@ -78,6 +90,15 @@ func (e *ErrNoAPIKey) Error() string {
 // the file appear not to have been read.
 func Empty(model string) *Config {
 	return &Config{URLBase: DefaultURLBase, Model: strings.TrimSpace(model)}
+}
+
+// EmptyMouse returns a configuration that asks for mouse reporting without
+// carrying a credential, so that a file which cannot be read for its key is
+// not also a file whose other preferences are lost.
+func EmptyMouse(model string, mouse bool) *Config {
+	cfg := Empty(model)
+	cfg.Mouse = mouse
+	return cfg
 }
 
 // Load reads the configuration from the first file found at a search path.
@@ -154,13 +175,14 @@ func parse(path string) (*Config, error) {
 		URLBase: raw.URLBase,
 		Path:    path,
 		Skipped: raw.SetupKey && raw.APIKey == "",
+		Mouse:   raw.Mouse,
 	}
 
 	if cfg.APIKey == "" {
 		if raw.SetupKey {
 			return cfg, nil
 		}
-		return nil, &ErrNoAPIKey{Path: path, Model: cfg.Model}
+		return nil, &ErrNoAPIKey{Path: path, Model: cfg.Model, Mouse: raw.Mouse}
 	}
 
 	if cfg.URLBase == "" {

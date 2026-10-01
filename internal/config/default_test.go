@@ -281,3 +281,56 @@ func TestMissingKeyCarriesModel(t *testing.T) {
 		t.Errorf("Model = %q, want it carried through", noKey.Model)
 	}
 }
+
+// The mouse preference is read from the file, so that a reader who wants the
+// wheel does not run /mouse on every start.
+func TestParseReadsMousePreference(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DefaultFileName)
+	body := `{"OPENROUTER_API_KEY":"k","OPENROUTER_MOUSE":true}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := parse(path)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !cfg.Mouse {
+		t.Error("Mouse = false, want the preference read from the file")
+	}
+}
+
+// A file that does not ask for it leaves the preference off, since capturing
+// the mouse is a choice rather than a default.
+func TestParseDefaultsMouseOff(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DefaultFileName)
+	if err := os.WriteFile(path, []byte(`{"OPENROUTER_API_KEY":"k"}`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := parse(path)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if cfg.Mouse {
+		t.Error("Mouse = true, want it off when the file does not ask")
+	}
+}
+
+// A file that cannot be read for its key is still read, so the mouse
+// preference survives alongside the model.
+func TestMouseSurvivesAMissingKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DefaultFileName)
+	body := `{"OPENROUTER_MOUSE":true,"setup_complete":true}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := parse(path)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !cfg.Mouse {
+		t.Error("Mouse = false, want the preference kept without a key")
+	}
+}
