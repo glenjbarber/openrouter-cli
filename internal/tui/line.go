@@ -40,11 +40,23 @@ func (e errorString) Error() string { return string(e) }
 // LineEditor reads a single line of text.
 type LineEditor struct {
 	r *bufio.Reader
+	// OnChange is called with the line as it stands after each keystroke. It
+	// is what makes the composed line visible, since the terminal is in raw
+	// mode with echo disabled and so does not draw it. A nil callback draws
+	// nothing, which is the correct behaviour for a non-interactive reader.
+	OnChange func(string)
 }
 
 // NewLineEditor reads lines from r.
 func NewLineEditor(r io.Reader) *LineEditor {
 	return &LineEditor{r: bufio.NewReader(r)}
+}
+
+// notify reports the current line.
+func (le *LineEditor) notify(out *strings.Builder) {
+	if le.OnChange != nil {
+		le.OnChange(out.String())
+	}
 }
 
 // ReadLine reads one line.
@@ -76,17 +88,20 @@ func (le *LineEditor) ReadLine() (string, error) {
 		case keyCtrlU:
 			out.Reset()
 			pending = pending[:0]
+			le.notify(&out)
 		case keyCtrlW:
 			// The buffer is not reset here: trimLastWord reads it in order to
 			// keep everything before the final word.
 			pending = pending[:0]
 			trimLastWord(&out)
+			le.notify(&out)
 		case keyBackspace, keyDelete:
 			if len(pending) == 0 {
 				removeLastRune(&out)
 			} else {
 				pending = pending[:0]
 			}
+			le.notify(&out)
 		case keyEnter, keyNewline:
 			if len(pending) > 0 {
 				out.Write(pending)
@@ -106,6 +121,7 @@ func (le *LineEditor) ReadLine() (string, error) {
 			}
 			if b < utf8Start {
 				out.WriteByte(b)
+				le.notify(&out)
 				continue
 			}
 			pending = append(pending, b)
@@ -114,6 +130,7 @@ func (le *LineEditor) ReadLine() (string, error) {
 			}
 			out.Write(pending)
 			pending = pending[:0]
+			le.notify(&out)
 		}
 	}
 }

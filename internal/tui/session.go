@@ -45,7 +45,7 @@ func Start(out, in *os.File, title string) (*Session, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Session{
+	s := &Session{
 		screen: screen,
 		editor: NewLineEditor(in),
 		conv:   NewConversation(),
@@ -55,7 +55,16 @@ func Start(out, in *os.File, title string) (*Session, error) {
 			Title:  title,
 			Status: Status{Host: hostname()},
 		},
-	}, nil
+	}
+	// The terminal is in raw mode with echo disabled, so the composed line is
+	// drawn by the interface rather than by the line discipline. Without this
+	// the keystrokes are held until the line is submitted and appear to do
+	// nothing at all.
+	s.editor.OnChange = func(line string) {
+		s.frame.Input = line
+		s.draw()
+	}
+	return s, nil
 }
 
 // Close restores the terminal.
@@ -114,6 +123,7 @@ func (s *Session) Run() error {
 	s.draw()
 	for {
 		line, err := s.editor.ReadLine()
+		s.frame.Input = ""
 		switch {
 		case errors.Is(err, ErrEndOfInput):
 			return nil
@@ -199,9 +209,8 @@ func helpText() string {
 // distinguishes a bad key from a bad model, which is the first thing worth
 // knowing when nothing works.
 func (s *Session) connect() {
-	if s.client == nil {
-		s.frame.Reply = append(s.frame.Reply,
-			"no API key is configured: set OPENROUTER_API_KEY in ~/.openrouter-cli.json")
+	if msg := s.credentialProblem(); msg != "" {
+		s.frame.Reply = append(s.frame.Reply, msg)
 		return
 	}
 
@@ -224,8 +233,8 @@ func (s *Session) connect() {
 
 // showUsage reports the usage against the key.
 func (s *Session) showUsage() {
-	if s.client == nil {
-		s.frame.Reply = append(s.frame.Reply, "no API key is configured")
+	if msg := s.credentialProblem(); msg != "" {
+		s.frame.Reply = append(s.frame.Reply, msg)
 		return
 	}
 	ctx, cancel := context.WithTimeout(s.ctx, 10*time.Second)
@@ -248,8 +257,8 @@ func (s *Session) showUsage() {
 
 // listModels reports the models the endpoint offers.
 func (s *Session) listModels() {
-	if s.client == nil {
-		s.frame.Reply = append(s.frame.Reply, "no API key is configured")
+	if msg := s.credentialProblem(); msg != "" {
+		s.frame.Reply = append(s.frame.Reply, msg)
 		return
 	}
 	ctx, cancel := context.WithTimeout(s.ctx, 15*time.Second)
@@ -301,6 +310,24 @@ func (s *Session) chooseModel(args []string) {
 	s.frame.Reply = append(s.frame.Reply, "model: "+s.conv.Model())
 }
 
+// credentialProblem reports why a request cannot be sent.
+//
+// An absent key is caught here rather than by the backend, since OpenRouter
+// answers a request with no credential the same way it answers an invalid one,
+// reporting the key as rejected when in truth none was sent. A configuration
+// with no key is an ordinary state rather than a fault.
+func (s *Session) credentialProblem() string {
+	if s.client == nil {
+		return "no API key is configured: set OPENROUTER_API_KEY in " +
+			"~/.openrouter-cli.json"
+	}
+	if s.client.HasKey() {
+		return ""
+	}
+	return "the configuration file holds no OPENROUTER_API_KEY: " +
+		"a request cannot be sent without one"
+}
+
 // showInfo reports the session settings.
 func (s *Session) showInfo() {
 	s.appendLines("model:    " + orDash(s.conv.Model()))
@@ -321,9 +348,8 @@ func (s *Session) endpoint() string {
 // The reply is appended a token at a time rather than once at the end, so that
 // a slow model does not leave the interface apparently idle while it works.
 func (s *Session) send(line string) {
-	if s.client == nil {
-		s.frame.Reply = append(s.frame.Reply,
-			"> "+line, "(no API key is configured)")
+	if msg := s.credentialProblem(); msg != "" {
+		s.frame.Reply = append(s.frame.Reply, "> "+line, msg)
 		return
 	}
 	if s.conv.Model() == "" {

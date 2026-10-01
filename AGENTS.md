@@ -210,6 +210,10 @@ so that a later change does not silently reverse it.
 - A missing key is not a startup failure. The interface opens and reports the
   absence, because refusing to open would leave nothing on screen explaining
   why. A file that cannot be parsed remains a failure.
+- A request with no credential is caught before it is sent. OpenRouter answers a
+  request with no credential the same way it answers an invalid one, reporting
+  the key as rejected when in truth none was sent, so the check is made locally
+  rather than by reading the diagnostic.
 - The bootstrap document is applied as a system turn, so it governs every request
   in the session rather than one.
 - A user turn travels with the request but is not recorded until a reply arrives,
@@ -221,6 +225,19 @@ so that a later change does not silently reverse it.
 - Each pane row is cleared before it is written. Without that, a repaint shorter
   than the frame before it leaves the tail of the longer one visible, so a
   reply appears twice.
+
+### Echo
+
+- The terminal is in raw mode with echo disabled, so the composed line is drawn
+  by the interface rather than by the line discipline. The line editor reports
+  the line after every keystroke and the frame is redrawn from that report.
+- Without this the keystrokes are held until the line is submitted and appear to
+  do nothing at all, which reads as a frozen interface rather than as a missing
+  feature.
+- A multibyte character is reported only once it is whole, so a character is
+  never shown half formed.
+- The report callback is optional. A non-interactive reader passes none, and the
+  editor must not depend on it.
 
 ### Usage meter
 

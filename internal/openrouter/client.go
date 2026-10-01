@@ -53,6 +53,9 @@ func New(baseURL, apiKey string) *Client {
 	}
 }
 
+// HasKey reports whether a credential is present, without revealing it.
+func (c *Client) HasKey() bool { return c.apiKey != "" }
+
 // BaseURL returns the endpoint the client was built against.
 //
 // The credential is deliberately not exposed, since a diagnostic that printed

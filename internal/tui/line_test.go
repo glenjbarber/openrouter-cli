@@ -128,3 +128,87 @@ func TestReadLineEscapeInterrupts(t *testing.T) {
 		t.Errorf("err = %v, want ErrInterrupt", err)
 	}
 }
+
+// The composed line must be reported as it is typed, since the terminal is in
+// raw mode with echo disabled and nothing else would draw it.
+func TestReadLineReportsEachKeystroke(t *testing.T) {
+	var seen []string
+	le := NewLineEditor(strings.NewReader("abc\r"))
+	le.OnChange = func(line string) { seen = append(seen, line) }
+
+	if _, err := le.ReadLine(); err != nil {
+		t.Fatalf("ReadLine: %v", err)
+	}
+	if len(seen) != 3 {
+		t.Fatalf("seen = %v, want one report per character", seen)
+	}
+	if seen[0] != "a" || seen[2] != "abc" {
+		t.Errorf("seen = %v, want the growing line", seen)
+	}
+}
+
+// Backspace must be reported too, or the line on screen keeps a character that
+// was removed.
+func TestReadLineReportsBackspace(t *testing.T) {
+	var seen []string
+	le := NewLineEditor(strings.NewReader("ab\x7f\r"))
+	le.OnChange = func(line string) { seen = append(seen, line) }
+
+	if _, err := le.ReadLine(); err != nil {
+		t.Fatalf("ReadLine: %v", err)
+	}
+	last := seen[len(seen)-1]
+	if last != "a" {
+		t.Errorf("last = %q, want the line after the backspace", last)
+	}
+}
+
+func TestReadLineReportsCtrlU(t *testing.T) {
+	var last string
+	le := NewLineEditor(strings.NewReader("discard\x15\r"))
+	le.OnChange = func(line string) { last = line }
+
+	if _, err := le.ReadLine(); err != nil {
+		t.Fatalf("ReadLine: %v", err)
+	}
+	if last != "" {
+		t.Errorf("last = %q, want empty after Ctrl-U", last)
+	}
+}
+
+// A multibyte character is reported only once it is whole, so a character is
+// never shown half formed.
+func TestReadLineReportsMultibyteWhole(t *testing.T) {
+	var seen []string
+	le := NewLineEditor(strings.NewReader("é\r"))
+	le.OnChange = func(line string) { seen = append(seen, line) }
+
+	if _, err := le.ReadLine(); err != nil {
+		t.Fatalf("ReadLine: %v", err)
+	}
+	if len(seen) != 1 || seen[0] != "é" {
+		t.Errorf("seen = %q, want one report of the whole rune", seen)
+	}
+}
+
+// A nil callback must not panic, which is what a non-interactive reader uses.
+func TestReadLineNilCallback(t *testing.T) {
+	le := NewLineEditor(strings.NewReader("hi\r"))
+	le.OnChange = nil
+
+	got, err := le.ReadLine()
+	if err != nil {
+		t.Fatalf("ReadLine: %v", err)
+	}
+	if got != "hi" {
+		t.Errorf("got %q, want %q", got, "hi")
+	}
+}
+
+// The input row carries the composed line, so it must be visible in the frame.
+func TestRenderShowsComposedInput(t *testing.T) {
+	lines := Render(Frame{Input: "/connect"}, 8, 40)
+	if lines[len(lines)-1] != "> /connect" {
+		t.Errorf("last line = %q, want the composed line", lines[len(lines)-1])
+	}
+}
