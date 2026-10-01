@@ -674,3 +674,82 @@ bullet exactly as it stands.
 
 The branch is `feature/model-list-cache-withdrawn`; nothing was pushed.
 
+
+## Closing waits for a delegate
+
+A test recovered from a worktree that a concurrent session removed showed a real
+defect rather than a missing feature: `Session.Close` returned while a delegate
+goroutine was still running. It has been fixed, and the fix is on `main`.
+
+**What was wrong.** Closing marked the session closed, stopped the twiddle,
+cancelled the request context, and restored the terminal. The delegates were
+tracked in `s.delegates` and counted for the status line, but nothing waited for
+them. The cancellation reaches them, since they are made from the session
+context, so each one does unwind; it unwinds by writing its answer to the frame
+and drawing it, which is nothing once `closed` is set, and by returning from a
+goroutine that may still be running when the process hands the terminal back to
+the shell and exits. Tracking is what the record claimed and was not enough:
+the map was written and read but never waited on.
+
+**What was done.** `Session` carries a `sync.WaitGroup` counting the delegate
+goroutines and a `closing` flag. `startDelegate` raises the counter and enters
+the map under `s.mu`, having first refused a delegate when `closing` is set, and
+the goroutine lowers the counter when it has finished writing its answer.
+`Close` raises `closing`, cancels, and waits, and only then turns reporting off
+and restores the terminal. Raising the flag before the wait is what makes the
+wait sound: a counter raised after the wait began is a counter nothing is
+waiting for.
+
+**How it is tested.** `TestCloseWaitsForARunningDelegate` starts a delegate
+against a held request, takes the frame lock, and starts `Close` behind it.
+Close cannot get past its own lock step while the test holds the lock, so the
+window in which the test holds it says that Close reaches for the lock at all;
+what the assertion after the release says is the wait itself, since a delegate
+still tracked at the moment `Close` returns means it went back to the shell with
+a goroutine still running. `TestADelegateIsRefusedOnceTheSessionIsClosing`
+covers the other half. Both parts were checked against the unfixed code: with
+the wait commented out, the first test reports a delegate still tracked.
+
+**What the recovered test got wrong, and what was corrected.** It held the
+server handler open on a channel that only the test could close, so the handler
+was still inside `httptest.Server.Close` when the teardown ran, and the test
+timed out in the cleanup rather than failing at an assertion. It then held the
+request open on `r.Context().Done()`, which does not work either: a handler
+that never reads the request body never gets the background read that detects a
+client disconnect, so the context is never cancelled and the server cannot shut
+down. The hold is now released by a cleanup registered after the one that shuts
+the server down, since cleanups run in reverse.
+
+**What was deliberately not changed.** A delegate is still not refused while
+another one runs, so two partial answers still contend for the single delegate
+field. That is the audit finding below and is the maintainers to decide.
+
+## The context window cache is not reached from two goroutines
+
+The `contextLength` cache in `internal/tui/threshold.go` is unguarded, and both
+its maps are written by `lookup`. A read-only pass was asked whether a
+concurrent write is reachable. It is not, and nothing was changed.
+
+**What the pass found.** The two premises the question rested on were both
+wrong. `lookup` is called from `updateStatus` and from `maybeCompact`, and
+neither is on the paint path: `draw` copies the frame and renders it without
+recomputing the status figures. There is no request goroutine in this client at
+all; `internal/openrouter` contains no `go` statement, and `readStream` calls
+back on the goroutine that made the request. Every call site of `updateStatus`
+and `maybeCompact` is on the single input goroutine. The goroutines that exist,
+the twiddle, the delegate, and the signal handler, reach none of them.
+
+**Why it was not fixed anyway.** The type is genuinely unguarded, so any future
+change that moves a status update onto one of those goroutines turns it into a
+real race with no compiler or linter signal. A probe that drove the two call
+sites from two goroutines did report a data race, which confirms the maps are
+unprotected rather than that anything reaches them. Adding a lock would stall
+the twiddle for the length of a `/models` call, which is the cost the comment
+above `updateStatus` already declines to pay, and a lock inside `contextLength`
+would be inconsistent with the rest of the session, where the lock belongs to
+the session rather than to the object guarding it.
+
+**No test covers it, and that is correct as it stands.** Reaching the cache from
+two goroutines takes a second goroutine that the production paths do not create,
+so such a test would document a hazard rather than catch a regression. `make
+check` passes on the unmodified tree.

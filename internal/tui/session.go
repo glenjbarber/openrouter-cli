@@ -96,6 +96,17 @@ type Session struct {
 	// that leaving does not leave one writing to a frame nobody is drawing on,
 	// and so that the count can be reported.
 	delegates map[*Delegate]bool
+	// delegateWG counts the delegate goroutines that are running, so that Close
+	// waits for them rather than returning while one is still writing to the
+	// frame and still holding its request open. A delegate is counted under mu
+	// at the same time as the map is entered, which is what makes the wait
+	// sound: a counter raised after Close began waiting is a counter nobody is
+	// waiting for, so the flag below refuses one instead.
+	delegateWG sync.WaitGroup
+	// closing records that Close has begun. It is guarded by mu and is read
+	// where a delegate is counted, so that a delegate is not started against a
+	// session on its way out.
+	closing bool
 	// bellWanted reports that the terminal bell is rung when a reply arrives.
 	// It is a preference read from the configuration and changed at runtime,
 	// so that a user who did not ask for it never hears one.
@@ -266,11 +277,27 @@ func (s *Session) Close() {
 	s.stopFlush()
 	s.repaint.Unlock()
 
+	// The flag is raised before the wait rather than after it, since the wait is
+	// only sound while nothing can raise the counter behind it.
+	s.mu.Lock()
+	s.closing = true
+	s.mu.Unlock()
+
 	// The twiddle is stopped here rather than left to the request that owns it,
 	// since a request abandoned by the cancellation below may take a moment to
 	// unwind and would keep the interface turning until it does.
 	s.spinner.Stop()
 	s.cancel()
+
+	// The delegates are waited for before the terminal is put back. The
+	// cancellation above reaches them, since they are made from the session
+	// context, and each one unwinds by writing its answer to the frame and
+	// drawing it. Nothing is drawn, because closed is already set, but the
+	// write is the reason to wait rather than to race: leaving returns to the
+	// shell and the goroutine is still running against a frame nothing will
+	// read and a terminal that has been handed back.
+	s.delegateWG.Wait()
+
 	// Reporting is turned off before the terminal is restored, so that a
 	// wheel notch is not delivered to a program that has stopped reading.
 	if s.screen.Mouse() {
