@@ -67,6 +67,18 @@ Installation instructions are pending and are added once a release is published.
 
 ### Key handling
 
+A key sequence is consumed whole, so pressing an arrow, Home, End, or Delete
+does not end the line. The up and down arrows walk the input history and do
+nothing at all when there is none, stopping at each end rather than wrapping.
+Walking forward past the newest resumes the line that was being composed. The
+left and right arrows are reserved for input toggles and do nothing yet.
+
+The frame is repainted at most twenty-five times a second. A reply arrives a
+token at a time, and drawing every one of them makes a fast reply read as a
+flicker rather than as text arriving.
+
+### Key handling
+
 A mouse report arriving in pieces over a slow link is held until it completes,
 rather than being read as a keypress. An arrow key or a lone Escape is handed
 back as a key as soon as it is known not to be a report, so neither is swallowed

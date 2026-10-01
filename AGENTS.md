@@ -401,6 +401,40 @@ so that a later change does not silently reverse it.
   paste. A large paste is cut to a fixed number of rows, and the overflow is
   reported rather than pushing the status bar off the screen.
 
+### Special keys
+
+- A key sequence is consumed whole before any of its bytes are read as keys. Left
+  to be read one byte at a time, a three-byte arrow sent its opening escape to
+  the line editor, and a lone escape ends the line: pressing an arrow closed the
+  session.
+- A sequence is left alone when it begins like a mouse report, since a report
+  arriving in pieces would otherwise be taken as an unknown sequence and the rest
+  of it read as keys.
+- A sequence at the end of a read is drained before the end of the input is
+  handled, since acting on it afterwards would leave the key with no effect.
+- Keys read in one block are queued rather than held in a single slot, since a
+  block can hold several and a second would overwrite the first.
+- The up and down arrows walk the input history, and do nothing at all when there
+  is none. They stop at each end rather than wrapping, since wrapping makes it
+  impossible to tell which end one is at.
+- Walking forward past the newest resumes the line that was being composed. That
+  line is captured on leaving it for the history, so that a later walk knows
+  where the user is rather than treating every key as a fresh start.
+- The left and right arrows are consumed and reserved for input toggles. They do
+  nothing yet, and are held so that the keys they will take are already spoken
+  for rather than being taken by something else later.
+
+### Repainting
+
+- The frame is repainted at most once every 40 milliseconds, and a request inside
+  that interval is deferred rather than refused, so the state drawn at the end of
+  it is the most recent one and nothing is lost.
+- A terminal repaints far faster than the eye resolves. Drawing every token made
+  a fast reply read as a flickering block rather than as text arriving, so the
+  rate is bounded however fast the input comes.
+- Writes to the terminal are serialised, so two requests for a repaint cannot
+  interleave their output into the same row.
+
 ### Input sequences
 
 - A mouse report arriving split across reads is held until it completes, because

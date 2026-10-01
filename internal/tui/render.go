@@ -297,7 +297,12 @@ func Render(f Frame, height, width int) []string {
 		reply = append(append([]string{}, reply...), f.Spinner+" thinking")
 	}
 	if len(reply) == 0 && f.Hint != "" {
-		reply = []string{f.Hint}
+		// The hint is drawn as written rather than folded. Folding pads a
+		// short line to the full width, which leaves a multi-line hint ragged
+		// along its second row.
+		hint := strings.Split(strings.TrimRight(f.Hint, "\n"), "\n")
+		reply = make([]string, len(hint))
+		copy(reply, hint)
 	}
 	// The offset is applied before the newest lines are kept, so that
 	// scrolling reveals lines that were previously off the pane rather than
