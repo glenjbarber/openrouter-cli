@@ -1144,3 +1144,18 @@ what the pane does with anything written to it while a partial reply is on
 screen. Measured through a real terminal: a queued line is shown above the
 prompt, the refusal and the stop notice are drawn, and the update reaches the
 endpoint as an update to the request that was stopped.
+
+Three choices in it are the implementer's, and each is the maintainer's to
+reverse:
+
+1. `/new`, `/clear`, `/compact`, `/btw` and `/main` are refused while a model is
+   working. A turn records into the conversation it was asked in, so a
+   conversation cleared underneath one would collect an exchange nobody asked it
+   to keep. The alternative is to let them run and accept that.
+2. The stop notice is written to the pane, where a reply that is still arriving
+   pushes it up, so it is readable only briefly. It could be given a place of
+   its own, at the cost of a row that is there only while a model is working.
+3. Escape on an idle prompt with a line in hand now abandons the line, which it
+   did not do before. The feature needs escape to act with a line in hand, and
+   the question of what it means when no model is working is not the same
+   question.
