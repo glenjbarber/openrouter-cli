@@ -96,6 +96,46 @@ Both need a rebase before they can land, and both need tests written.
 
 The four others hold no changes and are stale checkouts.
 
+## Notes
+
+### Accepting a large paste with Ctrl-J
+
+Raised by the maintainer. Recorded as an observation to be tested, not as a
+decision.
+
+Replacing the newline in a pasted block with `Ctrl-J` may be a way to accept a
+large paste.
+
+The reasoning behind the idea is that the interface currently waits for `Enter`
+after the block has landed, and a reader who has just pasted a few hundred lines
+has to find a key that submits the message. Submitting with `Ctrl-J` instead
+would mean the paste is accepted by the same key the terminal itself would send
+for a newline, which is the character the paste already contains.
+
+What is already in place, and matters to any implementation:
+
+- `internal/tui/line.go` already accepts both `\r` and `\n` as the submit key,
+  so a terminal sending either form submits the message.
+- `internal/tui/paste.go` normalises a block to lines and drops a trailing
+  break, so a paste is not submitted the instant it lands.
+- A landed paste is held in `le.pasted` and joined with whatever is typed
+  afterwards, returned as one message on submit.
+
+What is not known, and is the reason this is a note rather than a task:
+
+- Whether `Ctrl-J` is distinguishable here. A terminal in raw mode sends
+  `Ctrl-J` as `0x0a`, which is the same byte as `\n`, so it is already handled
+  as a submit key rather than being a separate case.
+- If that holds, the idea is not new behaviour but a discovery problem rather
+  than a code change: a reader has to know the key works. The hint row, which
+  is unfinished, is where that would be named.
+- A large paste is already cut for display, at `maxPasteRows`, with the
+  remainder reported. Whether the reader is losing track of a large paste is
+  therefore about the report rather than about the submit key.
+
+So the first question is not what to build but whether this is already true.
+That needs a terminal to try it in, which is the part that has not been done.
+
 ## Outstanding
 
 ### The code review and audit
