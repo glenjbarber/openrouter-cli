@@ -202,10 +202,16 @@ const maxHistory = 100
 // its own sequences before it handles the end of the input. Leaving one queued
 // would hand it to the line editor afterwards, where it would act on a key
 // pressed while the filter was open.
+//
+// A pasted block that lands here is discarded as well. The filter takes
+// characters only and its enter chooses from a listing rather than sending a
+// message, so a block left in the editor could never be delivered by the
+// filter, and would instead be prepended to whatever was composed next.
 func (le *LineEditor) ReadByte() (byte, error) {
 	b, err := le.readKey()
 	if len(le.pendingKeys) > 0 {
 		le.pendingKeys = le.pendingKeys[:0]
 	}
+	le.pasted = nil
 	return b, err
 }

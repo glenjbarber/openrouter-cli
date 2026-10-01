@@ -128,3 +128,27 @@ func TestAuditPasteComesBeforeWhatIsTypedAfter(t *testing.T) {
 		t.Errorf("got %q, want the paste first and the typed text after it", got)
 	}
 }
+
+// A paste landing while a listing is being filtered cannot be delivered by the
+// filter, whose enter chooses from the listing rather than sending a message.
+// It must not be left in the editor, where it would be prepended to whatever
+// was composed next.
+func TestAuditPasteLandingInTheFilterIsDiscarded(t *testing.T) {
+	le := NewLineEditor(strings.NewReader(pasteStart + "pasted" + pasteEnd + "gpt\r"))
+
+	b, err := le.ReadByte()
+	if err != nil {
+		t.Fatalf("ReadByte: %v", err)
+	}
+	if b != 'g' {
+		t.Errorf("byte = %q, want the first character of the filter", b)
+	}
+
+	got, err := le.ReadLine()
+	if err != nil {
+		t.Fatalf("ReadLine: %v", err)
+	}
+	if got != "pt" {
+		t.Errorf("got %q, want the line on its own, so a filtered paste was carried into it", got)
+	}
+}
