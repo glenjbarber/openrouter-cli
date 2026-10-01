@@ -24,76 +24,62 @@ const (
 	keyDel   = '~'
 )
 
-// sequenceLengths maps the byte that ends a sequence to how long that sequence
-// is, for the forms whose length is fixed.
-//
-// The cursor and home keys are three bytes: an escape, a bracket, and a final
-// byte. Delete may be written either as the three-byte bracket form or as a
-// four-byte form with a number, which is why it carries its own length.
-var sequenceLengths = map[byte]int{
-	keyUp:    3,
-	keyDown:  3,
-	keyRight: 3,
-	keyLeft:  3,
-	keyHome:  3,
-	keyEnd:   3,
-	keyDel:   3,
-}
+// csiParamLo and csiParamHi bound the parameter bytes of a control sequence,
+// which are the digits and the separators between them.
+const (
+	csiParamLo = 0x30
+	csiParamHi = 0x3F
+)
+
+// csiFinalLo and csiFinalHi bound the final byte of a control sequence, which is
+// the byte that ends it and is what identifies the key.
+const (
+	csiFinalLo = 0x40
+	csiFinalHi = 0x7E
+)
 
 // takeSequence extracts a complete key sequence from the front of buf.
 //
 // It reports the final byte of the sequence, which is what identifies it. A
 // sequence that has not arrived whole is left in place, since the rest of it may
 // be in the next read.
+//
+// The length is read from the shape of the sequence rather than from a table of
+// the forms this reader acts on. A terminal writes a modified key with a
+// parameter in front of the final byte, as in ESC [ 1 ; 5 A for an alt-held
+// up arrow, and a table of fixed lengths does not cover those. A form that is
+// not recognised is consumed just the same, since leaving its bytes to be read
+// as keys would put a bare escape and a bracket into the message.
 func takeSequence(buf []byte) (final byte, rest []byte, ok bool) {
 	if len(buf) < 2 || buf[0] != keyEscape || buf[1] != '[' {
 		return 0, buf, false
 	}
-	if len(buf) < 3 {
-		return 0, buf, false
-	}
-
-	final = buf[2]
-
-	// The four-byte forms carry a number before the final byte, such as the
-	// delete key. They are recognised by a digit or a semicolon after the
-	// bracket.
 	// The two introducers that belong to a mouse report are left alone. A
 	// report arriving in pieces would otherwise be taken as an unknown key
 	// sequence and the rest of it read as keys.
-	if buf[2] == '<' || buf[2] == 'M' {
+	if len(buf) >= 3 && (buf[2] == '<' || buf[2] == 'M') {
 		return 0, buf, false
 	}
 
-	// A digit where a key letter would be marks one of the longer forms, whose
-	// number precedes the final byte.
-	if buf[2] >= '0' && buf[2] <= '9' {
-		for i := 2; i < len(buf); i++ {
-			if buf[i] == '~' {
-				// Everything up to and including the tilde is consumed, so
-				// the tilde is not left to be read as a key of its own.
-				return buf[2], buf[i+1:], true
-			}
-			if buf[i] < '0' || buf[i] > '9' {
-				return 0, buf, false
-			}
+	// A control sequence runs to its first byte in the final range. Everything
+	// before it is a parameter, which is why the digit forms and the modified
+	// forms are taken by the same walk rather than by two rules.
+	for i := 2; i < len(buf); i++ {
+		c := buf[i]
+		if c >= csiFinalLo && c <= csiFinalHi {
+			// Everything up to and including the final byte is consumed, so
+			// the final byte is not left to be read as a key of its own.
+			return c, buf[i+1:], true
 		}
-		// The number has not arrived whole, so the sequence is left for the
-		// next read rather than being cut in half.
-		return 0, buf, false
+		if c < 0x20 || c > csiParamHi {
+			// Neither a parameter nor a final byte, so these bytes are not a
+			// control sequence and are left alone.
+			return 0, buf, false
+		}
 	}
-
-	n, known := sequenceLengths[final]
-	if !known {
-		// An unknown final byte is still consumed. It is a sequence this
-		// reader does not act on, and leaving its bytes to be read as keys
-		// would put a bare escape and a bracket into the line.
-		return final, buf[3:], true
-	}
-	if len(buf) < n {
-		return 0, buf, false
-	}
-	return final, buf[n:], true
+	// The sequence has not arrived whole, so it is left for the next read
+	// rather than being cut in half.
+	return 0, buf, false
 }
 
 // key reports a special key to the caller.
