@@ -18,6 +18,10 @@ type Status struct {
 	// figure against a limit. It is not the conversation context, which is the
 	// share of the model window a message occupies.
 	Credits string
+	// Context is the share of the model window the conversation occupies. It
+	// is a percentage rather than a figure, since what matters is how close
+	// the conversation is to the point where it must be compacted.
+	Context string
 	// TokensIn and TokensOut accumulate across the session rather than
 	// describing one exchange, since a session is the unit a reader cares
 	// about.
@@ -38,6 +42,7 @@ var fields = []struct {
 	{"Model", func(s Status) string { return s.Model }},
 	{"Status", func(s Status) string { return s.State }},
 	{"Credits", func(s Status) string { return s.Credits }},
+	{"Context", func(s Status) string { return s.Context }},
 	{"In", func(s Status) string { return s.TokensIn }},
 	{"Out", func(s Status) string { return s.TokensOut }},
 }
@@ -85,7 +90,7 @@ func StatusLine(s Status, width int) string {
 // most often watched, and the host goes before either, since it does not change
 // while the session runs. Dropping by position instead would remove whichever
 // field happened to be last, which was the token count.
-var dropOrder = []string{"In", "Out", "Credits", "Status", "Model"}
+var dropOrder = []string{"In", "Out", "Credits", "Context", "Status", "Model"}
 
 // trimToWidth removes fields until the line fits, sacrificing dropOrder first.
 func trimToWidth(parts []string, sep string, width int) string {
@@ -97,6 +102,9 @@ func trimToWidth(parts []string, sep string, width int) string {
 			break
 		}
 		for i, p := range kept {
+			// The colon is part of the match, so dropping one label cannot
+			// remove a different field whose label begins with the same
+			// letters.
 			if strings.HasPrefix(p, label+": ") {
 				kept = append(kept[:i], kept[i+1:]...)
 				break

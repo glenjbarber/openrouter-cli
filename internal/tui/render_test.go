@@ -205,3 +205,49 @@ func TestStatusLineHasNoDeadFields(t *testing.T) {
 		}
 	}
 }
+
+// The context field shows the share of the window, which is what a reader
+// watches to know when a compaction is coming.
+func TestContextFieldRenders(t *testing.T) {
+	line := StatusLine(Status{Context: "42%"}, 200)
+	if !strings.Contains(line, "Context: 42%") {
+		t.Errorf("line = %q, want the context share", line)
+	}
+}
+
+// Context and Credits are different measures and must not be confused. Credits
+// is the billing allowance; context is the window the conversation occupies.
+func TestContextIsSeparateFromCredits(t *testing.T) {
+	line := StatusLine(Status{Credits: "0.42/5", Context: "42%"}, 200)
+	if !strings.Contains(line, "Credits: 0.42/5") {
+		t.Errorf("line = %q, want the credits figure", line)
+	}
+	if !strings.Contains(line, "Context: 42%") {
+		t.Errorf("line = %q, want the context share", line)
+	}
+}
+
+// The context share is kept in preference to the allowance when the bar is
+// narrow. The share is what says when a compaction is coming, and the allowance
+// is the less urgent of the two.
+func TestContextKeptOverCredits(t *testing.T) {
+	s := Status{Credits: "0.42/5", Context: "42%", Model: "m"}
+	for w := 20; w < 80; w++ {
+		line := StatusLine(s, w)
+		if strings.Contains(line, "Credits") && !strings.Contains(line, "Context") {
+			t.Errorf("width %d: %q, want the context share kept", w, line)
+		}
+	}
+}
+
+// An unknown window must not report a share, since a figure against nothing is
+// worse than no figure.
+func TestContextOmittedWithoutAWindow(t *testing.T) {
+	s := &Session{conv: NewConversation(), mainConv: NewConversation()}
+	s.mainConv = s.conv
+	s.updateStatus()
+
+	if got := s.frame.Status.Context; got != "" && got != "0%" {
+		t.Errorf("Context = %q, want it empty without a window", got)
+	}
+}

@@ -31,6 +31,11 @@ const fallbackWindow = 128_000
 
 // lookup returns the window for model, fetching it once if needed.
 func (c *contextLength) lookup(ctx context.Context, s *Session, model string) int {
+	// A session built without a cache has no window to report, which is the
+	// case for a session assembled by a test rather than started.
+	if c == nil {
+		return fallbackWindow
+	}
 	if model == "" {
 		return fallbackWindow
 	}
