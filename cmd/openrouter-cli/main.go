@@ -39,11 +39,16 @@ func run(args []string) error {
 
 	// A named bootstrap file is loaded before the configuration, so that a
 	// document which cannot be read is reported before any credential work is
-	// attempted.
+	// attempted. It is loaded once here and handed to the session below, since
+	// reading it a second time would let the document that was validated be
+	// different from the one that is seeded.
+	var doc *bootstrap.Document
 	if opts.bootstrap != "" {
-		if _, err := bootstrap.Load(opts.bootstrap); err != nil {
+		loaded, err := bootstrap.Load(opts.bootstrap)
+		if err != nil {
 			return err
 		}
+		doc = loaded
 	}
 
 	// A default is written when no configuration exists, so that the path and
@@ -77,13 +82,16 @@ func run(args []string) error {
 	// The interface is entered only when both ends are a terminal. A
 	// redirected run reports why and stops rather than writing a frame into
 	// the capture, since escape sequences in a file or a pipe are noise.
-	return interface_(os.Stdout, os.Stdin, cfg, opts)
+	return interface_(os.Stdout, os.Stdin, cfg, opts, doc)
 }
 
 // interface_ starts the interactive session.
 //
 // The name carries a trailing underscore because interface is a keyword.
-func interface_(out, in *os.File, cfg *config.Config, opts options) error {
+// doc is the bootstrap document read once at startup, or nil when none was
+// named. It travels with the options rather than being read again, so that the
+// document that was validated is the document the session is seeded with.
+func interface_(out, in *os.File, cfg *config.Config, opts options, doc *bootstrap.Document) error {
 	session, err := tui.Start(out, in, "openrouter-cli")
 	if err != nil {
 		if errors.Is(err, tui.ErrNotTerminal) {
@@ -111,9 +119,7 @@ func interface_(out, in *os.File, cfg *config.Config, opts options) error {
 	if opts.bootstrap != "" {
 		// The document is reported inside the frame rather than cleared, so
 		// that a startup message is not lost behind the first repaint.
-		if err := session.Seed(opts.bootstrap); err != nil {
-			return err
-		}
+		session.Seed(doc)
 	}
 
 	if err := session.Run(); err != nil && !errors.Is(err, tui.ErrQuit) {

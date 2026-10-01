@@ -152,6 +152,22 @@ func Load() (*Config, error) {
 // The paths are shared with the installer rather than being written twice, so
 // that a default written at the first path cannot shadow a configuration found
 // at a later one.
+// SearchPaths returns the configuration file locations in the order the
+// loader checks them, so that a diagnostic can name where the client looks
+// rather than one path the reader may not be using.
+//
+// It is exported so that the interface can point a reader at a file that
+// exists. A reader whose file is under XDG was told to edit a path under the
+// home directory that was never read, which is the one file that cannot be
+// where the answer is.
+func SearchPaths() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = ""
+	}
+	return searchPaths(home)
+}
+
 func searchPaths(home string) []string {
 	paths := make([]string, 0, len(fileNames))
 	for _, name := range fileNames {

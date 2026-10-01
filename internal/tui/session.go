@@ -12,6 +12,7 @@ import (
 
 	"github.com/glenjbarber/openrouter-cli/internal/bootstrap"
 	"github.com/glenjbarber/openrouter-cli/internal/complete"
+	"github.com/glenjbarber/openrouter-cli/internal/config"
 	"github.com/glenjbarber/openrouter-cli/internal/openrouter"
 )
 
@@ -347,14 +348,16 @@ func (s *Session) Configure(baseURL, apiKey, model string) {
 }
 
 // Seed loads a bootstrap document into the conversation.
-func (s *Session) Seed(path string) error {
-	doc, err := bootstrap.Load(path)
-	if err != nil {
-		return err
+//
+// The document is handed in rather than named here, since it was read once at
+// startup to be validated. Reading it a second time would let the document that
+// was checked be a different one from the document that is seeded.
+func (s *Session) Seed(doc *bootstrap.Document) {
+	if doc == nil {
+		return
 	}
 	s.conv.Seed(doc.Instructions)
 	s.Note("bootstrap: %s (%s)", doc.Path, doc.Format)
-	return nil
 }
 
 // Run reads lines until the user leaves.
@@ -997,14 +1000,31 @@ func (s *Session) chooseModel(args []string) {
 // with no key is an ordinary state rather than a fault.
 func (s *Session) credentialProblem() string {
 	if s.client == nil {
-		return "no API key is configured: set OPENROUTER_API_KEY in " +
-			"~/.openrouter-cli.json"
+		return "no API key is configured: set OPENROUTER_API_KEY in " + configWhere()
 	}
 	if s.client.HasKey() {
 		return ""
 	}
 	return "the configuration file holds no OPENROUTER_API_KEY: " +
 		"a request cannot be sent without one"
+}
+
+// configWhere names where the client looks for its configuration.
+//
+// The locations are listed rather than one path named, since the loader checks
+// them in order and a reader whose file is at the second one was being told to
+// edit the first, which is a file the loader never read and which may hold
+// nothing at all.
+func configWhere() string {
+	paths := config.SearchPaths()
+	switch len(paths) {
+	case 0:
+		return "the configuration file"
+	case 1:
+		return paths[0]
+	default:
+		return strings.Join(paths[:len(paths)-1], " or ") + " or " + paths[len(paths)-1]
+	}
 }
 
 // showInfo reports the session settings.
@@ -1426,8 +1446,8 @@ func (s *Session) paintNow() {
 func (s *Session) hint() string {
 	switch {
 	case s.credentialProblem() != "":
-		return "No API key is configured. Set OPENROUTER_API_KEY in ~/.openrouter-cli.json,\n" +
-			"then run /connect."
+		return "No API key is configured. Set OPENROUTER_API_KEY in " +
+			configWhere() + ",\nthen run /connect."
 	case s.conv.Model() == "":
 		return "No model is selected. Run /models to see what is offered,\n" +
 			"then /model NAME to choose one."
