@@ -124,16 +124,34 @@ func (c *Conversation) Pending(user string) []openrouter.Message {
 }
 
 // Record stores the exchange once a reply has been received.
-// An ephemeral conversation keeps nothing. The request itself still carried
-// the history, so the model has the context; only the retention is skipped.
+//
+// It is kept as the two-message case rather than as the only way in, so that a
+// scripted caller and a turn that called no tools reach the same function. A
+// turn that called tools cannot be expressed as two messages, so it cannot be
+// the one that decides how retention works.
 func (c *Conversation) Record(user, reply string) {
-	if c.ephemeral {
+	c.RecordMessages([]openrouter.Message{
+		{Role: openrouter.RoleUser, Content: user},
+		{Role: openrouter.RoleAssistant, Content: reply},
+	})
+}
+
+// RecordMessages stores the given turns, in the order they are handed over.
+//
+// A turn is recorded here and nowhere else, which is what keeps the ephemeral
+// check in the one place retention is decided rather than at each call site: a
+// mode whose promise is that nothing is written is kept by marking the
+// conversation rather than by every caller remembering to ask.
+//
+// The turns are appended by value, so the caller may drop its slice
+// afterwards. The tool calls on an assistant turn travel with it as they were
+// given, since the model is shown its own calls again on the next request and
+// a copy of the calls would be a second version of the same work.
+func (c *Conversation) RecordMessages(msgs []openrouter.Message) {
+	if c.ephemeral || len(msgs) == 0 {
 		return
 	}
-	c.messages = append(c.messages,
-		openrouter.Message{Role: openrouter.RoleUser, Content: user},
-		openrouter.Message{Role: openrouter.RoleAssistant, Content: reply},
-	)
+	c.messages = append(c.messages, msgs...)
 }
 
 // Reset clears the turns but keeps the opening instructions.
@@ -175,4 +193,42 @@ func hostname() string {
 		return placeholder
 	}
 	return h
+}
+
+// PendingMessages returns the turns a request is made from, given the turns this
+// turn has built so far.
+//
+// A turn that called a tool carries more than a question and an answer, and the
+// question is already the first of them. The turns this turn built are handed
+// over whole rather than re-derived, so that the request sent on the second
+// round is the conversation as it has actually been built rather than as it
+// would look with the calls and their answers left out.
+func (c *Conversation) PendingMessages(msgs []openrouter.Message) []openrouter.Message {
+	out := make([]openrouter.Message, 0, len(c.messages)+len(msgs))
+	out = append(out, c.messages...)
+	out = append(out, msgs...)
+	return out
+}
+
+// AmendLastUser replaces the content of the last user turn in the given slice.
+//
+// A reader who stops a model composes a correction to the question rather than
+// a new question, and the question is the first turn this turn built. Replacing
+// it rather than appending to it is what keeps the calls and the answers behind
+// it: after a round the request is no longer one line of text, and restating it
+// as prose would throw away what the model has already been told. With one
+// round the effect is exactly appending to the request, since the last user
+// turn is then the only one.
+//
+// A slice with no user turn is returned unchanged. A turn that has not built
+// its question cannot be amended, and inventing one would be a question the
+// reader did not ask.
+func AmendLastUser(msgs []openrouter.Message, text string) []openrouter.Message {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == openrouter.RoleUser {
+			msgs[i].Content = text
+			return msgs
+		}
+	}
+	return msgs
 }

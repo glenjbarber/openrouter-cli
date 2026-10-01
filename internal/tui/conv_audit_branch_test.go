@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -22,12 +23,19 @@ func auditCopy(in []openrouter.Message) []openrouter.Message {
 }
 
 // auditSameTurns reports whether two snapshots are identical.
+//
+// The turns are compared through their JSON form, since a turn carries the
+// calls a tool made and a turn carrying a slice cannot be compared with ==.
+// The JSON form is also the form the turns travel in, so it compares the whole
+// of a turn rather than the fields a comparison happened to write down.
 func auditSameTurns(got, want []openrouter.Message) string {
 	if len(got) != len(want) {
 		return fmt.Sprintf("%d turns, want %d", len(got), len(want))
 	}
 	for i := range want {
-		if got[i] != want[i] {
+		a, err1 := json.Marshal(got[i])
+		b, err2 := json.Marshal(want[i])
+		if err1 != nil || err2 != nil || string(a) != string(b) {
 			return fmt.Sprintf("turn %d is %+v, want %+v", i, got[i], want[i])
 		}
 	}

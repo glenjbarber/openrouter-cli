@@ -179,6 +179,11 @@ func (s *Session) beginThread() {
 
 	s.appendLines("thread started: branched from this conversation")
 	s.appendLines("It is not saved. /main returns to the conversation it came from.")
+	// The model is told what it has and has not got, since a reader who asks
+	// it in a thread to read a file and is told it cannot would otherwise
+	// conclude the client is broken rather than that the thread is the reason.
+	s.appendLines("The model is not given tools in a thread: a tool acts for the " +
+		"reader, and a thread leaves no record of what was done.")
 }
 
 // endThread leaves the thread and restores the conversation.

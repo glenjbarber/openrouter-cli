@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -144,6 +145,12 @@ type Session struct {
 	// windows caches the context length of each model seen, so that the
 	// threshold can be evaluated without a call per message.
 	windows *contextLength
+	// tools is what a request may offer the model, built once at startup from
+	// the working directory. It is held rather than built per turn, since a
+	// root is a descriptor opened once and a set built per turn would open one
+	// per turn to contain the same directory. A session assembled without one
+	// sends no tools, which is what a client built before this work did.
+	tools *toolSet
 	// completer completes the line being composed when Tab is pressed. It is
 	// built from the command table, so the words it offers are the words the
 	// dispatcher answers to rather than a list that could fall behind it.
@@ -200,6 +207,18 @@ func Start(out, in *os.File, title string) (*Session, error) {
 				Host:     hostname(),
 			},
 		},
+	}
+	// The tools are built before anything is asked of the model, and a set
+	// that could not be built is reported in the pane rather than refused. A
+	// reader whose working directory cannot be opened still has a working
+	// chat client, in the manner of a session with no API key: the interface
+	// opens and says what is missing, where refusing to open would leave
+	// nothing on screen explaining it. The report is made once, at startup,
+	// since repeating it on every turn would fill the pane with a line about
+	// something that is not going to change.
+	s.tools = toolsAt(workingDir())
+	if absence := s.tools.absence(); absence != "" {
+		s.addReply(absence)
 	}
 	// The terminal is in raw mode with echo disabled, so the composed line is
 	// drawn by the interface rather than by the line discipline. Without this
@@ -573,6 +592,7 @@ func init() {
 		{names: []string{"/mouse"}, description: "turn mouse reporting on or off, for wheel scrolling", run: (*Session).cmdMouse},
 		{names: []string{"/clear"}, description: "clear the pane", run: (*Session).cmdClear, idleOnly: true},
 		{names: []string{"/info"}, description: "report the session settings", run: (*Session).cmdInfo},
+		{names: []string{"/tools"}, description: "list the tools the model is given, and the root they are in", run: (*Session).cmdTools},
 		{names: []string{"/quit", "/exit"}, description: "leave the interface", run: (*Session).cmdQuit},
 	}
 }
@@ -738,6 +758,17 @@ func (s *Session) cmdMouse([]string) bool {
 // cmdInfo reports the session settings.
 func (s *Session) cmdInfo([]string) bool {
 	s.showInfo()
+	return false
+}
+
+// cmdTools reports what the model is given and where it is contained.
+//
+// It records nothing and is not refused while a model is working, since it
+// reads a set built at startup and nothing that a turn in flight changes. A
+// reader who wants to know what a model can reach should not have to stop it
+// to find out.
+func (s *Session) cmdTools([]string) bool {
+	s.appendLines(strings.Join(s.tools.toolsListing(), "\n"))
 	return false
 }
 
@@ -1425,27 +1456,37 @@ func (s *Session) send(ctx context.Context, conv *Conversation, line string) {
 	s.updateStatus()
 	s.draw()
 
-	// The check runs before the request is sent, since a request past the
-	// window is refused outright and the turn is lost with it.
-	s.maybeCompact()
+	// The turns this turn has built. They are committed to the conversation
+	// once, at the end, and only when the turn ended cleanly, which is the
+	// guarantee the record under API settles: a user turn travels with the
+	// request but is not recorded until a reply has finished arriving. Buffering
+	// them rather than writing each round as it goes is what keeps a turn the
+	// reader stopped from leaving a tool result behind for the model to be
+	// told about as though it had asked for one and been answered.
+	pending := []openrouter.Message{{Role: openrouter.RoleUser, Content: line}}
 
-	// The twiddle turns for the whole request, including the wait for the
-	// first token, since that wait is where the interface would otherwise
-	// look frozen.
+	// The tools are gathered once for the turn rather than per round. A turn
+	// that is recording is the same turn for every request it makes, and one
+	// that is not recording sends no tools on any of them.
+	specs := s.turnTools(conv)
+
+	// The twiddle turns for the whole turn, including the wait for the first
+	// token, since that wait is where the interface would otherwise look frozen.
 	s.beginWork()
 	defer s.endWork()
 
-	var reply strings.Builder
 	// The shape of the turn is gathered only when it was asked for, so that a
-	// session without the mode does no work for it. The value is read once
-	// here rather than per event, since this is the goroutine that owns the
-	// turn and a mode turned on mid-request would otherwise show half a
-	// summary.
+	// session without the mode does no work for it. It is read once here rather
+	// than per event, since this is the goroutine that owns the turn and a mode
+	// turned on mid-turn would otherwise show half a summary under a reply that
+	// did not produce it. The figure covers the whole turn rather than one
+	// round, since a turn that called tools made several requests and the
+	// deltas of all of them are what happened.
 	var report streamReport
 	verbose := s.verboseOn()
-	// The streaming fields are cleared on every exit from the request,
-	// including a failure, so that a stale partial reply is not left on
-	// screen behind the error.
+	// The streaming fields are cleared on every exit from the turn, including
+	// a failure, so that a stale partial reply is not left on screen behind the
+	// error.
 	defer func() {
 		s.mu.Lock()
 		s.frame.Busy = false
@@ -1457,94 +1498,160 @@ func (s *Session) send(ctx context.Context, conv *Conversation, line string) {
 		}
 	}()
 
-	// failed records that the stream reported a failure of its own partway
-	// through. A request that fails this way still returns nil, so the reply
-	// below would otherwise be appended a second time, and the exchange
-	// recorded as though the turn had ended cleanly.
-	failed := false
+	for round := 0; round < maxToolRounds; round++ {
+		// The check runs before every request, since a request past the window
+		// is refused outright and the round is lost with it. It is given the
+		// turns about to be sent, since a tool result is usually larger than
+		// the question that asked for it and an estimate taken once at the
+		// start of the turn would not see one.
+		s.maybeCompactFor(pending)
 
-	// stopReport appends what had arrived when the reader stopped the model,
-	// and says that it was stopped. The text is kept, since it is usually
-	// worth reading, and the notice is there so that a partial answer is not
-	// read as the whole of what the model said. A stream cut short by the
-	// cancellation is not a fault, and reporting it as one would tell the
-	// reader that something broke when they had asked for it.
-	stopReport := func() {
-		if reply.Len() > 0 {
-			s.addReply(strings.TrimRight(reply.String(), "\n"))
-		}
-		s.addReply("(stopped)")
-	}
+		var reply strings.Builder
+		var calls []openrouter.ToolCall
+		// failed records that the stream reported a failure of its own partway
+		// through. A request that fails this way still returns nil, so the
+		// reply below would otherwise be appended a second time, and the
+		// exchange recorded as though the turn had ended cleanly.
+		failed := false
 
-	err := s.client.Chat(ctx, openrouter.ChatRequest{
-		Model:    conv.Model(),
-		Messages: conv.Pending(line),
-	}, func(e openrouter.StreamEvent) {
-		report.note(e)
-		if e.Usage != nil {
-			s.conv.AddTokens(e.Usage.PromptTokens, e.Usage.CompletionTokens)
-			s.updateStatus()
+		// stopReport appends what had arrived when the reader stopped the
+		// model, and says that it was stopped. The text is kept, since it is
+		// usually worth reading, and the notice is there so that a partial
+		// answer is not read as the whole of what the model said. A stream cut
+		// short by the cancellation is not a fault, and reporting it as one
+		// would tell the reader that something broke when they had asked for it.
+		stopReport := func() {
+			if reply.Len() > 0 {
+				s.addReply(strings.TrimRight(reply.String(), "\n"))
+			}
+			s.addReply("(stopped)")
 		}
-		if e.Err != nil {
+
+		err := s.client.Chat(ctx, openrouter.ChatRequest{
+			Model:    conv.Model(),
+			Messages: conv.PendingMessages(pending),
+			Tools:    specs,
+		}, func(e openrouter.StreamEvent) {
+			report.note(e)
+			if e.Usage != nil {
+				s.conv.AddTokens(e.Usage.PromptTokens, e.Usage.CompletionTokens)
+				s.updateStatus()
+			}
+			if e.Err != nil {
+				if ctx.Err() != nil {
+					stopReport()
+					return
+				}
+				// A stream that failed partway still produced text, and that
+				// text is kept: it is usually more useful than an error alone.
+				failed = true
+				if reply.Len() > 0 {
+					s.addReply(strings.TrimRight(reply.String(), "\n"))
+				}
+				s.addReply("(error) " + e.Err.Error())
+				return
+			}
+			if e.Done {
+				return
+			}
+			if len(e.ToolCalls) > 0 {
+				// The transport gathers the fragments of a call and delivers
+				// the whole set once, so there is nothing to reassemble here.
+				// A turn that called a tool usually says nothing around the
+				// call, so the text is empty and the calls are the turn.
+				calls = e.ToolCalls
+				return
+			}
+			reply.WriteString(e.Content)
+			s.stream(reply.String())
+		})
+
+		if err != nil {
 			if ctx.Err() != nil {
 				stopReport()
 				return
 			}
-			// A stream that failed partway still produced text, and that text
-			// is kept: it is usually more useful than an error alone.
-			failed = true
-			if reply.Len() > 0 {
-				s.addReply(strings.TrimRight(reply.String(), "\n"))
+			s.addReply("(error) " + err.Error())
+			return
+		}
+
+		// The text and the error have already been shown above. Appending the
+		// reply again would paint it twice, and recording the exchange would
+		// leave a truncated answer in the conversation for the next request to
+		// replay as though it were the whole of what the model said. A turn
+		// that failed leaves no exchange behind.
+		if failed {
+			return
+		}
+
+		// The turn of this round is recorded as it came: the text it said and
+		// the calls it made. A model that calls a tool and says nothing around
+		// it produces a turn with empty content and the calls on it, which is
+		// what the provider expects to see.
+		pending = append(pending, openrouter.Message{
+			Role:      openrouter.RoleAssistant,
+			Content:   reply.String(),
+			ToolCalls: calls,
+		})
+
+		if len(calls) == 0 {
+			text := reply.String()
+			if text == "" {
+				s.addReply("(the model returned nothing)")
+				return
 			}
-			s.addReply("(error) " + e.Err.Error())
+			// The reply is appended rather than written over the last line,
+			// since that line is the question. Overwriting it loses the
+			// exchange and makes the pane show a reply with nothing that
+			// prompted it.
+			s.appendLines(text)
+			// The bell rings once the reply has finished arriving rather
+			// than when the request was sent, since the point of it is to say
+			// the answer is ready.
+			s.ringBell()
+			if s.thread != nil {
+				s.thread.Note()
+			}
+			conv.RecordMessages(pending)
 			return
 		}
-		if e.Done {
+
+		// A round that called tools keeps its own text on the screen. The
+		// partial is cleared when the next round begins, so text that is only
+		// shown while it arrives would vanish under the answer to the calls it
+		// asked to make.
+		if reply.Len() > 0 {
+			s.appendLines(strings.TrimRight(reply.String(), "\n"))
+		}
+
+		if round == maxToolRounds-1 {
+			// The turn is stopped rather than cut short silently. A reader
+			// shown a reply with no explanation has been given a turn that
+			// ended for a reason nothing said.
+			s.addReply("(stopped: the model is still asking for tools, and the turn " +
+				"reached its limit of " + itoa(maxToolRounds) + " requests)")
 			return
 		}
-		reply.WriteString(e.Content)
-		s.stream(reply.String())
-	})
 
-	if err != nil {
-		if ctx.Err() != nil {
-			// The request was abandoned before a reply began, which is what a
-			// reader who stopped it at once gets.
-			stopReport()
-			return
+		for _, call := range calls {
+			result := s.tools.run(call)
+			s.drawToolCall(result)
+			// A call that failed still produces a turn. A request carrying no
+			// answer to a call is refused by most providers, and a turn that
+			// produced nothing at all is a turn that stalls, which a reader
+			// experiences as a hang.
+			pending = append(pending, openrouter.Message{
+				Role:       openrouter.RoleTool,
+				ToolCallID: call.ID,
+				Content:    toolContent(result),
+			})
 		}
-		s.addReply("(error) " + err.Error())
-		return
 	}
-
-	// The text and the error have already been shown above. Appending the
-	// reply again would paint it twice, and recording the exchange would
-	// leave a truncated answer in the conversation for the next request to
-	// replay as though it were the whole of what the model said. A turn that
-	// failed leaves no exchange behind, which is what the record under API
-	// settles: a user turn travels with the request but is not recorded
-	// until a reply has finished arriving.
-	if failed {
-		return
-	}
-
-	text := reply.String()
-	if text == "" {
-		s.addReply("(the model returned nothing)")
-		return
-	}
-	// The reply is appended rather than written over the last line, since
-	// that line is the question. Overwriting it loses the exchange and makes
-	// the pane show a reply with nothing that prompted it.
-	s.appendLines(text)
-	// The bell rings once the reply has finished arriving rather than when the
-	// request was sent, since the point of it is to say the answer is ready.
-	s.ringBell()
-	if s.thread != nil {
-		s.thread.Note()
-	}
-	conv.Record(line, text)
 }
+
+// itoa renders a count for a message, since the limit is reported in words
+// rather than left for the reader to count in the source.
+func itoa(n int) string { return strconv.Itoa(n) }
 
 // stream shows a reply while it is arriving.
 //

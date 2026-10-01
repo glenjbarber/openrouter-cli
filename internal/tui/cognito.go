@@ -158,9 +158,15 @@ func (s *Session) toggleCognito() {
 	if s.thread != nil {
 		s.addReply("cognito mode on: nothing is recorded. " +
 			"The thread already records nothing.")
+		s.addReply("The model is not given tools either, for the same reason.")
 		return
 	}
 	s.addReply("cognito mode on: nothing is recorded from now on")
+	// The model is told what it has and has not got, since a reader who asks
+	// it to read a file and is told it cannot would otherwise conclude the
+	// client is broken rather than that the mode is the reason.
+	s.addReply("The model is not given tools either: a tool acts for the " +
+		"reader, and this mode leaves no record of what was done.")
 }
 
 // AdoptCognito reports whether a session should start in the mode.

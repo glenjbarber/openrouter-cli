@@ -125,10 +125,8 @@ func TestFailedCompactionLeavesTheConversationAlone(t *testing.T) {
 	if len(after) != len(beforeText) {
 		t.Fatalf("pending = %d turns, want %d", len(after), len(beforeText))
 	}
-	for i := range beforeText {
-		if after[i] != beforeText[i] {
-			t.Errorf("turn %d = %+v, want %+v", i, after[i], beforeText[i])
-		}
+	if diff := auditSameTurns(after, beforeText); diff != "" {
+		t.Errorf("the compaction left the conversation as %s", diff)
 	}
 	if s.conv.HasSummary() {
 		t.Error("a summary was left behind by a compaction that failed")

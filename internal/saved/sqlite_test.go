@@ -59,7 +59,7 @@ func TestAWriteReadsBackAsItWas(t *testing.T) {
 		t.Fatalf("read %d messages, want %d", len(got.Messages), len(want.Messages))
 	}
 	for i := range want.Messages {
-		if got.Messages[i] != want.Messages[i] {
+		if !sameMessage(got.Messages[i], want.Messages[i]) {
 			t.Errorf("message %d is %+v, want %+v", i, got.Messages[i], want.Messages[i])
 		}
 	}
@@ -163,6 +163,11 @@ func TestAnOverwriteReplacesWhatWasThere(t *testing.T) {
 
 // A file written by a later version is reported rather than read as though it
 // were this one, which is what the configuration file and the JSON document do.
+//
+// The version written is one above the current one, so the test keeps testing
+// what it says it tests as the format moves on. A figure fixed when the format
+// was written silently becomes the current version the day the format is
+// bumped, and the test then passes for the wrong reason.
 func TestAFileFromALaterVersionIsRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "work.db")
 	if err := Write(path, sample("work"), false); err != nil {
@@ -173,7 +178,7 @@ func TestAFileFromALaterVersionIsRefused(t *testing.T) {
 		t.Fatalf("sql.Open: %v", err)
 	}
 	defer db.Close()
-	if _, err := db.Exec(`UPDATE meta SET value = '2' WHERE key = 'version'`); err != nil {
+	if _, err := db.Exec(`UPDATE meta SET value = '3' WHERE key = 'version'`); err != nil {
 		t.Fatalf("UPDATE: %v", err)
 	}
 	if _, err := Read(path); !errors.Is(err, ErrFuture) {
@@ -214,4 +219,21 @@ func TestAWriteMakesTheDirectory(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Errorf("Stat: %v", err)
 	}
+}
+
+// sameMessage compares two turns.
+//
+// A turn is no longer comparable with == now that it can carry the calls a tool
+// made, since a slice cannot be compared. The calls are compared by their
+// JSON form rather than field by field, since that is the form they travel in
+// and it compares the whole of a call rather than the fields a comparison
+// happened to remember to write down.
+func sameMessage(got, want openrouter.Message) bool {
+	if got.Role != want.Role || got.Content != want.Content ||
+		got.ToolCallID != want.ToolCallID {
+		return false
+	}
+	a, err1 := json.Marshal(got.ToolCalls)
+	b, err2 := json.Marshal(want.ToolCalls)
+	return err1 == nil && err2 == nil && string(a) == string(b)
 }
