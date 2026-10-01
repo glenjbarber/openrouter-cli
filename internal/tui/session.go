@@ -83,6 +83,17 @@ type Session struct {
 	// paintPending records that a repaint was asked for during the interval and
 	// is owed once it passes.
 	paintPending bool
+	// flush draws the deferred repaint once the interval has passed. It is the
+	// owner of a deferred repaint, since nothing else is left to ask for it:
+	// the work that wanted it may have finished and the twiddle with it, and
+	// the next thing to happen would be the reader typing, which shows the
+	// reply all at once rather than as it arrived. A nil value means nothing is
+	// owed. It is guarded by repaint, as lastPaint and paintPending are.
+	flush *time.Timer
+	// closed records that the terminal has been restored, so that nothing is
+	// drawn after the way out. It is guarded by repaint and is read while that
+	// is held.
+	closed bool
 	// delegates are the background questions still running. They are tracked so
 	// that leaving does not leave one writing to a frame nobody is drawing on,
 	// and so that the count can be reported.
@@ -175,7 +186,9 @@ func Start(out, in *os.File, title string) (*Session, error) {
 		s.draw()
 	}
 	s.editor.OnChange = func(line string) {
+		s.mu.Lock()
 		s.frame.Input = line
+		s.mu.Unlock()
 		s.draw()
 	}
 	// Tab completes the line rather than inserting a tab into it, since a
@@ -247,6 +260,19 @@ func (s *Session) SetMouse(on bool) {
 
 // Close restores the terminal.
 func (s *Session) Close() {
+	// The session is marked closed before anything is cancelled, so that a
+	// repaint already in flight, a deferred one waiting on its timer, and the
+	// twiddle turning at the time all find a terminal that has been put back
+	// and draw nothing.
+	s.repaint.Lock()
+	s.closed = true
+	s.stopFlush()
+	s.repaint.Unlock()
+
+	// The twiddle is stopped here rather than left to the request that owns it,
+	// since a request abandoned by the cancellation below may take a moment to
+	// unwind and would keep the interface turning until it does.
+	s.spinner.Stop()
 	s.cancel()
 	// Reporting is turned off before the terminal is restored, so that a
 	// wheel notch is not delivered to a program that has stopped reading.
@@ -974,6 +1000,13 @@ func (s *Session) endpoint() string {
 // The reply is appended a token at a time rather than once at the end, so that
 // a slow model does not leave the interface apparently idle while it works.
 func (s *Session) send(line string) {
+	// Every exit from a turn ends on a painted frame, including the two early
+	// refusals and every error path. The deferral is registered before either
+	// refusal is tested, so a turn that never reached the request is as painted
+	// as one that did, and it is the last thing to run so that it paints the
+	// state the exits above left behind.
+	defer s.paintFinal()
+
 	if msg := s.credentialProblem(); msg != "" {
 		s.frame.Reply = append(s.frame.Reply, "> "+line, msg)
 		return
@@ -1078,8 +1111,10 @@ func (s *Session) stream(partial string) {
 	s.frame.Partial = partial
 	s.mu.Unlock()
 
-	s.paintDue()
-	s.paint()
+	// The repaint is coalesced like any other. A deferred one is owned by the
+	// timer rather than by the next delta, so a reply that stops arriving is
+	// still drawn rather than left owed to a stream that has finished.
+	s.draw()
 }
 
 // updateStatus refreshes the fields the client knows.
@@ -1167,10 +1202,15 @@ func (s *Session) paint() {
 	s.repaint.Lock()
 	defer s.repaint.Unlock()
 
+	if s.closed {
+		return
+	}
+
 	// A repaint within the interval is deferred rather than refused, so the
 	// state drawn at the end of it is the most recent one and nothing is lost.
 	if since := time.Since(s.lastPaint); since < minPaintInterval {
 		s.paintPending = true
+		s.flushIn(minPaintInterval - since)
 		return
 	}
 
@@ -1178,24 +1218,65 @@ func (s *Session) paint() {
 	s.lastPaint = time.Now()
 }
 
-// paintDue runs a deferred repaint once the interval has passed.
+// flushIn arranges for a deferred repaint to be drawn in the given time.
 //
-// It is called from the same place a fresh repaint would be, so a reply that
-// keeps arriving continues to be drawn at the bounded rate rather than falling
-// behind.
-func (s *Session) paintDue() {
+// The timer is the owner of the deferred repaint. Deferring one and leaving it
+// unowned is what loses a frame: the work that asked for it finishes, the
+// twiddle with it, and the next repaint comes from the reader typing, so the
+// reply appears all at once rather than as it arrived. One timer serves every
+// repaint deferred before it fires, since the frame is read at the moment it is
+// drawn and the newest state is the one worth drawing.
+//
+// The caller holds repaint.
+func (s *Session) flushIn(d time.Duration) {
+	if s.flush != nil {
+		return
+	}
+	s.flush = time.AfterFunc(d, s.flushDue)
+}
+
+// flushDue draws a repaint that has waited out the interval.
+func (s *Session) flushDue() {
 	s.repaint.Lock()
 	defer s.repaint.Unlock()
 
-	if !s.paintPending {
-		return
-	}
-	if since := time.Since(s.lastPaint); since < minPaintInterval {
+	s.flush = nil
+	if s.closed || !s.paintPending {
 		return
 	}
 	s.paintPending = false
 	s.paintNow()
 	s.lastPaint = time.Now()
+}
+
+// paintFinal draws the frame at the end of a turn, whatever the rate is.
+//
+// The bound on the repaint rate keeps a fast reply readable, and it is not
+// changed here. What it must not decide is whether the end of a turn is drawn at
+// all. Nothing is left to ask for that repaint once the work is over, so a
+// repaint deferred here is owed to nobody and the reply in place, the status
+// back to idle and the cleared twiddle stay off the screen until the reader
+// types. Every exit from a turn ends on one of these, so a turn that failed is
+// as painted as a turn that succeeded.
+func (s *Session) paintFinal() {
+	s.repaint.Lock()
+	defer s.repaint.Unlock()
+
+	s.stopFlush()
+	s.paintPending = false
+	if s.closed {
+		return
+	}
+	s.paintNow()
+	s.lastPaint = time.Now()
+}
+
+// stopFlush cancels a repaint that is owed. The caller holds repaint.
+func (s *Session) stopFlush() {
+	if s.flush != nil {
+		s.flush.Stop()
+		s.flush = nil
+	}
 }
 
 // minPaintInterval is the shortest time between two repaints.
@@ -1208,6 +1289,13 @@ const minPaintInterval = 40 * time.Millisecond
 // paintNow renders the frame without coalescing.
 func (s *Session) paintNow() {
 	s.mu.Lock()
+	// A frame drawn after the terminal has been restored lands on whatever is
+	// behind the interface, which is the shell. Repaint is held throughout, so
+	// the check is made against the same guard Close set it under.
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
 	// The pane carries a hint only while it is empty. Once a conversation has
 	// started the hint is in the way, and the opening instructions are what
 	// should be read.
