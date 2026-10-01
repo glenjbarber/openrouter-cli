@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/glenjbarber/openrouter-cli/internal/bootstrap"
@@ -147,11 +148,16 @@ type options struct {
 //
 // The flag set stops at the first non-flag argument so that a subcommand name
 // is never mistaken for the value of a flag.
+//
+// The flag set writes nothing itself. It would otherwise report a bad flag on
+// stderr and return the same error, which the caller then reports again, so one
+// mistake reached the reader twice. The error is returned instead and named
+// once.
 func parseFlags(args []string) (options, error) {
 	var opts options
 
 	fs := flag.NewFlagSet("openrouter-cli", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(io.Discard)
 	fs.StringVar(&opts.bootstrap, "bootstrap", "",
 		"start the session from this Markdown or JSON document")
 	fs.BoolVar(&opts.mouse, "mouse", false,
@@ -176,7 +182,8 @@ func parseFlags(args []string) (options, error) {
 		case "help":
 			opts.showHelp = true
 		default:
-			return opts, fmt.Errorf("unknown command %q", rest[0])
+			return opts, fmt.Errorf("unknown command %q: run openrouter-cli -help "+
+				"for the commands and options", rest[0])
 		}
 	}
 	return opts, nil
