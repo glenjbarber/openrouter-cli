@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -137,5 +139,212 @@ func TestTrimLastRuneString(t *testing.T) {
 	// A multibyte character is removed whole.
 	if got := trimLastRuneString("café"); got != "caf" {
 		t.Errorf("got %q, want %q", got, "caf")
+	}
+}
+
+// modelFilterSession returns a session with the catalogue open, and a screen it
+// can be drawn to, since completing the filter repaints.
+//
+// The output is a file rather than a buffer because the frame asks the screen
+// for its size, which a buffer cannot answer. The size is set rather than read
+// for the same reason, and a size query that fails keeps the figure.
+func modelFilterSession(t *testing.T, models []openrouter.Model, keep func(openrouter.Model) bool) *Session {
+	t.Helper()
+	out, err := os.CreateTemp(t.TempDir(), "frames")
+	if err != nil {
+		t.Fatalf("creating the capture file: %v", err)
+	}
+	return &Session{
+		conv:      NewConversation(),
+		screen:    &Screen{out: out, height: 24, width: 80},
+		modelList: models,
+		modelKeep: keep,
+	}
+}
+
+// head returns the first line of the listing.
+func head(t *testing.T, s *Session) string {
+	t.Helper()
+	if len(s.frame.Reply) == 0 {
+		t.Fatal("the pane is empty")
+	}
+	return s.frame.Reply[0]
+}
+
+// Tab completes the filter to the first model it matches.
+func TestModelFilterTabCompletes(t *testing.T) {
+	s := modelFilterSession(t, modelsForTest(), nil)
+	s.modelFilter = "openai"
+
+	s.modelListKey(keyTab)
+
+	if s.modelFilter != "openai/gpt-4o" {
+		t.Errorf("filter = %q, want the first match", s.modelFilter)
+	}
+	if !strings.Contains(strings.Join(s.frame.Reply, "\n"), "filter: openai/gpt-4o_") {
+		t.Errorf("the listing does not show the completed filter:\n%v", s.frame.Reply)
+	}
+}
+
+// A second Tab advances, and the cycle wraps at the end of what matched.
+func TestModelFilterTabCycles(t *testing.T) {
+	s := modelFilterSession(t, modelsForTest(), nil)
+	s.modelFilter = "openai"
+
+	s.modelListKey(keyTab)
+	s.modelListKey(keyTab)
+	if s.modelFilter != "openai/gpt-4o-mini" {
+		t.Errorf("filter = %q, want the second match", s.modelFilter)
+	}
+
+	s.modelListKey(keyTab)
+	if s.modelFilter != "openai/gpt-4o" {
+		t.Errorf("filter = %q, want the cycle to wrap", s.modelFilter)
+	}
+}
+
+// The candidates come from the filter as it was typed rather than from the
+// filter as it has been completed. Completing to a whole identifier would
+// otherwise leave a filter matching only itself, and the cycle would be one
+// Tab long.
+func TestModelFilterTabCyclesFromTheTypedFilter(t *testing.T) {
+	s := modelFilterSession(t, modelsForTest(), nil)
+	s.modelFilter = "openai"
+
+	s.modelListKey(keyTab)
+	s.modelListKey(keyTab)
+
+	if got := head(t, s); !strings.Contains(got, "[2 of 2]") {
+		t.Errorf("heading = %q, want the place in the cycle", got)
+	}
+}
+
+// The place in the cycle is stated in the heading, so that a reader cycling
+// through a set can tell where in it they are.
+func TestModelFilterTabStatesItsPlace(t *testing.T) {
+	s := modelFilterSession(t, modelsForTest(), nil)
+	s.modelFilter = "openai"
+	s.pane()
+
+	if got := head(t, s); strings.Contains(got, "[") {
+		t.Errorf("heading = %q before any completion, want no cycle stated", got)
+	}
+	s.modelListKey(keyTab)
+	if got := head(t, s); !strings.Contains(got, "[1 of 2]") {
+		t.Errorf("heading = %q, want the first of the set", got)
+	}
+}
+
+// Typing after a completion ends it, so that the next Tab begins a new cycle
+// from what is now typed rather than continuing the old one.
+func TestModelFilterTypingEndsTheCycle(t *testing.T) {
+	s := modelFilterSession(t, modelsForTest(), nil)
+	s.modelFilter = "openai"
+
+	s.modelListKey(keyTab)
+	if s.modelFilter != "openai/gpt-4o" {
+		t.Fatalf("filter = %q, want the first match", s.modelFilter)
+	}
+
+	// A backspace takes the completed identifier back one character, and the
+	// cycle with it. Completing from there must begin again rather than
+	// resume, since the identifier it completed to matches only itself.
+	s.modelListKey(keyBackspace)
+	if s.modelCycle != nil {
+		t.Fatal("the cycle survived a change to the filter")
+	}
+
+	s.modelListKey(keyTab)
+	if s.modelFilter != "openai/gpt-4o" {
+		t.Errorf("filter = %q, want the first of a new cycle", s.modelFilter)
+	}
+	if got := head(t, s); !strings.Contains(got, "[1 of 2]") {
+		t.Errorf("heading = %q, want a new cycle from the first", got)
+	}
+}
+
+// A typed character ends a cycle as a backspace does, since both are the reader
+// narrowing rather than the reader walking.
+func TestModelFilterTypingACharacterEndsTheCycle(t *testing.T) {
+	s := modelFilterSession(t, modelsForTest(), nil)
+	s.modelFilter = "openai"
+
+	s.modelListKey(keyTab)
+	s.modelListKey('z')
+
+	if s.modelCycle != nil {
+		t.Error("the cycle survived a typed character")
+	}
+	if s.modelFilter != "openai/gpt-4oz" {
+		t.Errorf("filter = %q, want the character appended", s.modelFilter)
+	}
+}
+
+// A Tab on a filter that matches nothing changes nothing, since the listing
+// already reports that nothing matches and there is nothing to complete.
+func TestModelFilterTabWithNoMatchChangesNothing(t *testing.T) {
+	s := modelFilterSession(t, modelsForTest(), nil)
+	s.modelFilter = "nothing here"
+	s.pane()
+
+	s.modelListKey(keyTab)
+
+	if s.modelFilter != "nothing here" {
+		t.Errorf("filter = %q, want it left as it was", s.modelFilter)
+	}
+	if s.modelCycle != nil {
+		t.Error("a cycle was begun over nothing")
+	}
+	if !strings.Contains(strings.Join(s.frame.Reply, "\n"), "nothing matches") {
+		t.Errorf("the listing does not report the empty result:\n%v", s.frame.Reply)
+	}
+}
+
+// A Tab on an empty filter cycles the whole listing, since an empty filter
+// matches every model the endpoint offers.
+func TestModelFilterTabOnEmptyFilter(t *testing.T) {
+	s := modelFilterSession(t, modelsForTest(), nil)
+
+	s.modelListKey(keyTab)
+
+	if s.modelFilter != "anthropic/claude-sonnet-4" {
+		t.Errorf("filter = %q, want the first model in the catalogue", s.modelFilter)
+	}
+}
+
+// The free listing completes over the free models alone, since the cut is
+// applied before the filter is.
+func TestFreeModelTabCyclesFreeModelsOnly(t *testing.T) {
+	s := modelFilterSession(t, modelsForTest(), func(m openrouter.Model) bool { return m.Free() })
+	s.modelFilter = "openai"
+
+	s.modelListKey(keyTab)
+
+	if s.modelFilter != "openai/gpt-4o-mini" {
+		t.Errorf("filter = %q, want the only free model matching", s.modelFilter)
+	}
+}
+
+// The cycle covers the models the pane shows rather than the whole catalogue,
+// since a candidate that was never on the screen is one the reader cannot pick
+// out from another.
+func TestModelFilterTabCyclesOnlyWhatIsShown(t *testing.T) {
+	var many []openrouter.Model
+	for i := 0; i < 60; i++ {
+		many = append(many, openrouter.Model{ID: fmt.Sprintf("m%02d", i)})
+	}
+	s := modelFilterSession(t, many, nil)
+
+	s.modelListKey(keyTab)
+
+	if got := head(t, s); !strings.Contains(got, fmt.Sprintf("[1 of %d]", maxShown)) {
+		t.Errorf("heading = %q, want a cycle over the %d shown", got, maxShown)
+	}
+	for _, m := range many[maxShown:] {
+		for _, id := range s.modelCycle {
+			if id == m.ID {
+				t.Errorf("the cycle holds %s, which the pane does not show", m.ID)
+			}
+		}
 	}
 }

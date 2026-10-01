@@ -62,11 +62,11 @@ type hintState struct {
 func (st hintState) hints() []string {
 	switch st.overlay {
 	case hintListing:
-		// Tab is not named here. The filter reads keys a byte at a time and
-		// takes characters only, so naming a completion key in a field that
-		// does not complete would be promising something that does not
-		// happen.
-		return []string{"Enter choose", "Esc close"}
+		// Tab is named here because the filter completes on it, cycling
+		// through what the filter matched. It was not named while the
+		// filter took characters only, since naming a key that did
+		// nothing was the one thing the row must not do.
+		return []string{"Tab cycle", "Enter choose", "Esc close"}
 	case hintSearch:
 		return []string{"Enter jump to match", "Esc close"}
 	}

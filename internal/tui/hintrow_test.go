@@ -48,9 +48,9 @@ func TestHintRowNamesOnlyKeysThatAct(t *testing.T) {
 			want: []string{"Enter send", "Tab complete", "wheel scroll"},
 		},
 		{
-			name: "the filter names choosing and closing, not completion",
+			name: "the filter names completion, choosing and closing",
 			st:   hintState{overlay: hintListing, history: true, mouse: true},
-			want: []string{"Enter choose", "Esc close"},
+			want: []string{"Tab cycle", "Enter choose", "Esc close"},
 		},
 		{
 			name: "the search names jumping and closing",
