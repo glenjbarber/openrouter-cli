@@ -57,6 +57,15 @@ type Session struct {
 	// modelKeep narrows the catalogue before the filter is applied, which is
 	// how the free-model listing is the same code as the full one.
 	modelKeep func(openrouter.Model) bool
+	// modelCycle is the set of identifiers the filter is being completed
+	// through, and is nil while no completion is in progress. It is held
+	// rather than recomputed, since a Tab advances through the set that the
+	// filter matched when the cycle began rather than through whatever the
+	// completed filter matches at the time. Every other change to the filter
+	// drops it, so a cycle only ever survives the Tabs that began it.
+	modelCycle []string
+	// modelCycleAt is which of modelCycle the filter currently holds.
+	modelCycleAt int
 	// searchOpen reports whether the pane search is open. A flag is held rather
 	// than inferred from the query, since an empty query is the state the search
 	// starts in and would otherwise close it.
@@ -858,6 +867,7 @@ func (s *Session) filterKey() {
 		s.mu.Lock()
 		s.modelList = nil
 		s.modelFilter = ""
+		s.dropModelCycle()
 		s.frame.Reply = nil
 		s.mu.Unlock()
 		return
@@ -888,6 +898,7 @@ func (s *Session) beginModelList(keep func(openrouter.Model) bool) {
 	s.mu.Lock()
 	s.modelList = models
 	s.modelKeep = keep
+	s.dropModelCycle()
 	s.mu.Unlock()
 
 	s.showModelFilter()
@@ -908,18 +919,12 @@ func (s *Session) pane() {
 	filter := s.modelFilter
 	models := s.modelList
 	keep := s.modelKeep
+	cycling := s.modelCycle != nil
+	at := s.modelCycleAt
+	cycleLen := len(s.modelCycle)
 	s.mu.Unlock()
 
-	var shown []openrouter.Model
-	for _, m := range models {
-		if keep != nil && !keep(m) {
-			continue
-		}
-		if filter != "" && !strings.Contains(strings.ToLower(m.ID), strings.ToLower(filter)) {
-			continue
-		}
-		shown = append(shown, m)
-	}
+	shown, total := modelMatches(models, keep, filter)
 
 	// The frame is replaced rather than appended, so that narrowing the list
 	// does not leave the previous listing on screen above it.
@@ -930,24 +935,111 @@ func (s *Session) pane() {
 	if keep != nil {
 		head = "free " + head
 	}
+	if cycling {
+		// The position is stated in the heading rather than marked against
+		// a row. The filter holds the identifier that is selected, so a
+		// marker would repeat what the filter already says, while the
+		// heading says which of the set it is that the reader is on.
+		head += fmt.Sprintf(" [%d of %d]", at+1, cycleLen)
+	}
 
 	lines := []string{head}
-	const maxShown = 20
-	for i, m := range shown {
-		if i >= maxShown {
-			lines = append(lines, fmt.Sprintf("... and %d more", len(shown)-maxShown))
-			break
-		}
+	for _, m := range shown {
 		lines = append(lines, m.ID)
+	}
+	if total > maxShown {
+		lines = append(lines, fmt.Sprintf("... and %d more", total-maxShown))
 	}
 	if len(shown) == 0 {
 		lines = append(lines, "nothing matches")
 	}
-	lines = append(lines, "filter: "+filter+"_", "Enter to choose, Esc to leave")
+	lines = append(lines, "filter: "+filter+"_", "Tab cycles, Enter to choose, Esc to leave")
 
 	s.mu.Lock()
 	s.frame.Reply = lines
 	s.mu.Unlock()
+}
+
+// maxShown is how many models the listing draws before it reports the rest.
+const maxShown = 20
+
+// modelMatches returns the models a filter keeps, capped at what the pane will
+// draw, along with the number it matched in all.
+//
+// The cut is made here rather than in the drawing so that the completer cycles
+// through the models the reader can see. A candidate that was never on the
+// screen is one they cannot tell from any other.
+func modelMatches(models []openrouter.Model, keep func(openrouter.Model) bool, filter string) ([]openrouter.Model, int) {
+	lower := strings.ToLower(filter)
+	var shown []openrouter.Model
+	total := 0
+	for _, m := range models {
+		if keep != nil && !keep(m) {
+			continue
+		}
+		if filter != "" && !strings.Contains(strings.ToLower(m.ID), lower) {
+			continue
+		}
+		total++
+		if len(shown) < maxShown {
+			shown = append(shown, m)
+		}
+	}
+	return shown, total
+}
+
+// modelIDs names the identifiers of a set of models.
+func modelIDs(models []openrouter.Model) []string {
+	out := make([]string, 0, len(models))
+	for _, m := range models {
+		out = append(out, m.ID)
+	}
+	return out
+}
+
+// dropModelCycle ends a completion in progress.
+//
+// It is called wherever the filter changes for any other reason, since the
+// candidates were generated from what has now been typed past.
+func (s *Session) dropModelCycle() {
+	s.modelCycle = nil
+	s.modelCycleAt = 0
+}
+
+// completeModelFilter puts the next matching model into the filter.
+//
+// The first Tab completes, and the ones after it advance through what the
+// filter matched at the time, wrapping at the end of it. Completing against the
+// filter as it has been completed would be one Tab long, since a whole
+// identifier matches only itself.
+//
+// A cycle ends as soon as the filter is changed for any other reason, so a Tab
+// after a keystroke begins a new set from what is now typed rather than
+// resuming a set the reader has moved on from.
+//
+// The cycle stops at the models the pane shows, since the point of it is to
+// walk a set the reader is looking at rather than the whole catalogue.
+func (s *Session) completeModelFilter() {
+	s.mu.Lock()
+	if s.modelCycle == nil {
+		shown, _ := modelMatches(s.modelList, s.modelKeep, s.modelFilter)
+		if len(shown) == 0 {
+			// Nothing is said here, since the listing already reports that
+			// nothing matches. A key that changed nothing and said nothing
+			// would read as a dead key, and there is nothing to complete.
+			s.mu.Unlock()
+			return
+		}
+		s.modelCycle = modelIDs(shown)
+		s.modelCycleAt = 0
+	} else {
+		s.modelCycleAt = (s.modelCycleAt + 1) % len(s.modelCycle)
+	}
+	s.modelFilter = s.modelCycle[s.modelCycleAt]
+	s.mu.Unlock()
+
+	s.pane()
+	s.draw()
 }
 
 // trimLastRuneString removes the final character of a string.
@@ -969,14 +1061,21 @@ func (s *Session) modelListKey(b byte) {
 		s.mu.Lock()
 		s.modelList = nil
 		s.modelFilter = ""
+		s.dropModelCycle()
 		s.frame.Reply = nil
 		s.mu.Unlock()
 		s.draw()
+	case keyTab:
+		// Tab completes the filter and cycles through what it matched. The
+		// key reaches here rather than the line editor behind it, since the
+		// filter takes every key while it is open.
+		s.completeModelFilter()
 	case keyEnter:
 		s.mu.Lock()
 		s.modelList = nil
 		filter := s.modelFilter
 		s.modelFilter = ""
+		s.dropModelCycle()
 		s.mu.Unlock()
 		s.draw()
 		if filter != "" {
@@ -985,6 +1084,7 @@ func (s *Session) modelListKey(b byte) {
 	case keyBackspace, keyDelete:
 		s.mu.Lock()
 		s.modelFilter = trimLastRuneString(s.modelFilter)
+		s.dropModelCycle()
 		s.mu.Unlock()
 		s.pane()
 		s.draw()
@@ -994,6 +1094,7 @@ func (s *Session) modelListKey(b byte) {
 		}
 		s.mu.Lock()
 		s.modelFilter += string(b)
+		s.dropModelCycle()
 		s.mu.Unlock()
 		s.pane()
 		s.draw()

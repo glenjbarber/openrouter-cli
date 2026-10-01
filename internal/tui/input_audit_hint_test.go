@@ -5,8 +5,9 @@ import (
 	"testing"
 )
 
-// The hint row names only keys that act, and names Tab nowhere in the model
-// filter, since the filter reads a byte at a time and does not complete.
+// The hint row names only keys that act, and names Tab only where the filter
+// or the editor acts on it, since a key the reader was told about and which
+// then did nothing would read as a hung client.
 func TestAuditHintRowNamesNoKeyThatDoesNothing(t *testing.T) {
 	for _, st := range []hintState{
 		{},
@@ -28,6 +29,15 @@ func TestAuditHintRowNamesNoKeyThatDoesNothing(t *testing.T) {
 	for _, h := range st.hints() {
 		if strings.Contains(h, "Up/Down") || strings.Contains(h, "wheel") {
 			t.Errorf("the listing names a key that does not act there: %q", h)
+		}
+	}
+
+	// The search names neither Tab nor the wheel. It reads a byte at a time
+	// and does not complete, so naming Tab there would promise nothing.
+	search := hintState{history: true, mouse: true, overlay: hintSearch}
+	for _, h := range search.hints() {
+		if strings.Contains(h, "Tab") || strings.Contains(h, "wheel") {
+			t.Errorf("the search names a key that does not act there: %q", h)
 		}
 	}
 }

@@ -109,6 +109,7 @@ Merged into `main`.
 | Configuration audit | `9e8cbab` | XDG honoured, a blank key read as unset, the loader covered. |
 | Input audit | `d669b05` | Sequences read from their shape rather than a table of lengths. |
 | Conversation audit | `aa149ac` | Four races, the cognito marker, and a summary that outlived `/new`. |
+| Model filter completion | `f3b7e47` | Tab completes the filter and cycles through what it matched. |
 
 ## In progress
 
@@ -472,6 +473,13 @@ choice, and it has not been made:
 4. Whether `/search` and `/models` should complete their arguments. Completion
    deliberately completes none, since the record gives no argument grammar beyond
    `/model [NAME]` and `/delegate QUESTION`.
+
+Question four has since been answered for the overlay rather than for the
+command line. Tab completes the model filter and cycles through what it matched,
+so a reader no longer types a whole identifier to choose one. The argument
+supplied on the command line is still discarded, and questions one to three
+stand as they are. The search still takes no completion, since its filter is a
+word of prose rather than the name of a thing to be chosen.
 
 Recording this rather than implementing it: the record completes `/search` as
 filtering the pane as the query is typed, and says nothing about a query
@@ -999,9 +1007,9 @@ table itself, emitting one candidate per name with aliases included.
 
 The hint row names only keys that act. History is offered only once there is
 history to recall, interrupt only while a request is in flight, and the wheel
-only while reporting is on. Tab is named in the compose overlay and correctly
-not named in the model listing, where the filter path has no tab case and
-naming it would promise nothing.
+only while reporting is on. Tab is named in the compose overlay and in the
+model listing, which completes on it, and is not named in the pane search,
+whose filter takes characters only and has nothing to complete.
 
 The hint row and the usage text agree with the line editor on the control
 keys: the trailing prose about `Ctrl-C` and `Ctrl-D` matches what the editor
