@@ -1415,7 +1415,13 @@ func (s *Session) send(ctx context.Context, conv *Conversation, line string) {
 		return
 	}
 
-	s.addReply("> " + line)
+	// A blank row separates what was asked from what is coming back.
+	// Without it a reply reads as a continuation of the line that asked for
+	// it, and two exchanges one after another are not told apart at a
+	// glance. The two refusals above are left without it, since the reason
+	// they give belongs with the line that provoked it rather than under
+	// it.
+	s.addReply("> "+line, "")
 	s.updateStatus()
 	s.draw()
 
