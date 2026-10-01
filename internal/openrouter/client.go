@@ -185,6 +185,13 @@ func (c *Client) do(ctx context.Context, method, path string, body any) ([]byte,
 
 	data, err := readLimited(resp.Body, maxResponse)
 	if err != nil {
+		// A body that cannot be read does not hide the status behind it. The
+		// status is the part that decides the outcome, and a rejected key and
+		// an exhausted allowance are both actionable, whereas a reader told
+		// only that a body was too large has learned nothing about either.
+		if statusErr := c.statusError(resp.StatusCode, nil); statusErr != nil {
+			return nil, c.wrapf(statusErr, "reading the response")
+		}
 		return nil, c.wrapf(err, "reading the response")
 	}
 	if err := c.statusError(resp.StatusCode, data); err != nil {

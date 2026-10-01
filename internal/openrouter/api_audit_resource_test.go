@@ -263,6 +263,58 @@ func TestResponseBodyIsBounded(t *testing.T) {
 	}
 }
 
+// A body too large to read does not hide the status behind it. The status is
+// the part a reader acts on, so a rejected key is still named as a rejected key
+// when the body that came with it was too large to be read. A status that is
+// not an error leaves the bound as the whole of the diagnostic, since there is
+// no status to report and reporting one would be a lie.
+func TestStatusIsReportedWhenTheBodyCannotBeRead(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		code     int
+		want     error
+		wantHTTP bool
+		wantSize bool
+	}{
+		{name: "a rejected key", code: http.StatusUnauthorized, want: ErrUnauthorized},
+		{name: "an exhausted allowance", code: http.StatusTooManyRequests, want: ErrRateLimited},
+		{name: "a status with no named error", code: http.StatusBadGateway, wantHTTP: true},
+		{name: "a success", code: http.StatusOK, wantSize: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := New("https://example.invalid", "k")
+			body := transportFor(c, tc.code, newCountingBody(strings.Repeat("x", maxResponse+1)))
+
+			_, err := c.Models(context.Background())
+			if err == nil {
+				t.Fatal("Models read an endless body, want it refused")
+			}
+			if !strings.Contains(err.Error(), "reading the response") {
+				t.Errorf("err = %q, want the body that could not be read named", err)
+			}
+			switch {
+			case tc.want != nil:
+				if !errors.Is(err, tc.want) {
+					t.Errorf("errors.Is(%v, %v) = false, want the status named", err, tc.want)
+				}
+			case errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrRateLimited):
+				t.Errorf("err = %v, want no named error for a status of %d", err, tc.code)
+			}
+			if got := strings.Contains(err.Error(), "HTTP"); got != tc.wantHTTP {
+				t.Errorf("err = %q, want the status named = %v", err, tc.wantHTTP)
+			}
+			// The size is stated only where the status does not account for
+			// the failure on its own, which is the case that has no status.
+			if got := strings.Contains(err.Error(), "exceeded"); got != tc.wantSize {
+				t.Errorf("err = %q, want the bound stated = %v", err, tc.wantSize)
+			}
+			if !body.isClosed() {
+				t.Error("the response body was not closed")
+			}
+		})
+	}
+}
+
 // A catalogue within the bound is read whole, so the bound costs a listing
 // nothing.
 func TestResponseBodyWithinTheBoundIsReadWhole(t *testing.T) {
