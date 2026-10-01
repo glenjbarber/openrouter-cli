@@ -43,6 +43,13 @@ type Session struct {
 	// leaving a thread restores it without a snapshot being taken here.
 	thread   *Ephemeral
 	mainConv *Conversation
+	// modelList is the catalogue being filtered, held while the filter is open.
+	modelList []openrouter.Model
+	// modelFilter is what has been typed to narrow it.
+	modelFilter string
+	// modelKeep narrows the catalogue before the filter is applied, which is
+	// how the free-model listing is the same code as the full one.
+	modelKeep func(openrouter.Model) bool
 	// repaint serialises the writes to the terminal, so that two requests for
 	// a repaint cannot interleave their output into the same row.
 	repaint sync.Mutex
@@ -264,6 +271,13 @@ func (s *Session) Seed(path string) error {
 func (s *Session) Run() error {
 	s.draw()
 	for {
+		if s.filtering() {
+			// The filter takes every key while it is open, so that typing does
+			// not reach the line editor behind it.
+			s.filterKey()
+			continue
+		}
+
 		line, err := s.editor.ReadLine()
 		s.frame.Input = ""
 		s.frame.Pasted = nil
@@ -321,7 +335,9 @@ func (s *Session) command(line string) bool {
 	case "/key":
 		s.showUsage()
 	case "/models":
-		s.listModels()
+		s.beginModelList(nil)
+	case "/freemodels":
+		s.beginModelList(func(m openrouter.Model) bool { return m.Free() })
 	case "/model":
 		s.chooseModel(args[1:])
 	case "/new":
@@ -374,7 +390,8 @@ func helpText() string {
 		"/help              this list",
 		"/connect           test the connection and report the key",
 		"/key               report the usage against the key",
-		"/models            list the models the endpoint offers",
+		"/models            list the models, filtered as it is typed",
+		"/freemodels        list the models that cost nothing, filtered as typed",
 		"/model [NAME]      show or choose the model, without an argument to list",
 		"/new               clear the conversation",
 		"/bell              ring the terminal bell on reply, on or off",
@@ -445,10 +462,35 @@ func (s *Session) showUsage() {
 	s.frame.Reply = append(s.frame.Reply, line)
 }
 
-// listModels reports the models the endpoint offers.
-func (s *Session) listModels() {
+// filtering reports whether the model filter is open.
+func (s *Session) filtering() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.modelList != nil
+}
+
+// filterKey reads one key for the filter.
+func (s *Session) filterKey() {
+	b, err := s.editor.ReadByte()
+	if err != nil {
+		s.mu.Lock()
+		s.modelList = nil
+		s.modelFilter = ""
+		s.frame.Reply = nil
+		s.mu.Unlock()
+		return
+	}
+	s.modelListKey(b)
+}
+
+// beginModelList fetches the catalogue and opens the filter.
+//
+// The list is filtered as it is typed rather than submitted, since a catalogue
+// is long enough that narrowing it by hand beats reading it. A filter that
+// matches nothing says so rather than showing an empty pane.
+func (s *Session) beginModelList(keep func(openrouter.Model) bool) {
 	if msg := s.credentialProblem(); msg != "" {
-		s.frame.Reply = append(s.frame.Reply, msg)
+		s.appendLines(msg)
 		return
 	}
 	ctx, cancel := context.WithTimeout(s.ctx, 15*time.Second)
@@ -456,28 +498,123 @@ func (s *Session) listModels() {
 
 	models, err := s.client.Models(ctx)
 	if err != nil {
-		s.frame.Reply = append(s.frame.Reply, "models failed: "+err.Error())
+		s.appendLines("models failed: " + err.Error())
 		return
 	}
-	if len(models) == 0 {
-		s.frame.Reply = append(s.frame.Reply, "the endpoint offers no models")
-		return
+	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
+
+	s.mu.Lock()
+	s.modelList = models
+	s.modelKeep = keep
+	s.mu.Unlock()
+
+	s.showModelFilter()
+}
+
+// showModelFilter draws the catalogue narrowed by what has been typed.
+func (s *Session) showModelFilter() {
+	s.pane()
+	s.draw()
+}
+
+// pane builds the filtered listing without drawing it.
+//
+// The listing is built separately from the drawing so that it can be examined
+// without a screen, which is what the tests do.
+func (s *Session) pane() {
+	s.mu.Lock()
+	filter := s.modelFilter
+	models := s.modelList
+	keep := s.modelKeep
+	s.mu.Unlock()
+
+	var shown []openrouter.Model
+	for _, m := range models {
+		if keep != nil && !keep(m) {
+			continue
+		}
+		if filter != "" && !strings.Contains(strings.ToLower(m.ID), strings.ToLower(filter)) {
+			continue
+		}
+		shown = append(shown, m)
 	}
 
-	// Sorted so that the list is the same between runs, since an unsorted
-	// list cannot be scanned.
-	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
-	shown := models
+	// The frame is replaced rather than appended, so that narrowing the list
+	// does not leave the previous listing on screen above it.
+	head := "models"
+	if filter != "" {
+		head = "models matching " + filter
+	}
+	if keep != nil {
+		head = "free " + head
+	}
+
+	lines := []string{head}
 	const maxShown = 20
-	if len(shown) > maxShown {
-		shown = shown[:maxShown]
+	for i, m := range shown {
+		if i >= maxShown {
+			lines = append(lines, fmt.Sprintf("... and %d more", len(shown)-maxShown))
+			break
+		}
+		lines = append(lines, m.ID)
 	}
-	for _, m := range shown {
-		s.frame.Reply = append(s.frame.Reply, m.ID)
+	if len(shown) == 0 {
+		lines = append(lines, "nothing matches")
 	}
-	if len(models) > maxShown {
-		s.frame.Reply = append(s.frame.Reply,
-			fmt.Sprintf("... and %d more", len(models)-maxShown))
+	lines = append(lines, "filter: "+filter+"_", "Enter to choose, Esc to leave")
+
+	s.mu.Lock()
+	s.frame.Reply = lines
+	s.mu.Unlock()
+}
+
+// trimLastRuneString removes the final character of a string.
+//
+// It exists because the editor trims a builder it owns, and the filter is held
+// on the session rather than in the editor.
+func trimLastRuneString(s string) string {
+	if s == "" {
+		return ""
+	}
+	r := []rune(s)
+	return string(r[:len(r)-1])
+}
+
+// modelListKey acts on a key typed into the model filter.
+func (s *Session) modelListKey(b byte) {
+	switch b {
+	case keyEscape:
+		s.mu.Lock()
+		s.modelList = nil
+		s.modelFilter = ""
+		s.frame.Reply = nil
+		s.mu.Unlock()
+		s.draw()
+	case keyEnter:
+		s.mu.Lock()
+		s.modelList = nil
+		filter := s.modelFilter
+		s.modelFilter = ""
+		s.mu.Unlock()
+		s.draw()
+		if filter != "" {
+			s.chooseModel([]string{filter})
+		}
+	case keyBackspace, keyDelete:
+		s.mu.Lock()
+		s.modelFilter = trimLastRuneString(s.modelFilter)
+		s.mu.Unlock()
+		s.pane()
+		s.draw()
+	default:
+		if b < 0x20 {
+			return
+		}
+		s.mu.Lock()
+		s.modelFilter += string(b)
+		s.mu.Unlock()
+		s.pane()
+		s.draw()
 	}
 }
 

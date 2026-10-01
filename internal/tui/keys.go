@@ -203,3 +203,21 @@ func (le *LineEditor) remember(line string) {
 
 // maxHistory is how many submitted lines are remembered.
 const maxHistory = 100
+
+// ReadByte returns the next byte of input without treating it as a line.
+//
+// The model filter is typed into rather than submitted, so it reads keys
+// directly instead of going through the line editor. A key sequence is consumed
+// and ignored, since the filter takes characters only.
+func (le *LineEditor) ReadByte() (byte, error) {
+	for {
+		b, err := le.readKey()
+		if err != nil {
+			return 0, err
+		}
+		if len(le.pendingKeys) > 0 {
+			le.pendingKeys = le.pendingKeys[:0]
+		}
+		return b, nil
+	}
+}
