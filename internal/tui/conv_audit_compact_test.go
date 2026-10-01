@@ -12,10 +12,10 @@ import (
 	"github.com/glenjbarber/openrouter-cli/internal/openrouter"
 )
 
-// compactionSession returns a session whose server answers the model list at
-// once and then holds the completion open until the test releases it, so that
-// a compaction can be looked at while it is still in progress.
-func compactionSession(t *testing.T, body string,
+// blockingSession returns a session whose server answers the model list at
+// once and then holds a completion open until the test releases it, so that
+// work in progress can be looked at while it is still running.
+func blockingSession(t *testing.T, body string,
 	reached chan<- struct{}, release <-chan struct{}) *Session {
 	t.Helper()
 
@@ -57,7 +57,7 @@ func compactionSession(t *testing.T, body string,
 func TestCompactionTurnsTheTwiddle(t *testing.T) {
 	reached := make(chan struct{}, 1)
 	release := make(chan struct{})
-	s := compactionSession(t, auditStream, reached, release)
+	s := blockingSession(t, auditStream, reached, release)
 	s.conv.Record("q1", "a1")
 	s.conv.Record("q2", "a2")
 

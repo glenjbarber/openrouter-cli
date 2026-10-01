@@ -126,6 +126,14 @@ func (s *Session) startDelegate(task string) {
 
 	d := NewDelegate(s.conv, task)
 
+	// The model and the client are taken here rather than inside the
+	// goroutine. The conversation a delegate was branched from is replaced when
+	// a thread starts or the in-cognito mode is turned on, and reading the
+	// field from the goroutine would be a race against the input goroutine
+	// doing that. The model in force when the question was asked is also the
+	// one the answer should come from.
+	model, client := s.conv.Model(), s.client
+
 	// The delegate is tracked so that leaving does not leave it writing to a
 	// frame nobody is drawing on.
 	s.mu.Lock()
@@ -141,7 +149,7 @@ func (s *Session) startDelegate(task string) {
 	s.draw()
 
 	go func() {
-		d.Run(s.ctx, s.client, s.conv.Model(), func(text string) {
+		d.Run(s.ctx, client, model, func(text string) {
 			s.mu.Lock()
 			// The partial answer replaces the last line rather than being
 			// appended, so a growing answer does not fill the pane with
