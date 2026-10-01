@@ -348,3 +348,29 @@ func TestModelFilterTabCyclesOnlyWhatIsShown(t *testing.T) {
 		}
 	}
 }
+
+// The filter takes its keys through the line editor rather than being called
+// with them, so the whole path is driven here: bytes in, the listing out.
+func TestModelFilterKeysArriveFromTheEditor(t *testing.T) {
+	out, err := os.CreateTemp(t.TempDir(), "frames")
+	if err != nil {
+		t.Fatalf("creating the capture file: %v", err)
+	}
+	s := &Session{
+		conv:      NewConversation(),
+		screen:    &Screen{out: out, height: 24, width: 80},
+		editor:    NewLineEditor(strings.NewReader("openai\t\t")),
+		modelList: modelsForTest(),
+	}
+
+	for range 8 {
+		s.filterKey()
+	}
+
+	if s.modelFilter != "openai/gpt-4o-mini" {
+		t.Errorf("filter = %q, want the second match reached by Tab", s.modelFilter)
+	}
+	if got := head(t, s); !strings.Contains(got, "[2 of 2]") {
+		t.Errorf("heading = %q, want the place in the cycle", got)
+	}
+}
