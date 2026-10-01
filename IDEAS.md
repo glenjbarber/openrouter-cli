@@ -136,6 +136,61 @@ What is not known, and is the reason this is a note rather than a task:
 So the first question is not what to build but whether this is already true.
 That needs a terminal to try it in, which is the part that has not been done.
 
+### The input field should always show something is happening
+
+Raised by the maintainer. Recorded as an intent, not as a settled decision,
+because what the indicator should be is not yet chosen.
+
+The prompt should always be doing something, so that a reader can tell at a
+glance that the program has not died.
+
+The reason it is wanted is that an idle interface and a hung one look identical
+from the outside. Everything the client draws stops while nothing is happening,
+so a crash, a wedged request, or a terminal that has stopped reading all look
+the same as a session that is simply waiting for a message. A reader who has
+just sent something and sees nothing move has no way to tell those apart.
+
+What already exists, and what the work has to fit around:
+
+- The status bar reads `Working` while a request is in flight and `idle`
+  otherwise. That covers a request but not an idle prompt.
+- A twiddle runs while work is in progress. It is the closest thing to an
+  always-on indicator that the client has.
+- The hint row, which is unfinished, is state-dependent and changes with what
+  the interface is doing. It is the natural place for a resting indicator,
+  since a row that always shows something is the point of it.
+- The input field is drawn by the line editor with echo disabled, so whatever
+  appears there is chosen by the renderer rather than by the terminal.
+
+What is not chosen, and is what the decision needs to settle:
+
+- Whether the indicator lives in the input field itself, as a caret or a
+  character that moves, or beside it as a hint-row entry. The maintainer said
+  the input field, so that is the default unless there is a reason against it.
+- What moves, and at what rate. A twiddle that turns while idle reads as work
+  in progress, which is the opposite of what is wanted, so the indicator has to
+  look unlike the in-progress one.
+- Whether it pauses when the session is genuinely idle or when nothing has been
+  typed. A reader composing a message is not waiting on the program, so an
+  indicator that moves while they type is noise.
+- Cost. An always-moving indicator repaints at its interval whether or not
+  anything changed, and the repaint rate is currently bounded to keep a fast
+  reply readable. An idle loop has to respect the same bound rather than
+  waking the terminal more often than the frame rate allows.
+
+### A spinner shown on the final token
+
+Raised in the research notes, not by the maintainer. Recorded here so the two
+are not confused with each other.
+
+The stream carries a terminating marker, which is already required rather than
+assumed, so the moment between the last token and the end of the turn is
+already known. Showing the twiddle for that gap reports that the reply is being
+finished rather than that it has stopped.
+
+Small, and no decision needed beyond whether the gap is ever long enough to be
+worth drawing.
+
 ## Outstanding
 
 ### The code review and audit
