@@ -163,17 +163,22 @@ func tail(s string, n int) string {
 }
 
 // truncate shortens a string to width, marking the cut with an ellipsis.
+//
+// The cut is taken in characters rather than in bytes, since a reply carries
+// multibyte text and a cut at a byte boundary would leave half a character on
+// the row and count as wider than it is.
 func truncate(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	if len(s) <= width {
+	r := []rune(s)
+	if len(r) <= width {
 		return s
 	}
 	if width <= 3 {
-		return s[:width]
+		return string(r[:width])
 	}
-	return s[:width-3] + "..."
+	return string(r[:width-3]) + "..."
 }
 
 // minHeightForDivision is the shortest terminal that still has room for the

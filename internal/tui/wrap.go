@@ -36,7 +36,12 @@ func wrapText(s string, width int) []string {
 	return wrapProse(s, width)
 }
 
-// wrapProse folds a paragraph of prose.
+// wrapProse folds a paragraph of prose, without rendering markdown in it.
+//
+// It is the fold behind wrapText, which is a helper rather than the path the
+// pane draws from. What the reader sees goes through WrapBlock, so that the
+// markdown in a reply is rendered as it is folded rather than kept as it was
+// written.
 func wrapProse(s string, width int) []string {
 	var out []string
 	for _, para := range strings.Split(s, "\n") {
@@ -75,11 +80,15 @@ func foldWords(para string, width int) []string {
 
 // WrapBlock folds a reply for display.
 //
-// Prose is folded to width. A fenced code block is kept line for line, and a
-// line inside one that is wider than the pane is left overlong rather than
-// folded, since a code line that has been reflowed is no longer the code that
-// was written. It is marked so that the reader can see it continues past the
-// edge instead of believing it ended there.
+// Prose is rendered as markdown and then folded to width, in that order, since
+// a marker that was left in place would be folded as though it were a word. A
+// fenced code block is kept line for line, and a line inside one that is wider
+// than the pane is left overlong rather than folded, since a code line that has
+// been reflowed is no longer the code that was written. It is marked so that
+// the reader can see it continues past the edge instead of believing it ended
+// there. A block is never rendered: a marker inside one is the code rather than
+// a construct, and stripping an asterisk out of a shell glob would change what
+// the reader was shown.
 func WrapBlock(s string, width int) []string {
 	if width < 1 {
 		width = wrapWidth
@@ -117,7 +126,7 @@ func WrapBlock(s string, width int) []string {
 				if inFence {
 					block = append(block, before)
 				} else {
-					out = append(out, wrapProse(before, width)...)
+					out = append(out, renderMarkdown(before, width)...)
 				}
 			}
 			flush()
@@ -127,7 +136,7 @@ func WrapBlock(s string, width int) []string {
 				if inFence {
 					block = append(block, strings.TrimRight(after, " \t"))
 				} else {
-					out = append(out, wrapProse(after, width)...)
+					out = append(out, renderMarkdown(after, width)...)
 				}
 			}
 			continue
@@ -137,7 +146,7 @@ func WrapBlock(s string, width int) []string {
 			block = append(block, line)
 			continue
 		}
-		out = append(out, wrapProse(line, width)...)
+		out = append(out, renderMarkdown(line, width)...)
 	}
 
 	// A block left open at the end is still emitted, since a reply cut short

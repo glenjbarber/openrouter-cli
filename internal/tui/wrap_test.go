@@ -138,3 +138,65 @@ func TestRenderKeepsLongReplyText(t *testing.T) {
 		t.Error("the frame truncated the reply, want it folded instead")
 	}
 }
+
+// A list item holding a fenced block is two constructs, and folding the item
+// must not reflow the block. A nested construct is where the two rules meet.
+func TestWrapBlockKeepsAListItemWithABlockIntact(t *testing.T) {
+	reply := strings.Join([]string{
+		"- run the build like this",
+		"  " + fence + "sh",
+		"  go build ./... && echo done",
+		"  " + fence,
+	}, "\n")
+
+	wantRows(t, WrapBlock(reply, 40), []string{
+		"- run the build like this",
+		fence + "sh",
+		"  go build ./... && echo done",
+		fence,
+	})
+}
+
+// Prose carrying markers is folded to what is left beside its marker, so that
+// the rows fit and the words survive the render.
+func TestWrapBlockFoldsProseCarryingMarkers(t *testing.T) {
+	reply := "The **first** step and the *second* step both need explaining in full detail here"
+	rows := WrapBlock(reply, 20)
+
+	for i, r := range rows {
+		if n := runeLen(r); n > 20 {
+			t.Errorf("row %d = %q is %d wide, want at most 20", i, r, n)
+		}
+		if strings.Contains(r, "*") {
+			t.Errorf("row %d = %q still carries a marker", i, r)
+		}
+	}
+	folded := strings.Join(rows, " ")
+	for _, word := range []string{"first", "second", "explaining", "detail"} {
+		if !strings.Contains(folded, word) {
+			t.Errorf("the word %q is missing from the folded reply: %q", word, folded)
+		}
+	}
+}
+
+// The info string belongs to the fence rather than to the block, and it is
+// carried whole. A hash in it is part of what was written rather than a heading.
+func TestWrapBlockCarriesTheInfoStringWhole(t *testing.T) {
+	reply := strings.Join([]string{
+		"Before the block.",
+		fence + "sh # not a heading",
+		"echo one",
+		fence,
+	}, "\n")
+
+	rows := WrapBlock(reply, 40)
+	found := false
+	for _, r := range rows {
+		if strings.Contains(r, "sh #") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("rows = %q, want the info string carried whole", rows)
+	}
+}
