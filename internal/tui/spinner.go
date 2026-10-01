@@ -64,7 +64,7 @@ func (s *Spinner) Start(onFrame func(frame string)) {
 	go func() {
 		defer close(done)
 		for {
-			onFrame(spinnerFrames[s.current()])
+			onFrame(spinnerFrames[s.next()])
 			select {
 			case <-stop:
 				return
@@ -72,6 +72,18 @@ func (s *Spinner) Start(onFrame func(frame string)) {
 			}
 		}
 	}()
+}
+
+// next returns the frame index and advances it, taking the lock to do so.
+//
+// The goroutine goes through this rather than reaching current directly. The
+// index belongs to the spinner, and a caller that stops one and starts another
+// runs on another goroutine, so an advance made without the lock would be an
+// unordered write to it.
+func (s *Spinner) next() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.current()
 }
 
 // current returns the frame index and advances it. The caller holds the lock.

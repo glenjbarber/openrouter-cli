@@ -99,3 +99,38 @@ func TestSpinnerFramesAreUniformWidth(t *testing.T) {
 		}
 	}
 }
+
+// The frame index belongs to the spinner, and the goroutine that turns it runs
+// alongside whichever caller stops and starts it. Advancing the index without
+// the lock is an unordered write to it, which shows here as soon as one caller
+// stops a twiddle while another starts the next.
+func TestSpinnerIndexIsTakenUnderTheLock(t *testing.T) {
+	s := NewSpinner()
+
+	var mu sync.Mutex
+	frames := 0
+	onFrame := func(frame string) {
+		mu.Lock()
+		frames++
+		mu.Unlock()
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				s.Start(onFrame)
+				time.Sleep(time.Millisecond)
+				s.Stop()
+			}
+		}()
+	}
+	wg.Wait()
+	s.Stop()
+
+	if !s.Active() && frames == 0 {
+		t.Error("no frame was delivered at all")
+	}
+}
