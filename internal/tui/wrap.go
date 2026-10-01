@@ -67,8 +67,10 @@ func foldWords(para string, width int) []string {
 		candidate := line + " " + w
 		// A word that cannot fit is moved to the next line whole. Cutting it
 		// would split an identifier across two rows, which is neither
-		// readable nor copyable.
-		if runeLen(candidate) > width {
+		// readable nor copyable. The width is counted in columns, since a
+		// character two columns wide counted as one folds a row twice as
+		// wide as the pane.
+		if displayWidth(candidate) > width {
 			out = append(out, line)
 			line = w
 			continue

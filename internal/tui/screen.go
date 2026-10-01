@@ -35,6 +35,9 @@ type Screen struct {
 	// on and off while a session runs and the terminal has to be put back the
 	// way it was found on the way out.
 	mouse bool
+	// closed records that the terminal has already been put back, so that a
+	// signal arriving during the ordinary exit does not restore it twice.
+	closed bool
 }
 
 // ANSI control sequences. Only the ones the interface actually uses are
@@ -142,6 +145,12 @@ func (s *Screen) enterRaw() error {
 
 // restore puts the terminal back the way it was found.
 func (s *Screen) restore() {
+	if s.closed {
+		// Restoring twice would leave the alternate screen twice and put the
+		// cursor back twice, and the signal handler races the ordinary exit.
+		return
+	}
+	s.closed = true
 	ioctlTermios(s.in.Fd(), ioctlSetTermios, &s.saved)
 	// Reporting is turned off first, since a terminal left reporting sends
 	// every wheel notch into a program that is no longer reading them.
@@ -149,6 +158,12 @@ func (s *Screen) restore() {
 		s.write(seqMouseOff)
 		s.mouse = false
 	}
+	// Bracketed paste is turned off before the alternate screen is left, and
+	// not after it. The mode belongs to the terminal rather than to the
+	// screen, so it survives the switch back: a terminal left believing it is
+	// on wraps a paste in markers that nothing is reading, and the shell the
+	// reader is returned to loses the text that was pasted into it.
+	s.write(seqPasteOff)
 	s.write(seqShowCur + seqExitAlt)
 }
 
