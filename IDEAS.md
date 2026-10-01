@@ -111,7 +111,7 @@ Merged into `main`.
 | Conversation audit | `aa149ac` | Four races, the cognito marker, and a summary that outlived `/new`. |
 | Model filter completion | `f3b7e47` | Tab completes the filter and cycles through what it matched. |
 | Split mouse report | `eb57cbb` | A wheel notch split across reads no longer ends the session. |
-| Queued message | see the merge | A line sent while a model works, and escape stopping it with the line. |
+| Queued message | `1436167` | A line sent while a model works, and escape stopping it with the line. |
 | Saved session | `a828197` | A conversation written to a `.db` of its own, and loaded back. |
 
 ### A conversation can be saved to a file of its own
@@ -135,6 +135,16 @@ on the `termios_unsupported.go` precedent: a reader who typed `/save` on a
 platform where it cannot work is told that, rather than being told the command
 is unknown, which is a different problem to send them chasing.
 
+**Cgo was raised as the way out of that and measured rather than assumed.** It
+gives DragonFly nothing and it costs the other five targets:
+`mattn/go-sqlite3` builds and runs on the host, but `CC` is `cc` for every
+foreign `GOOS` and no cross C toolchain is installed, so `runtime/cgo` fails for
+freebsd, linux, netbsd, openbsd and dragonfly alike. There is no newer pure Go
+driver to bump to either, the newest `modernc.org/libc` being the version
+already in the tree. `github.com/ncruces/go-sqlite3` does build on all six
+targets with no cgo, and was not taken: 12.4 MB against 2.9 MB for two tables
+is a size the maintainer declined. **SETTLED** the compromise stands.
+
 **PROVISIONAL** The choices below are the implementer's, not the maintainer's.
 
 - A save is refused in-cognito and inside a thread, since both record nothing
@@ -145,8 +155,11 @@ is unknown, which is a different problem to send them chasing.
   turn in flight is not in it.
 - A model the reader chose wins over the one the file carries.
 - `/load` shows the turns it restored rather than replacing the pane silently.
-- The free-model allowance is not written, since its type is unexported and
-  cannot be carried out of the package holding it.
+
+The free-model allowance was listed here as not written, which was wrong and is
+now contradicted by a test in `internal/saved`: the allowance type is an alias
+for an anonymous struct, so the whole usage value round-trips through the
+database. It is written and read back.
 
 Checked with unit and integration tests, the race detector, the cross-build on
 all six targets, and a real pty: `/save`, a second `/save` under the same name

@@ -94,8 +94,13 @@ so that a later change does not silently reverse it.
 - `go.sum` is not ignored either, so a dependency added later yields a committed
   checksum file rather than a silently unpinned build. It was absent until the
   saved sessions took a database driver, and it is committed from then on.
-- The `go` directive is a minor version, `go 1.26`, not a patch pin. A patch pin
-  is unusual and needlessly excludes users on a lower patch release.
+- The `go` directive is a patch version, `go 1.26.0`, and a dependency decided
+  it rather than a preference. `modernc.org/sqlite` declares `go 1.26.0`, and a
+  dependency's directive is a floor this one cannot be set below: lowering it
+  to `go 1.26` makes `go build` refuse with `updates to go.mod needed`, and
+  `go mod tidy` puts it back without saying why. The earlier rule, that the
+  directive should name a minor version rather than a patch, held until the
+  saved sessions took a driver and no longer holds.
 - An override carrying a path is used verbatim. The `/api/v1` suffix is appended
   only to a bare scheme and host, such as `http://localhost:3000`.
 - Unknown keys are ignored, so a file written for a newer version stays readable
@@ -575,10 +580,14 @@ so that a later change does not silently reverse it.
   anything else.
 - What is written is the turns, the model, the token counters, the reported
   usage, and the time. What is not written is as deliberate: not the
-  credential, since the configuration file is the only source of the key; not
-  the session preferences, which belong to the configuration file; and not the
-  free-model allowance, whose type is unexported and cannot be carried out of
-  the package that holds it.
+  credential, since the configuration file is the only source of the key, and
+  not the session preferences, which belong to the configuration file.
+- The free-model allowance travels with that usage. This file once recorded it
+  as omitted, on the grounds that its type is unexported, and a test now proves
+  the opposite: `freeAllowance` is an alias for an anonymous struct rather than
+  a defined type, so the whole `Usage` value marshals and unmarshals across the
+  package boundary. What a package outside `openrouter` cannot do is name the
+  type, which is a different thing from being unable to carry it.
 - The opening instructions are saved as the system turn they are, so that a
   resumed session behaves as the one that was saved did.
 - A save is refused in-cognito and inside a thread. Both record nothing, and a
@@ -967,6 +976,18 @@ so that a later change does not silently reverse it.
   sessions. It is the one departure from the no-dependency rule the rest of the
   client is built on, and it was taken so that a saved file could be opened and
   read by any SQLite tool rather than only by this client.
+- DragonFly carries no driver for the saved format, and that build answers that
+  it has none rather than dropping a target the project supports. Cgo was
+  offered as a way out and was measured rather than assumed:
+  `mattn/go-sqlite3` builds and runs on the host, but no cross C toolchain is
+  installed, so `CGO_ENABLED=1` fails inside `runtime/cgo` for freebsd, linux,
+  netbsd, openbsd and dragonfly alike, and a cross-build gate that cannot
+  cross-build stops meaning anything. There is no newer pure Go release to
+  bump to: the newest `modernc.org/libc` is the version already in the tree
+  and carries no DragonFly. `github.com/ncruces/go-sqlite3` does build and vet
+  clean on all six targets without cgo, and was not adopted, since it costs a
+  12.4 MB binary against 2.9 MB to store two tables. The compromise is kept
+  and `/save` says so on that platform.
 - These tools are tracked as module tool dependencies in `go.mod` and are run
   through `go tool`: `staticcheck`, `errcheck`, `gosec`, `govulncheck`,
   `protoc-gen-go`, and `protoc-gen-go-grpc`.
