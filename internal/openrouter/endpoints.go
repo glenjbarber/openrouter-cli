@@ -3,7 +3,6 @@ package openrouter
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strconv"
 )
 
@@ -23,16 +22,92 @@ type Model struct {
 	CompletionPrice string `json:"completion"`
 }
 
+// UnmarshalJSON decodes a model, tolerating a price the endpoint quotes as a
+// number rather than as a string.
+//
+// The price is carried as a string so that a figure written in exponent form
+// survives intact, which is the form the endpoint uses. A catalogue is decoded
+// as a whole, so one model quoted differently would otherwise fail the entire
+// list and leave the listing with nothing to show. A price that is not a
+// figure at all is carried as the text it arrived as, so that Free can refuse
+// it rather than have to see an absent field.
+func (m *Model) UnmarshalJSON(b []byte) error {
+	var raw struct {
+		ID            string          `json:"id"`
+		Name          string          `json:"name"`
+		Description   string          `json:"description"`
+		ContextLength json.RawMessage `json:"context_length"`
+		Prompt        json.RawMessage `json:"prompt"`
+		Completion    json.RawMessage `json:"completion"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	m.ID = raw.ID
+	m.Name = raw.Name
+	m.Description = raw.Description
+	m.ContextLength = tokenCount(raw.ContextLength)
+	m.PromptPrice = scalarText(raw.Prompt)
+	m.CompletionPrice = scalarText(raw.Completion)
+	return nil
+}
+
+// freeAllowance is the separate allowance the key endpoint reports for free
+// models.
+//
+// It is an alias rather than a named type, so that the field carrying it holds
+// the shape it has always held and a reader of the struct sees what it saw
+// before.
+type freeAllowance = struct {
+	Used  float64 `json:"used"`
+	Limit float64 `json:"limit"`
+}
+
 // Usage is what the key endpoint reports about a key.
 type Usage struct {
 	Usage float64 `json:"usage"`
 	Limit float64 `json:"limit"`
 	// FreeModelRequests is a separate allowance, absent when the key has no
 	// free-model access.
-	FreeModelRequests *struct {
-		Used  float64 `json:"used"`
-		Limit float64 `json:"limit"`
-	} `json:"free_model_daily_requests"`
+	FreeModelRequests *freeAllowance `json:"free_model_daily_requests"`
+}
+
+// UnmarshalJSON decodes the allowance, reading a figure the endpoint quotes as
+// text rather than as a number.
+//
+// The figures are carried as numbers because that is how the endpoint quotes
+// them, but a figure written as a string would otherwise fail the whole decode
+// and leave the reader with no allowance at all, which is a worse outcome than
+// a figure that is read. The free allowance is optional, so one that is
+// present but is not an object is left absent rather than failing the paid
+// figures that were read correctly.
+func (u *Usage) UnmarshalJSON(b []byte) error {
+	var raw struct {
+		Usage     json.RawMessage `json:"usage"`
+		Limit     json.RawMessage `json:"limit"`
+		FreeDaily json.RawMessage `json:"free_model_daily_requests"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	u.Usage = scalarFloat(raw.Usage)
+	u.Limit = scalarFloat(raw.Limit)
+	u.FreeModelRequests = nil
+	if len(raw.FreeDaily) == 0 || string(raw.FreeDaily) == "null" {
+		return nil
+	}
+	var free struct {
+		Used  json.RawMessage `json:"used"`
+		Limit json.RawMessage `json:"limit"`
+	}
+	if err := json.Unmarshal(raw.FreeDaily, &free); err != nil {
+		return nil
+	}
+	u.FreeModelRequests = &freeAllowance{
+		Used:  scalarFloat(free.Used),
+		Limit: scalarFloat(free.Limit),
+	}
+	return nil
 }
 
 // Models returns the models the endpoint offers.
@@ -45,7 +120,7 @@ func (c *Client) Models(ctx context.Context) ([]Model, error) {
 		Data []Model `json:"data"`
 	}
 	if err := json.Unmarshal(data, &envelope); err != nil {
-		return nil, fmt.Errorf("decoding the model list: %w", err)
+		return nil, c.wrapf(err, "decoding the model list")
 	}
 	return envelope.Data, nil
 }
@@ -60,7 +135,7 @@ func (c *Client) KeyUsage(ctx context.Context) (*Usage, error) {
 		Data Usage `json:"data"`
 	}
 	if err := json.Unmarshal(data, &envelope); err != nil {
-		return nil, fmt.Errorf("decoding the key usage: %w", err)
+		return nil, c.wrapf(err, "decoding the key usage")
 	}
 	return &envelope.Data, nil
 }
