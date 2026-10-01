@@ -21,6 +21,10 @@ type Conversation struct {
 	// key endpoint does not report.
 	tokensIn  int
 	tokensOut int
+	// ephemeral marks a conversation that records nothing. An in-cognito
+	// session and an ephemeral thread both set it, so that retention is
+	// decided in one place rather than at each call site.
+	ephemeral bool
 }
 
 // AddTokens accumulates the token counts reported for one exchange.
@@ -87,7 +91,12 @@ func (c *Conversation) Pending(user string) []openrouter.Message {
 }
 
 // Record stores the exchange once a reply has been received.
+// An ephemeral conversation keeps nothing. The request itself still carried
+// the history, so the model has the context; only the retention is skipped.
 func (c *Conversation) Record(user, reply string) {
+	if c.ephemeral {
+		return
+	}
 	c.messages = append(c.messages,
 		openrouter.Message{Role: openrouter.RoleUser, Content: user},
 		openrouter.Message{Role: openrouter.RoleAssistant, Content: reply},

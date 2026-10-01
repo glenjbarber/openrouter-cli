@@ -29,6 +29,15 @@ type Session struct {
 	conv   *Conversation
 	// spinner turns the twiddle while work is in progress.
 	spinner *Spinner
+	// thread is the ephemeral conversation, nil while the main one is in
+	// force. The main conversation is held in mainConv throughout, so that
+	// leaving a thread restores it without a snapshot being taken here.
+	thread   *Ephemeral
+	mainConv *Conversation
+	// cognito reports that this session records nothing. The mode is in force
+	// because the user asked for it, or because it was left on by a crash,
+	// which is reported at startup rather than honoured silently.
+	cognito bool
 	// windows caches the context length of each model seen, so that the
 	// threshold can be evaluated without a call per message.
 	windows *contextLength
@@ -87,6 +96,7 @@ func Start(out, in *os.File, title string) (*Session, error) {
 	// drawn by the interface rather than by the line discipline. Without this
 	// the keystrokes are held until the line is submitted and appear to do
 	// nothing at all.
+	s.mainConv = s.conv
 	s.editor.OnChange = func(line string) {
 		s.frame.Input = line
 		s.draw()
@@ -220,6 +230,12 @@ func (s *Session) command(line string) bool {
 		s.conv.Reset()
 		s.frame.Reply = nil
 		s.Note("conversation cleared")
+	case "/cognito":
+		s.toggleCognito()
+	case "/btw":
+		s.beginThread()
+	case "/main":
+		s.endThread()
 	case "/compact":
 		s.compact(true)
 	case "/info":
@@ -239,6 +255,9 @@ func helpText() string {
 		"/models            list the models the endpoint offers",
 		"/model [NAME]      show or choose the model, without an argument to list",
 		"/new               clear the conversation",
+		"/cognito           record nothing, on or off",
+		"/btw               start a thread branched from this conversation",
+		"/main              leave the thread and return to the conversation",
 		"/compact           summarise the conversation and start again",
 		"/clear             clear the pane",
 		"/info              report the session settings",
@@ -466,6 +485,9 @@ func (s *Session) send(line string) {
 	// that line is the question. Overwriting it loses the exchange and makes
 	// the pane show a reply with nothing that prompted it.
 	s.appendLines(text)
+	if s.thread != nil {
+		s.thread.Note()
+	}
 	s.conv.Record(line, text)
 }
 
