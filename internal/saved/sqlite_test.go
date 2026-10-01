@@ -4,6 +4,7 @@ package saved
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -63,6 +64,44 @@ func TestAWriteReadsBackAsItWas(t *testing.T) {
 		if got.Messages[i] != want.Messages[i] {
 			t.Errorf("message %d is %+v, want %+v", i, got.Messages[i], want.Messages[i])
 		}
+	}
+}
+
+// The free-model allowance survives a save, which the documentation said it
+// did not. The allowance type is unexported, so this package cannot build one
+// by name, but it is an alias for an anonymous struct, and the whole Usage
+// value marshals and unmarshals across the boundary. Decoding the figures from
+// a body is the path the client itself takes, and it is what puts a non-nil
+// allowance into the session that is written.
+func TestTheFreeModelAllowanceSurvivesTheRoundTrip(t *testing.T) {
+	var usage openrouter.Usage
+	body := `{"usage":"1.5","limit":"100","free_model_daily_requests":{"used":"3","limit":"1000"}}`
+	if err := json.Unmarshal([]byte(body), &usage); err != nil {
+		t.Fatalf("decoding the allowance: %v", err)
+	}
+	if usage.FreeModelRequests == nil {
+		t.Fatal("the body carried an allowance and none was decoded")
+	}
+
+	path := filepath.Join(t.TempDir(), "work.db")
+	want := sample("work")
+	want.Usage = usage
+	if err := Write(path, want, false); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	got, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if got.Usage.FreeModelRequests == nil {
+		t.Fatal("the allowance was written and did not come back")
+	}
+	if got.Usage.FreeModelRequests.Used != 3 || got.Usage.FreeModelRequests.Limit != 1000 {
+		t.Errorf("allowance is %+v, want 3 used against 1000",
+			*got.Usage.FreeModelRequests)
+	}
+	if got.Usage.Usage != 1.5 || got.Usage.Limit != 100 {
+		t.Errorf("paid figures are %+v, want 1.5 against 100", got.Usage)
 	}
 }
 
