@@ -63,9 +63,14 @@ func formatFor(path string) (Format, error) {
 		return FormatMarkdown, nil
 	case ".json":
 		return FormatJSON, nil
-	default:
-		return "", fmt.Errorf("%w: %s", ErrUnsupportedFormat, filepath.Ext(path))
 	}
+	// The path is named rather than the extension, since a bare extension says
+	// nothing about which file was refused.
+	if filepath.Ext(path) == "" {
+		return "", fmt.Errorf("%w: %s has no extension, and the extension alone "+
+			"selects the format", ErrUnsupportedFormat, path)
+	}
+	return "", fmt.Errorf("%w: %s, which is not a known extension", ErrUnsupportedFormat, filepath.Ext(path))
 }
 
 // Load reads the bootstrap document at path.
