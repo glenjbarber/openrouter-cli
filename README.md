@@ -513,6 +513,11 @@ The client also writes the file when setup is completed or skipped.
 
 ### Model instruction files
 
+**Not implemented yet.** This section describes intended behaviour. The only
+instruction path that works today is `--bootstrap FILE`, which names a file on
+the command line. The search below is specified but not built, so a repository
+holding an `AGENTS.md` will not have it read. See `IDEAS.md`.
+
 Before a request is sent, the client reads instructions from a file in the
 current working directory. The file is selected from the following names, tried
 in alphabetical order, and the first one found is used:
