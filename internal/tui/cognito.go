@@ -119,8 +119,18 @@ func (s *Session) toggleCognito() {
 			return
 		}
 		s.cognito = false
+		// The main conversation is restored rather than the current one, since
+		// a thread is unrecorded either way and switching the mode off inside
+		// one would otherwise be refused.
+		s.conv = s.mainConv
+		s.conv.clearEphemeral()
+		// Whatever was recorded before the mode went on is dropped with it.
+		// Restoring recording while keeping that history would leave the model
+		// still carrying it, which is what the mode was meant to prevent.
+		dropped := s.conv.DiscardRecorded()
 		s.frame.Reply = append(s.frame.Reply,
-			"cognito mode off: the conversation is recorded again")
+			fmt.Sprintf("cognito mode off: recording again, %s discarded",
+				dropped))
 		return
 	}
 
@@ -129,6 +139,7 @@ func (s *Session) toggleCognito() {
 		return
 	}
 	s.cognito = true
+	s.conv.setEphemeral()
 	// A thread is already unrecorded, so saying so avoids the impression that
 	// the mode changed anything while it is in one.
 	if s.thread != nil {

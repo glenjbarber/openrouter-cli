@@ -216,3 +216,37 @@ func pluralExchanges(n int) string {
 // its own sake and is never restored by this, since an ephemeral conversation
 // is ephemeral however it was entered.
 func (c *Conversation) clearEphemeral() { c.ephemeral = false }
+
+// DiscardRecorded drops every recorded exchange and reports how many went.
+//
+// The opening instructions survive, since losing them would change how the
+// model behaves without anything saying so. What is dropped is the work: a
+// conversation that kept its exchanges would still carry them to the model on
+// the next request, which is exactly what in-cognito mode is for preventing.
+func (c *Conversation) DiscardRecorded() string {
+	kept := make([]openrouter.Message, 0, 1)
+	dropped := 0
+	for _, m := range c.messages {
+		if m.Role == openrouter.RoleSystem && !isCompaction(m.Content) {
+			kept = append(kept, m)
+			continue
+		}
+		dropped++
+	}
+	// A question and its reply are stored as two turns, so the turns dropped
+	// are twice the exchanges. Counting turns would report twice the work.
+	exchanges := dropped / 2
+	c.messages = kept
+
+	// The counters went with the work, since they counted it.
+	c.tokensIn, c.tokensOut = 0, 0
+
+	switch exchanges {
+	case 0:
+		return "nothing was recorded"
+	case 1:
+		return "1 exchange was"
+	default:
+		return fmt.Sprintf("%d exchanges were", exchanges)
+	}
+}
