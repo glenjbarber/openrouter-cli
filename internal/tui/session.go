@@ -626,6 +626,18 @@ func (s *Session) updateStatus() {
 	if u.Limit > 0 {
 		s.frame.Status.Credits = fmt.Sprintf("%.2f/%.0f", u.Usage, u.Limit)
 	}
+
+	// The window is looked up on every repaint, which is cheap because it is
+	// cached per model and only fetched when the model has not been seen. The
+	// figure is shown as a percentage, since what a reader wants to know is how
+	// close the conversation is to needing a compaction rather than the raw
+	// count.
+	if window := s.windows.lookup(s.ctx, s, s.conv.Model()); window > 0 {
+		share := float64(s.conv.EstimatedTokens()) / float64(window) * 100
+		s.frame.Status.Context = fmt.Sprintf("%.0f%%", share)
+	} else {
+		s.frame.Status.Context = ""
+	}
 	if s.conv.TokensIn() > 0 {
 		s.frame.Status.TokensIn = tokenCount(s.conv.TokensIn())
 	}

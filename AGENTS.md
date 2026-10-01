@@ -206,8 +206,16 @@ so that a later change does not silently reverse it.
   restored on every exit including a failure.
 - The field named `Credits` carries the allowance the key endpoint reports as a
   figure against a limit. It is not the conversation context, which is the
-  share of the model window a message occupies. The name `Context` is left free
-  for that, and is not yet filled.
+  share of the model window a message occupies.
+- The field named `Context` carries that share, as a percentage of the window.
+  A percentage is shown rather than a figure because what a reader watches for
+  is how close the conversation is to needing a compaction, not the raw count.
+- The two are kept apart deliberately. Credits answers whether there is money
+  left; Context answers whether the conversation must be compacted. A reader
+  confusing them would misread one as the other.
+- The context share is kept in preference to the allowance when the bar is
+  narrow, since it is the more urgent of the two.
+- An unknown window shows no share rather than a figure against nothing.
 - Token accounting is requested explicitly in the request body, since an
   endpoint that is not asked for it sends nothing and the counters would stay
   blank. It arrives on the final chunk, so it is a pointer: a reported zero and

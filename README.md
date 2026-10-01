@@ -179,12 +179,14 @@ The status bar sits above the input line, carrying Provider, Model, Status,
 Credits, the token counters, and the hostname:
 
 ```
-Provider: openrouter.ai | Model: stealth/space-bunny-alpha | Status: idle | Credits: 0.42/5 | In: 1.2k | Out: 5.7k | claude1.lab3.home.arpa
+Provider: openrouter.ai | Model: stealth/space-bunny-alpha | Status: idle | Credits: 0.42/5 | Context: 12% | In: 1.2k | Out: 5.7k | claude1.lab3.home.arpa
 ```
 
 `Status` reads `Working` while a request is in flight. `Credits` is the
-remaining allowance reported against the API key, which is not the conversation
-context; the token counters accumulate across the session.
+remaining allowance reported against the API key. `Context` is the share of the
+model window the conversation occupies, which is what says when a compaction is
+coming. The two are separate measures: one is money, the other is window. The
+token counters accumulate across the session.
 
 A field with no value yet is shown as a dash. Fields with no source in the
 client are not shown at all: `Branch`, `Reasoning`, and `Approval` were removed,
