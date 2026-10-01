@@ -44,9 +44,6 @@ type Session struct {
 	// and written by the input goroutine, which is the same pair of jobs mu
 	// already does for the frame.
 	scroll int
-	// mouseRequested records that the reader asked for mouse reporting, so
-	// that a request made before the terminal is ready is not lost.
-	mouseRequested bool
 	// thread is the ephemeral conversation, nil while the main one is in
 	// force. The main conversation is held in mainConv throughout, so that
 	// leaving a thread restores it without a snapshot being taken here.
@@ -239,7 +236,6 @@ func (s *Session) resetScroll() {
 
 // setMouse turns mouse reporting on or off at the reader's request.
 func (s *Session) setMouse(on bool) {
-	s.mouseRequested = on
 	s.screen.SetMouse(on)
 	// The hint row names the wheel only while reporting is on, since the
 	// wheel is what reporting drives. The bit is taken under the lock,

@@ -456,3 +456,22 @@ func TestWorkInProgressIsReportedBeforeTheFirstDelta(t *testing.T) {
 		t.Errorf("the state is %q after the work ended, want %q", state, stateIdle)
 	}
 }
+
+// The request for mouse reporting reaches the terminal itself.
+//
+// A bit was kept on the session to remember that reporting had been asked for,
+// and nothing ever read it, so it promised that a request made before the
+// terminal was ready would not be lost without providing for it. The request
+// goes straight to the screen instead, which is where it is acted on.
+func TestMouseRequestReachesTheTerminal(t *testing.T) {
+	s, _ := auditSession(t, auditStream)
+
+	s.setMouse(true)
+	if !s.screen.Mouse() {
+		t.Error("mouse reporting was asked for and the screen does not report it on")
+	}
+	s.setMouse(false)
+	if s.screen.Mouse() {
+		t.Error("mouse reporting was asked to stop and the screen still reports it on")
+	}
+}
