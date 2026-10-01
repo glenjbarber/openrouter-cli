@@ -112,6 +112,45 @@ Merged into `main`.
 | Model filter completion | `f3b7e47` | Tab completes the filter and cycles through what it matched. |
 | Split mouse report | `eb57cbb` | A wheel notch split across reads no longer ends the session. |
 | Queued message | see the merge | A line sent while a model works, and escape stopping it with the line. |
+| Saved session | `a828197` | A conversation written to a `.db` of its own, and loaded back. |
+
+### A conversation can be saved to a file of its own
+
+`/save NAME` writes the conversation to `~/.openrouter-cli/sessions/NAME.db`
+and `/load NAME` resumes it. A saved file is also a bootstrap document, so
+`--bootstrap NAME.db` begins a session from a conversation rather than from
+prose for one.
+
+**The file is a SQLite database**, so that it can be read afterwards by any
+tool rather than only by this client. The driver is `modernc.org/sqlite`
+because it is pure Go: `make crossbuild` sets `GOOS` without `CGO_ENABLED`,
+so a driver that compiles C would produce a binary that builds for every
+target and then fails at the first query.
+
+**DragonFly has no driver.** The pure Go driver carries an emulation of the C
+library and that emulation has no DragonFly in it, so `make crossbuild` fails
+for that target. Rather than drop a target the project supports, the build
+answers that it has no driver. The commands stay in the vocabulary and say so,
+on the `termios_unsupported.go` precedent: a reader who typed `/save` on a
+platform where it cannot work is told that, rather than being told the command
+is unknown, which is a different problem to send them chasing.
+
+**PROVISIONAL** The choices below are the implementer's, not the maintainer's.
+
+- A save is refused in-cognito and inside a thread, since both record nothing
+  and a file would break that rather than record it.
+- A save under a name already taken asks, and only an explicit yes replaces.
+  Anything else writes beside it under a name carrying the epoch.
+- A save may be taken while a model works and holds what has been recorded; the
+  turn in flight is not in it.
+- A model the reader chose wins over the one the file carries.
+- `/load` shows the turns it restored rather than replacing the pane silently.
+- The free-model allowance is not written, since its type is unexported and
+  cannot be carried out of the package holding it.
+
+Checked with unit and integration tests, the race detector, the cross-build on
+all six targets, and a real pty: `/save`, a second `/save` under the same name
+declined, and `/load` all behaved, and the file opens in any SQLite tool.
 
 ## In progress
 
