@@ -617,6 +617,15 @@ so that a later change does not silently reverse it.
   terminal to ring and the byte would be noise in the capture.
 - The preference survives a file that carries no credential, since a file
   holding a preference is not unread for want of a key.
+- Switching the mode off discards the exchanges recorded before it went on, and
+  reports how many. Restoring recording while keeping that history would leave
+  the model still carrying the work, which is the thing the mode prevents.
+- The opening instructions survive being discarded, since losing them would
+  change how the model behaves without anything saying so. A compaction summary
+  does not, since it is recorded work rather than an instruction.
+- The token counters go with the discarded work, since they counted it.
+- The count reported is exchanges rather than turns, since an exchange is stored
+  as two turns and counting turns would report twice the work done.
 - Nothing else in the client changes because of the bell. It is a preference,
   not a mode.
 

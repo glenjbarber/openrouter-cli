@@ -293,7 +293,9 @@ that is said in it. `/main` leaves it and restores the conversation exactly as
 it was. A thread is not written anywhere and is not carried into a later
 session.
 
-`/cognito` records nothing at all. It is recorded by a marker file in the home
+`/cognito` records nothing at all. Switching it off discards whatever was
+recorded before it went on, and reports how many exchanges that was, so the model
+does not carry work the mode was meant to drop. The opening instructions survive. It is recorded by a marker file in the home
 directory holding a process identifier and nothing else, so that a marker left
 behind by a crash is noticed at the next start and reported rather than
 honoured silently.

@@ -187,3 +187,93 @@ func TestEndThreadWhenNotInOne(t *testing.T) {
 		t.Error("a thread exists after leaving one that was never entered")
 	}
 }
+
+// The exchanges recorded before the mode went on must not survive it, or the
+// model would still be carrying the work the mode was meant to discard.
+func TestCognitoOffDiscardsRecordedWork(t *testing.T) {
+	s := &Session{conv: NewConversation(), mainConv: NewConversation()}
+	s.mainConv = s.conv
+	s.conv.SetModel("test/model")
+	s.conv.Record("a question", "an answer")
+	s.conv.Record("another", "reply")
+
+	t.Setenv("HOME", t.TempDir())
+
+	s.toggleCognito() // on
+	if s.conv.Recording() {
+		t.Fatal("Recording = true while cognito is on")
+	}
+
+	s.toggleCognito() // off
+	if !s.conv.Recording() {
+		t.Error("Recording = false after cognito was switched off")
+	}
+
+	// Only the instructions survive, so the model has no memory of the work.
+	msgs := s.conv.Pending("next")
+	if len(msgs) != 1 {
+		t.Fatalf("msgs = %+v, want the work discarded", msgs)
+	}
+}
+
+// The opening instructions survive, since losing them would change how the
+// model behaves without anything saying so.
+func TestCognitoOffKeepsInstructions(t *testing.T) {
+	c := NewConversation()
+	c.Seed("answer in the third person")
+	c.Record("q", "a")
+
+	c.DiscardRecorded()
+
+	msgs := c.Pending("next")
+	if len(msgs) == 0 || msgs[0].Role != "system" {
+		t.Fatalf("msgs = %+v, want the instructions kept", msgs[0])
+	}
+	if msgs[0].Content != "answer in the third person" {
+		t.Errorf("instructions = %q, want them preserved", msgs[0].Content)
+	}
+}
+
+// The counters go with the work, since they counted it.
+func TestDiscardRecordedClearsCounters(t *testing.T) {
+	c := NewConversation()
+	c.AddTokens(100, 200)
+
+	c.DiscardRecorded()
+
+	if c.TokensIn() != 0 || c.TokensOut() != 0 {
+		t.Errorf("tokens = %d/%d, want them cleared", c.TokensIn(), c.TokensOut())
+	}
+}
+
+func TestDiscardRecordedReportsWhatWent(t *testing.T) {
+	for _, tc := range []struct {
+		turns int
+		want  string
+	}{
+		{0, "nothing was recorded"},
+		{1, "1 exchange was"},
+		{2, "2 exchanges were"},
+	} {
+		c := NewConversation()
+		for i := 0; i < tc.turns; i++ {
+			c.Record("q", "a")
+		}
+		if got := c.DiscardRecorded(); got != tc.want {
+			t.Errorf("%d turns: got %q, want %q", tc.turns, got, tc.want)
+		}
+	}
+}
+
+// A summary is a recorded turn rather than an instruction, so it goes too.
+func TestDiscardRecordedDropsSummary(t *testing.T) {
+	c := NewConversation()
+	c.Record("q", "a")
+	c.Compact("a summary")
+
+	c.DiscardRecorded()
+
+	if c.HasSummary() {
+		t.Error("the summary survived, want it discarded")
+	}
+}
