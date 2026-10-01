@@ -212,3 +212,93 @@ func TestRenderShowsComposedInput(t *testing.T) {
 		t.Errorf("last line = %q, want the composed line", lines[len(lines)-1])
 	}
 }
+
+// Without a completer the key is still a tab, since a reader indenting a
+// message may want it and nothing has been installed to take it.
+func TestReadLineTabWithoutCompleter(t *testing.T) {
+	le := newLineReader("a\tb\r")
+	if le.OnTab != nil {
+		t.Fatal("OnTab is set, so this is not the case under test")
+	}
+	got, err := le.ReadLine()
+	if err != nil {
+		t.Fatalf("ReadLine: %v", err)
+	}
+	if got != "a\tb" {
+		t.Errorf("got %q, want %q", got, "a\tb")
+	}
+}
+
+// The completer owns the key when one is installed, and the line it returns
+// replaces what was typed.
+func TestReadLineTabCompletes(t *testing.T) {
+	le := newLineReader("/comp\t\r")
+	var asked string
+	le.OnTab = func(line string) string {
+		asked = line
+		return "/compact"
+	}
+	got, err := le.ReadLine()
+	if err != nil {
+		t.Fatalf("ReadLine: %v", err)
+	}
+	if asked != "/comp" {
+		t.Errorf("the completer was asked about %q, want %q", asked, "/comp")
+	}
+	if got != "/compact" {
+		t.Errorf("got %q, want %q", got, "/compact")
+	}
+}
+
+// A completer that chooses nothing leaves the line as it stands. The key is
+// not turned into a tab, since the reader asked for a completion rather than
+// for whitespace.
+func TestReadLineTabLeavesLineWhenNothingChosen(t *testing.T) {
+	le := newLineReader("/mo\t\r")
+	le.OnTab = func(string) string { return "" }
+	got, err := le.ReadLine()
+	if err != nil {
+		t.Fatalf("ReadLine: %v", err)
+	}
+	if got != "/mo" {
+		t.Errorf("got %q, want the line unchanged", got)
+	}
+}
+
+// The line is reported after a Tab even when nothing was chosen, so that a
+// report the completer wrote is drawn by the same path that draws any other
+// keystroke.
+func TestReadLineTabReportsTheLine(t *testing.T) {
+	le := newLineReader("/mo\t\r")
+	var seen []string
+	le.OnChange = func(line string) { seen = append(seen, line) }
+	le.OnTab = func(string) string { return "" }
+	if _, err := le.ReadLine(); err != nil {
+		t.Fatalf("ReadLine: %v", err)
+	}
+	if len(seen) == 0 {
+		t.Fatal("OnChange was never called, so a report would never be drawn")
+	}
+	if last := seen[len(seen)-1]; last != "/mo" {
+		t.Errorf("last reported line = %q, want %q", last, "/mo")
+	}
+}
+
+// A Tab pressed part way through a multibyte rune abandons it rather than
+// committing half a character, since the reader asked for a word rather than
+// for the rest of a character.
+func TestReadLineTabAbandonsPartialRune(t *testing.T) {
+	// The first byte of the two byte sequence for U+00E9, then a Tab.
+	le := newLineReader("a\xC3\t\r")
+	le.OnTab = func(line string) string { return line + "z" }
+	got, err := le.ReadLine()
+	if err != nil {
+		t.Fatalf("ReadLine: %v", err)
+	}
+	if strings.ContainsRune(got, 0xFFFD) {
+		t.Errorf("got %q, want no replacement character from an abandoned rune", got)
+	}
+	if got != "az" {
+		t.Errorf("got %q, want %q", got, "az")
+	}
+}
