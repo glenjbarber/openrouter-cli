@@ -37,6 +37,11 @@ so that a later change does not silently reverse it.
 - FreeBSD is the primary target.
 - Best effort is made for other Unix-like systems.
 - macOS is a supported target.
+- DragonFly was a supported target until the saved sessions needed a database
+  driver. The driver carries an emulation of the C library and that emulation
+  has no DragonFly in it, so `/save` could not work there at all. The target is
+  dropped rather than half supported, and the reason is recorded rather than
+  left to be discovered.
 - Windows is a possible later target and is not yet committed to. It does not
   build, and the reason is recorded rather than left to be discovered: the
   device comparison in the bootstrap loader reads `syscall.Stat_t`, which does
@@ -565,12 +570,6 @@ so that a later change does not silently reverse it.
   `make crossbuild` sets `GOOS` without `CGO_ENABLED` and therefore leaves cgo
   off: a driver that compiles C would produce a binary that builds for every
   target and then fails at the first query.
-- Its emulation of the C library carries no DragonFly. Rather than drop a
-  supported target, that one build answers that it has no driver and says so.
-  The commands stay in the vocabulary, since a reader who typed `/save` on a
-  platform where it cannot work should be told that, rather than being told the
-  command is unknown, which is a different problem to send them chasing. This
-  follows the `termios_unsupported.go` precedent.
 - Files are held in `~/.openrouter-cli/sessions`, not beside the configuration
   file. The two hold different things: the configuration is written at setup and
   read thereafter, a session whenever the reader asks for one. Keeping them
@@ -616,7 +615,17 @@ so that a later change does not silently reverse it.
   turn in flight is not in it, since a turn is recorded only once its answer has
   arrived.
 - A file that is some other database, or one written by a later version, is
-  reported rather than read as an empty conversation. An empty one loaded over a
+  reported rather than read as an empty conversation.
+- The driver cannot be built for DragonFly, so that platform was dropped rather
+  than shipped with a command that reports it has no driver. Cgo was offered as
+  a way out and was measured rather than assumed: `mattn/go-sqlite3` builds and
+  runs on the host, but no cross C toolchain is installed here, so
+  `CGO_ENABLED=1` fails inside `runtime/cgo` for every foreign target and a
+  cross-build gate that cannot cross-build stops meaning anything. There is no
+  newer pure Go release to bump to, the newest `modernc.org/libc` being the
+  version already in the tree. `github.com/ncruces/go-sqlite3` does build
+  everywhere without cgo, and was not adopted, since it costs a 12.4 MB binary
+  against 2.9 MB to store two tables. An empty one loaded over a
   real one would look like a session the reader had.
 
 ### Delegates
@@ -976,18 +985,6 @@ so that a later change does not silently reverse it.
   sessions. It is the one departure from the no-dependency rule the rest of the
   client is built on, and it was taken so that a saved file could be opened and
   read by any SQLite tool rather than only by this client.
-- DragonFly carries no driver for the saved format, and that build answers that
-  it has none rather than dropping a target the project supports. Cgo was
-  offered as a way out and was measured rather than assumed:
-  `mattn/go-sqlite3` builds and runs on the host, but no cross C toolchain is
-  installed, so `CGO_ENABLED=1` fails inside `runtime/cgo` for freebsd, linux,
-  netbsd, openbsd and dragonfly alike, and a cross-build gate that cannot
-  cross-build stops meaning anything. There is no newer pure Go release to
-  bump to: the newest `modernc.org/libc` is the version already in the tree
-  and carries no DragonFly. `github.com/ncruces/go-sqlite3` does build and vet
-  clean on all six targets without cgo, and was not adopted, since it costs a
-  12.4 MB binary against 2.9 MB to store two tables. The compromise is kept
-  and `/save` says so on that platform.
 - These tools are tracked as module tool dependencies in `go.mod` and are run
   through `go tool`: `staticcheck`, `errcheck`, `gosec`, `govulncheck`,
   `protoc-gen-go`, and `protoc-gen-go-grpc`.

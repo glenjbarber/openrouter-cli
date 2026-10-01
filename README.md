@@ -310,7 +310,7 @@ The BSD family and System V spell the termios ioctls differently, so those names
 live in build-tagged files. `make crossbuild` compiles every supported target,
 and continuous integration runs it, since a change to the terminal layer
 otherwise breaks only the platforms that are not being developed on. FreeBSD,
-Linux, macOS, NetBSD, OpenBSD, and DragonFly build. Windows does not, and
+Linux, macOS, NetBSD, and OpenBSD build. Windows does not, and
 `AGENTS.md` records why.
 
 The keys the line editor acts on are:

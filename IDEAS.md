@@ -127,23 +127,19 @@ because it is pure Go: `make crossbuild` sets `GOOS` without `CGO_ENABLED`,
 so a driver that compiles C would produce a binary that builds for every
 target and then fails at the first query.
 
-**DragonFly has no driver.** The pure Go driver carries an emulation of the C
-library and that emulation has no DragonFly in it, so `make crossbuild` fails
-for that target. Rather than drop a target the project supports, the build
-answers that it has no driver. The commands stay in the vocabulary and say so,
-on the `termios_unsupported.go` precedent: a reader who typed `/save` on a
-platform where it cannot work is told that, rather than being told the command
-is unknown, which is a different problem to send them chasing.
-
-**Cgo was raised as the way out of that and measured rather than assumed.** It
-gives DragonFly nothing and it costs the other five targets:
-`mattn/go-sqlite3` builds and runs on the host, but `CC` is `cc` for every
-foreign `GOOS` and no cross C toolchain is installed, so `runtime/cgo` fails for
-freebsd, linux, netbsd, openbsd and dragonfly alike. There is no newer pure Go
-driver to bump to either, the newest `modernc.org/libc` being the version
-already in the tree. `github.com/ncruces/go-sqlite3` does build on all six
-targets with no cgo, and was not taken: 12.4 MB against 2.9 MB for two tables
-is a size the maintainer declined. **SETTLED** the compromise stands.
+**SETTLED DragonFly was dropped.** The pure Go driver carries an emulation of
+the C library and that emulation has no DragonFly in it, so `make crossbuild`
+failed for that target. Cgo was raised as the way out and measured rather than
+assumed: `mattn/go-sqlite3` builds and runs on the host, but `CC` is `cc` for
+every foreign `GOOS` and no cross C toolchain is installed, so `runtime/cgo`
+fails for freebsd, linux, netbsd, openbsd and dragonfly alike, and a
+cross-build gate that cannot cross-build stops meaning anything. There is no
+newer pure Go driver to bump to either, the newest `modernc.org/libc` being the
+version already in the tree. `github.com/ncruces/go-sqlite3` does build on
+every remaining target with no cgo, and was not taken: 12.4 MB against 2.9 MB
+for two tables is a size the maintainer declined over a sixth platform. The
+target, its build tags and the fallback that answered that it had no driver are
+all gone.
 
 **PROVISIONAL** The choices below are the implementer's, not the maintainer's.
 
