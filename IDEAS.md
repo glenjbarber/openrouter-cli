@@ -11,7 +11,7 @@ itself.
 
 ## Last updated
 
-At `main` commit `5dcf254`, sixty-eight commits ahead of `origin/main` and not
+At `main` commit `2026302`, sixty-nine commits ahead of `origin/main` and not
 pushed. None of the audit work is pushed; the user handles every push.
 
 The eight commits were rewritten once, before the audit, to add a missing
