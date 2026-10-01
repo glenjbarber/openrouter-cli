@@ -214,17 +214,24 @@ func parse(path string) (*Config, error) {
 		return nil, fmt.Errorf("%s is not valid JSON: %w", path, err)
 	}
 
+	// A key of nothing but whitespace is not a credential. The value itself is
+	// passed on exactly as written, since altering what goes on the wire is
+	// not this loader's decision, but a key that is blank once trimmed is
+	// treated as unset so that the interface reports an absent key rather than
+	// sending one the backend will reject.
+	unset := strings.TrimSpace(raw.APIKey) == ""
+
 	cfg := &Config{
 		APIKey:  raw.APIKey,
 		Model:   strings.TrimSpace(raw.Model),
 		Bell:    raw.Bell,
 		URLBase: resolveURLBase(raw.URLBase),
 		Path:    path,
-		Skipped: raw.SetupKey && raw.APIKey == "",
+		Skipped: raw.SetupKey && unset,
 		Mouse:   raw.Mouse,
 	}
 
-	if cfg.APIKey == "" {
+	if unset {
 		// The setup state is reported as an error so that a caller can stand in
 		// a configuration, and every value the file does carry travels with it.
 		// A preference dropped here would make a file that was read look as
