@@ -15,6 +15,7 @@ repository, including this one.
 - Apostrophes indicating ownership are acceptable.
 - Speak in third person, passive voice.
 - Keep commit logs less than 72 characters long.
+- Every commit message carries the trailer `Co-Authored-By: Space Bunny Alpha`.
 
 The wording rules apply to prose. Code identifiers, comments in code, commit
 messages, and identifiers inherited from an external API are exempt, since
