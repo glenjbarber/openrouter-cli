@@ -1,4 +1,4 @@
-//go:build darwin || dragonfly || freebsd || netbsd || openbsd
+//go:build freebsd
 
 package tui
 
@@ -13,6 +13,15 @@ import (
 // The BSD family spells the window-size request without the G that System V
 // uses, in the same way it spells the termios requests with a trailing A.
 const ioctlSetWindowSize = syscall.TIOCSWINSZ
+
+// This file is FreeBSD only. The other BSD platforms do not spell the pty
+// requests the same way, and Go does not carry TIOCPTMASTER or TIOCGPTN for
+// them, so a shared file would not compile on them. The pty is a test
+// convenience rather than a client behaviour, so the other platforms skip the
+// resize tests instead of carrying a per-platform copy of this.
+//
+// The client itself still supports every one of them. Only this test helper
+// does, and nothing in the client is conditioned on it.
 
 // FreeBSD reaches the number of the slave through TIOCPTMASTER rather than the
 // TIOCSPTLCK that System V uses, so the unlock and the read are one call here.
