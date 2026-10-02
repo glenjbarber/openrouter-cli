@@ -91,11 +91,14 @@ func (st hintState) hints() []string {
 	if st.busy {
 		return []string{"Enter queue", "Esc stop and send"}
 	}
-	// The compose state names what sends and what breaks the line. Ctrl-J is
-	// named rather than left out, since it is the only key that breaks a line
-	// on a terminal that sends nothing for shift with enter, and a reader
-	// holding a multi-line message has no way to find it otherwise.
-	return []string{"Send [enter]", "[ctrl]+j newline"}
+	// The compose state names what sends, what breaks the line, and what pages
+	// the pane. Ctrl-J is named rather than left out, since it is the only key
+	// that breaks a line on a terminal that sends nothing for shift with enter,
+	// and a reader holding a multi-line message has no way to find it
+	// otherwise. The shifted arrows are named for the same reason: a reader
+	// holding a long conversation back and looking for a way to move through
+	// it has no way to find them either.
+	return []string{"Send [enter]", "[ctrl]+j newline", "[shift]+arrows page"}
 }
 
 // hintLine renders the keys that act onto one row.
