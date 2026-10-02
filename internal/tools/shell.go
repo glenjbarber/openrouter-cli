@@ -52,6 +52,12 @@ const shellWaitDelay = 500 * time.Millisecond
 // one is approving a program rather than a location that could be replaced
 // underneath them.
 //
+// jq sits with sed and awk above it, on the same reasoning: it reads a file and
+// prints part of it. `jq .fields file.json` is a read of a JSON file rather
+// than a change to one. It cannot reach a pipe, since the arguments go to it as
+// an array and no shell is read, it runs no other program, and it opens no
+// connection.
+//
 // Every name on this list resolves by bare name through PATH, as go, make and
 // git already do. That is what makes the list portable rather than pinned to
 // one host, and it is also what a reader should know before approving one: the
@@ -74,6 +80,7 @@ var shellPermitted = []string{
 	"tail",
 	"sed",
 	"awk",
+	"jq",
 	"ps",
 	"errcheck",
 	"gosec",
@@ -99,7 +106,7 @@ const shellParameters = `{
   "properties": {
     "command": {
       "type": "string",
-      "description": "The program to run, such as go. It must be one of: go, gofmt, make, git, ls, cat, pwd, echo, grep, find, wc, head, tail, sed, awk, ps, errcheck, gosec, govulncheck, protoc-gen-go, protoc-gen-go-grpc, staticcheck. Anything else is refused before it runs."
+      "description": "The program to run, such as go. It must be one of: go, gofmt, make, git, ls, cat, pwd, echo, grep, find, wc, head, tail, sed, awk, jq, ps, errcheck, gosec, govulncheck, protoc-gen-go, protoc-gen-go-grpc, staticcheck. Anything else is refused before it runs."
     },
     "args": {
       "type": "array",
