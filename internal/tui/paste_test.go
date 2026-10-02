@@ -141,7 +141,7 @@ func TestPasteNilCallback(t *testing.T) {
 // The pasted lines are shown above the prompt, since a paste cannot fit on one
 // row.
 func TestRenderShowsPastedLines(t *testing.T) {
-	lines := Render(Frame{Pasted: []string{"one", "two"}}, 12, 40)
+	lines := Render(Frame{Pasted: []string{"one", "two"}}, 24, 40)
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "one") || !strings.Contains(joined, "two") {
 		t.Errorf("frame is missing the pasted lines:\n%s", joined)

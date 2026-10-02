@@ -193,23 +193,24 @@ func TestRenderSeparatesInputFromOutput(t *testing.T) {
 		t.Fatal("no prompt in the frame")
 	}
 
-	// The prompt sits directly under the rule that closes the bar, and the bar
-	// is between two rules and a blank on each side, so a reply is not read as
-	// part of the prompt. The rows above the prompt are the rule, a blank, the
-	// bar, a blank and a rule, and then the conversation.
-	if !isRuleRow(lines[promptAt-1]) {
-		t.Errorf("the row above the prompt is %q, want a rule", lines[promptAt-1])
+	// The bar is between two rules and a blank on each side of each rule, so a
+	// reply is not read as part of the prompt. The rows above the prompt are a
+	// blank, a rule, a blank, the bar, a blank, a rule, a blank, and then the
+	// conversation.
+	if lines[promptAt-1] != "" {
+		t.Errorf("the row above the prompt is %q, want a blank", lines[promptAt-1])
 	}
-	if !strings.Contains(lines[promptAt-3], "Provider") {
-		t.Errorf("the row three above the prompt is %q, want the bar", lines[promptAt-3])
+	if !isRuleRow(lines[promptAt-2]) {
+		t.Errorf("the row two above the prompt is %q, want a rule", lines[promptAt-2])
 	}
-	if !isRuleRow(lines[promptAt-5]) {
-		t.Errorf("the row five above the prompt is %q, want a rule", lines[promptAt-5])
+	if !strings.Contains(lines[promptAt-4], "Provider") {
+		t.Errorf("the row four above the prompt is %q, want the bar", lines[promptAt-4])
 	}
-	// A reply must not sit directly against the prompt.
-	if promptAt >= 6 && strings.HasPrefix(lines[promptAt-6], ">") {
-		t.Errorf("the row before the division is %q, want the conversation",
-			lines[promptAt-6])
+	if !isRuleRow(lines[promptAt-6]) {
+		t.Errorf("the row six above the prompt is %q, want a rule", lines[promptAt-6])
+	}
+	if lines[promptAt-7] != "" {
+		t.Errorf("the row seven above the prompt is %q, want a blank", lines[promptAt-7])
 	}
 }
 

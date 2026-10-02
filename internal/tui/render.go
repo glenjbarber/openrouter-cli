@@ -371,26 +371,28 @@ func truncate(s string, width int) string {
 // The rows below the pane are the division, the pasted rows, the prompt and the
 // foot.
 //
-// The division is the rule, a blank, the status bar for what changes on the fly,
-// another blank, and a second rule. It sits directly under the pane and directly
-// above the input block, so the pane and the input block are each divided from
-// the bar by a rule and the bar is given air by the blanks around it.
+// The division is a blank, a rule, a blank, the status bar for what changes on
+// the fly, a blank, a second rule, and a blank. It sits between the pane and the
+// input block, so every rule in it is separated from the pane, the bar and the
+// input block by a blank row, as every other rule in the frame is.
 //
 // A terminal too short for the whole division keeps the bar and gives up the
 // rules and the blanks, since the bar carries the values and the rest is
-// decoration. One too short for even that has no bar at all.
+// decoration. A rule is never drawn without the blanks on both sides of it. One
+// too short for even the bar has no bar at all.
 const (
 	// inputRowsBare is the prompt and the row held under it, which is drawn
 	// only when the frame has not already filled the height.
 	inputRowsBare = 2
-	// divisionRowsFull is the rule, the blank, the bar, the blank and the rule.
-	divisionRowsFull = 5
+	// divisionRowsFull is the blank, the rule, the blank, the bar, the blank, the
+	// rule and the blank.
+	divisionRowsFull = 7
 	// divisionRowsBar is the bar alone.
 	divisionRowsBar = 1
 	// minHeightForDivision is the shortest terminal that holds the whole
 	// division: one row of header, one of pane, the division, the prompt, and
 	// the blank and the rule that close the foot.
-	minHeightForDivision = 10
+	minHeightForDivision = 12
 	// minHeightForBar is the shortest terminal that holds the bar on its own,
 	// on the same count with one row for the bar in place of the division.
 	minHeightForBar = 6
@@ -929,12 +931,11 @@ func renderStyled(f Frame, height, width int) ([]string, [][]span, int, int) {
 		put(cut, lineSpans...)
 	}
 
-	// The input box is separated from the conversation by a rule, the bar that
-	// carries what changes on the fly, and a second rule. The bar has a blank
-	// row above and below it, so that it reads as a line of its own rather than
-	// as the last row of the pane or the first of the input block. The rules
-	// sit directly against the pane above and the input block below, since the
-	// blanks around the bar are what give them air.
+	// The input box is separated from the conversation by a blank, a rule, a
+	// blank, the bar that carries what changes on the fly, a blank, a second
+	// rule, and a blank. Every rule has a blank on both sides of it, so that a
+	// rule reads as a division and not as a border of the pane or of the prompt,
+	// and the bar reads as a line of its own.
 	//
 	// On a terminal too short to hold the whole division the rules and the
 	// blanks are dropped and the bar is kept, since the bar carries values and
@@ -944,11 +945,13 @@ func renderStyled(f Frame, height, width int) ([]string, [][]span, int, int) {
 	switch division {
 	case divisionRowsFull:
 		r := rule(width)
+		put("")
 		put(r, wholeRow(r, roleChrome)...)
 		put("")
 		put(bar, wholeRow(bar, roleChrome)...)
 		put("")
 		put(r, wholeRow(r, roleChrome)...)
+		put("")
 	case divisionRowsBar:
 		put(bar, wholeRow(bar, roleChrome)...)
 	}

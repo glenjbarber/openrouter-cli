@@ -75,10 +75,10 @@ func paneRowCount(rows []string) int {
 	return n
 }
 
-// The rows of the frame, from the top, are the header, the pane, a rule, a
-// blank, the bar, a blank, a rule, and the input box. The rule below the pane
-// sits directly against it and the rule above the input box sits directly
-// against the prompt, since the blanks around the bar are what give them air.
+// The rows of the frame, from the top, are the header, the pane, a blank, a
+// rule, a blank, the bar, a blank, a rule, a blank, and the input box. Each rule
+// has a blank on both sides of it, so neither rule touches the pane or the
+// prompt.
 func TestTheFrameHasTheSplitRowSequence(t *testing.T) {
 	for _, width := range []int{40, 80, 120} {
 		for _, height := range []int{24, 30, 40, 60} {
@@ -108,13 +108,16 @@ func TestTheFrameHasTheSplitRowSequence(t *testing.T) {
 			if !isRuleRow(rows[bar+2]) {
 				t.Errorf("%s: the row two below the bar is %q, want a rule", name, rows[bar+2])
 			}
-			if prompt != bar+3 {
-				t.Errorf("%s: the prompt is on row %d, want it directly under the rule at row %d",
+			if rows[bar-3] != "" || rows[bar+3] != "" {
+				t.Errorf("%s: a rule touches the pane or the prompt: %q and %q", name, rows[bar-3], rows[bar+3])
+			}
+			if prompt != bar+4 {
+				t.Errorf("%s: the prompt is on row %d, want it one blank under the rule at row %d",
 					name, prompt, bar+2)
 			}
-			// The pane runs from under the header to the rule above the bar,
-			// with nothing between them.
-			if !strings.Contains(strings.Join(rows[top+4:bar-2], "\n"), "an answer") {
+			// The pane runs from under the header to the blank above the first
+			// rule of the division.
+			if !strings.Contains(strings.Join(rows[top+4:bar-3], "\n"), "an answer") {
 				t.Errorf("%s: the pane does not hold the reply:\n%s", name, strings.Join(rows, "\n"))
 			}
 
@@ -135,12 +138,15 @@ func TestTheFrameHasTheSplitRowSequence(t *testing.T) {
 	}
 }
 
-// The frame costs eighteen rows with nothing above the prompt: nine for the
-// header, five for the division, one for the prompt, two for the foot, and the
+// The frame costs twenty rows with nothing above the prompt: nine for the
+// header, seven for the division, one for the prompt, two for the foot, and the
 // one row the budget holds beneath the foot. The pane is given what is left.
-func TestTheFrameCostsEighteenRows(t *testing.T) {
-	const fixed = 9 + 5 + 1 + 2 + 1
-	for _, height := range []int{19, 20, 24, 30, 40, 60} {
+func TestTheFrameCostsTwentyRows(t *testing.T) {
+	const fixed = 9 + 7 + 1 + 2 + 1
+	if fixed != 20 {
+		t.Fatalf("the rows apart from the pane add up to %d, want 20", fixed)
+	}
+	for _, height := range []int{21, 22, 24, 30, 40, 60} {
 		for _, width := range []int{20, 80} {
 			rows := Render(marked(200), height, width)
 			if got := paneRowCount(rows); got != height-fixed {
@@ -204,6 +210,62 @@ func TestScrollingToTheTopFillsThePaneAtEveryHeight(t *testing.T) {
 	}
 }
 
+// Every rule in a full frame has a blank row on both sides of it. The two
+// exceptions are the rule on the first row, which has no row above it and sits
+// against the title, and the closing rule, which has the held blank row below it
+// or the end of the frame.
+func TestEveryRuleHasABlankOnBothSides(t *testing.T) {
+	for _, width := range []int{20, 40, 76, 120} {
+		for _, height := range []int{21, 22, 24, 30, 60} {
+			rows := Render(fullFrame(), height, width)
+			name := fmt.Sprintf("%dx%d", height, width)
+			rules := 0
+			for i, row := range rows {
+				if !isRuleRow(row) {
+					continue
+				}
+				rules++
+				if i == 0 {
+					continue
+				}
+				if rows[i-1] != "" {
+					t.Errorf("%s: the row above the rule at %d is %q, want a blank", name, i, rows[i-1])
+				}
+				if i+1 < len(rows) && rows[i+1] != "" {
+					t.Errorf("%s: the row below the rule at %d is %q, want a blank", name, i, rows[i+1])
+				}
+			}
+			// The first row, the one under the title, the one under the top bar,
+			// the two around the bar, and the closing rule.
+			if rules != 6 {
+				t.Errorf("%s: %d rules, want 6:\n%s", name, rules, strings.Join(rows, "\n"))
+			}
+		}
+	}
+}
+
+// At every height that holds the whole division, the rules around the bar have
+// a blank on both sides, whatever the header has had to give up. Below that the
+// rules are not drawn against the bar at all.
+func TestTheRulesAroundTheBarAreNeverDrawnWithoutBlanks(t *testing.T) {
+	for height := minHeightForBar; height <= 40; height++ {
+		rows := Render(fullFrame(), height, 80)
+		bar := rowWith(t, rows, "Provider:")
+		if height < minHeightForDivision {
+			if isRuleRow(rows[bar-1]) || (bar+1 < len(rows) && isRuleRow(rows[bar+1])) {
+				t.Errorf("height %d: a rule is drawn against the bar alone", height)
+			}
+			continue
+		}
+		for _, at := range []int{bar - 2, bar + 2} {
+			if !isRuleRow(rows[at]) || rows[at-1] != "" || rows[at+1] != "" {
+				t.Errorf("height %d: the rule at row %d has no blank on both sides:\n%s",
+					height, at, strings.Join(rows, "\n"))
+			}
+		}
+	}
+}
+
 // The values that change on the fly are in the bar above the input box and not
 // in the top bar, and the top bar keeps the rest.
 func TestTheMovedFieldsAreInTheInputBarOnly(t *testing.T) {
@@ -235,7 +297,7 @@ func TestTheMovedFieldsAreInTheInputBarOnly(t *testing.T) {
 // from the shortest that holds both, and the top bar is above the pane and the
 // other below it.
 func TestEachBarIsFoundByContentAtEveryHeight(t *testing.T) {
-	for height := 10; height <= 60; height++ {
+	for height := minHeightForBar; height <= 60; height++ {
 		rows := Render(marked(100), height, 100)
 		top := rowWith(t, rows, "Context:")
 		bar := rowWith(t, rows, "Provider:")
@@ -254,7 +316,10 @@ func TestEachBarIsFoundByContentAtEveryHeight(t *testing.T) {
 // the bar, and below that the bar goes too. The prompt is kept throughout and
 // the frame is never taller than the terminal.
 func TestTheDivisionGivesWayOnAShortTerminal(t *testing.T) {
-	for height := 1; height <= 14; height++ {
+	if minHeightForDivision != 12 || minHeightForBar != 6 {
+		t.Fatalf("the thresholds are %d and %d, want 12 and 6", minHeightForDivision, minHeightForBar)
+	}
+	for height := 1; height <= 26; height++ {
 		rows := Render(fullFrame(), height, 80)
 		name := fmt.Sprintf("height %d", height)
 		if len(rows) != height {
@@ -273,13 +338,18 @@ func TestTheDivisionGivesWayOnAShortTerminal(t *testing.T) {
 		}
 		switch {
 		case height >= minHeightForDivision:
-			if count != 1 || !isRuleRow(rows[prompt-1]) || !strings.Contains(rows[prompt-3], "Provider:") ||
-				!isRuleRow(rows[prompt-5]) {
+			if count != 1 || rows[prompt-1] != "" || !isRuleRow(rows[prompt-2]) || rows[prompt-3] != "" ||
+				!strings.Contains(rows[prompt-4], "Provider:") || rows[prompt-5] != "" ||
+				!isRuleRow(rows[prompt-6]) || rows[prompt-7] != "" {
 				t.Errorf("%s: the whole division is not above the prompt:\n%s", name, strings.Join(rows, "\n"))
 			}
 		case height >= minHeightForBar:
 			if count != 1 || !strings.Contains(rows[prompt-1], "Provider:") {
 				t.Errorf("%s: the bar alone is not directly above the prompt:\n%s", name, strings.Join(rows, "\n"))
+			}
+			// No rule is drawn without its blanks, so none borders the bar.
+			if at := prompt - 1; isRuleRow(rows[at-1]) {
+				t.Errorf("%s: a rule is drawn against the bar alone:\n%s", name, strings.Join(rows, "\n"))
 			}
 		default:
 			if count != 0 {
@@ -305,13 +375,13 @@ func TestTheInputBlockSitsUnderTheDivision(t *testing.T) {
 	rows := Render(f, 40, 80)
 
 	bar := rowWith(t, rows, "Provider:")
-	if !isRuleRow(rows[bar+2]) {
-		t.Fatalf("no rule closes the bar:\n%s", strings.Join(rows, "\n"))
+	if !isRuleRow(rows[bar+2]) || rows[bar+3] != "" {
+		t.Fatalf("no rule and blank close the bar:\n%s", strings.Join(rows, "\n"))
 	}
 	want := []string{"  pasted one", "  pasted two", "nothing matches", "Esc stops", "> typing"}
 	for i, w := range want {
-		if !strings.HasPrefix(rows[bar+3+i], w) {
-			t.Errorf("row %d of the input box = %q, want %q", i, rows[bar+3+i], w)
+		if !strings.HasPrefix(rows[bar+4+i], w) {
+			t.Errorf("row %d of the input box = %q, want %q", i, rows[bar+4+i], w)
 		}
 	}
 }
@@ -320,7 +390,7 @@ func TestTheInputBlockSitsUnderTheDivision(t *testing.T) {
 // than it, at any size, with every field filled in.
 func TestTheBarsFitEverySize(t *testing.T) {
 	for width := 1; width <= 100; width++ {
-		for _, height := range []int{5, 8, 10, 24} {
+		for _, height := range []int{5, 8, 10, 12, 24} {
 			rows := Render(fullFrame(), height, width)
 			if len(rows) > height {
 				t.Fatalf("%dx%d: %d rows", height, width, len(rows))

@@ -510,8 +510,10 @@ func TestRenderScrollPastTopFillsThePane(t *testing.T) {
 // The marker is what tells a reader the view is not at the bottom, since
 // nothing else on screen changes when it is scrolled.
 func TestRenderShowsScrollMarker(t *testing.T) {
-	f := Frame{Reply: []string{"one", "two", "three"}, Scroll: 1}
-	out := Render(f, 12, 60)
+	// The pane is four rows at this height, so the reply is longer than it and
+	// there is somewhere to scroll back to.
+	f := Frame{Reply: []string{"one", "two", "three", "four", "five", "six", "seven"}, Scroll: 1}
+	out := Render(f, 24, 60)
 	// The marker is on the title row rather than on a row of its own, since a
 	// row taken for it would resize the pane as the reader scrolled. The title
 	// is found by content, since the rule above it is the first row of the
@@ -530,8 +532,8 @@ func TestRenderShowsScrollMarker(t *testing.T) {
 		t.Errorf("the marker is on a row of its own rather than the title row")
 	}
 
-	if len(out) != 12 {
-		t.Errorf("len = %d, want 12, the frame must not resize", len(out))
+	if len(out) != 24 {
+		t.Errorf("len = %d, want 24, the frame must not resize", len(out))
 	}
 }
 
