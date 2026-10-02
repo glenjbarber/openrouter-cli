@@ -44,6 +44,9 @@ type Spawn struct {
 	done bool
 	// err carries the failure that ended it, if any.
 	err error
+	// onUsage is told what a response reported, so that its cost is added to
+	// the session total. It is nil for a worker built without a session.
+	onUsage usageFunc
 
 	mu sync.Mutex
 }
@@ -108,6 +111,9 @@ func (w *Spawn) Run(ctx context.Context, c *openrouter.Client, model string,
 			Messages: pending,
 			Tools:    w.specs,
 		}, func(e openrouter.StreamEvent) {
+			if e.Usage != nil && w.onUsage != nil {
+				w.onUsage(model, e)
+			}
 			if e.Err != nil {
 				w.mu.Lock()
 				if ctx.Err() != nil {
@@ -340,6 +346,7 @@ func (s *Session) startSpawn(task string) {
 
 	w := NewSpawn(s.conv, task, s.tools, specs)
 	w.log = log
+	w.onUsage = s.noteSideSpend
 
 	// The client is taken here rather than inside the goroutine, for the same
 	// reason a delegate takes it there.

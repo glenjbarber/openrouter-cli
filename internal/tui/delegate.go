@@ -33,6 +33,9 @@ type Delegate struct {
 	done bool
 	// err carries the failure that ended it, if any.
 	err error
+	// onUsage is told what a response reported, so that its cost is added to
+	// the session total. It is nil for a delegate built without a session.
+	onUsage usageFunc
 
 	mu sync.Mutex
 }
@@ -81,6 +84,9 @@ func (d *Delegate) Run(ctx context.Context, c *openrouter.Client, model string,
 		Model:    model,
 		Messages: history,
 	}, func(e openrouter.StreamEvent) {
+		if e.Usage != nil && d.onUsage != nil {
+			d.onUsage(model, e)
+		}
 		if e.Err != nil {
 			d.mu.Lock()
 			d.err = e.Err
@@ -129,6 +135,7 @@ func (s *Session) startDelegate(task string) {
 	}
 
 	d := NewDelegate(s.conv, task)
+	d.onUsage = s.noteSideSpend
 
 	// The model and the client are taken here rather than inside the
 	// goroutine. The conversation a delegate was branched from is replaced when

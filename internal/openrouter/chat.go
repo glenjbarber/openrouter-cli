@@ -61,6 +61,16 @@ type ChatRequest struct {
 type streamUsage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
+	// Cost is what the endpoint charged for the response, in US dollars. The
+	// endpoint reports it as the cost member of the usage object when the
+	// request asks for accounting, which every request here does.
+	//
+	// It is a pointer for the same reason the usage is: a reported zero is a
+	// free response and an absent figure is one the endpoint did not price,
+	// and a caller that cannot tell them apart would either count a paid
+	// response as free or show a free one as unknown. A figure that is not a
+	// usable amount, such as a negative one, is read as absent.
+	Cost *float64 `json:"cost"`
 }
 
 // UnmarshalJSON decodes the accounting without refusing a figure the platform
@@ -76,13 +86,34 @@ func (u *streamUsage) UnmarshalJSON(b []byte) error {
 	var wide struct {
 		PromptTokens     json.RawMessage `json:"prompt_tokens"`
 		CompletionTokens json.RawMessage `json:"completion_tokens"`
+		Cost             json.RawMessage `json:"cost"`
 	}
 	if err := json.Unmarshal(b, &wide); err != nil {
 		return err
 	}
 	u.PromptTokens = tokenCount(wide.PromptTokens)
 	u.CompletionTokens = tokenCount(wide.CompletionTokens)
+	u.Cost = costFigure(wide.Cost)
 	return nil
+}
+
+// costFigure reads the cost of a response from a JSON value in either of the
+// shapes a count has arrived in, a number or a string holding one.
+//
+// An absent or null value, a string that is not a figure, and a figure that is
+// negative or not finite are all nil. A cost the client cannot trust is shown
+// as unknown, which is the honest reading, rather than being added to a total
+// as though it were a price.
+func costFigure(raw json.RawMessage) *float64 {
+	text := scalarText(raw)
+	if text == "" {
+		return nil
+	}
+	v, err := strconv.ParseFloat(text, 64)
+	if err != nil || v < 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+		return nil
+	}
+	return &v
 }
 
 // tokenCount reads a count from a JSON value in any of the shapes the endpoint

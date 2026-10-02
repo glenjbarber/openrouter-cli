@@ -47,6 +47,14 @@ func (e *CompactionError) Error() string { return "compaction failed: " + e.Reas
 // paraphrases the intent is useless for continuing the work and one that
 // records decisions, constraints, and open questions is not.
 func Summarise(ctx context.Context, c *openrouter.Client, model string, msgs []openrouter.Message) (string, error) {
+	return SummariseCounted(ctx, c, model, msgs, nil)
+}
+
+// SummariseCounted is Summarise with a function that is told what the request
+// reported, so that the spend of a compaction reaches the session total. The
+// function is nil for a caller that has none, and is given the model that
+// answered, which is the default when none was named.
+func SummariseCounted(ctx context.Context, c *openrouter.Client, model string, msgs []openrouter.Message, onUsage usageFunc) (string, error) {
 	if len(msgs) == 0 {
 		return "", &CompactionError{Reason: "there is nothing to summarise"}
 	}
@@ -88,6 +96,9 @@ func Summarise(ctx context.Context, c *openrouter.Client, model string, msgs []o
 		Model:    model,
 		Messages: prompt,
 	}, func(e openrouter.StreamEvent) {
+		if e.Usage != nil && onUsage != nil {
+			onUsage(model, e)
+		}
 		if e.Err != nil {
 			failed = e.Err
 			return
@@ -175,7 +186,7 @@ func (s *Session) compact(manual bool) {
 	s.beginWork()
 	defer s.endWork()
 
-	summary, err := Summarise(s.ctx, s.client, s.conv.Model(), toSummarise)
+	summary, err := SummariseCounted(s.ctx, s.client, s.conv.Model(), toSummarise, s.noteSideSpend)
 	if err != nil {
 		s.addReplyKind(kindFailure, "(error) "+err.Error())
 		return

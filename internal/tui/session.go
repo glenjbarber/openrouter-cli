@@ -228,6 +228,14 @@ type Session struct {
 	// windows caches the context length of each model seen, so that the
 	// threshold can be evaluated without a call per message.
 	windows *contextLength
+	// cost is what the session has spent, summed over every request it has
+	// made. It is kept for the session rather than for a conversation, so
+	// clearing the conversation or starting a thread does not undo spending,
+	// and it is held in memory only.
+	cost costLedger
+	// prices is the catalogue price of each model, fetched when a response
+	// reports no cost of its own.
+	prices priceBook
 	// tools is what a request may offer the model, built once at startup from
 	// the working directory. It is held rather than built per turn, since a
 	// root is a descriptor opened once and a set built per turn would open one
@@ -1901,14 +1909,21 @@ func (s *Session) send(ctx context.Context, conv *Conversation, line string) {
 			s.addReplyKind(kindFailure, "(stopped)")
 		}
 
+		// The model is read once, so that the cost is estimated against the
+		// model the request was sent to even if the reader chooses another
+		// while it runs.
+		model := conv.Model()
 		err := s.client.Chat(ctx, openrouter.ChatRequest{
-			Model:    conv.Model(),
+			Model:    model,
 			Messages: conv.PendingMessages(pending, s.verbosityLevel()),
 			Tools:    specs,
 		}, func(e openrouter.StreamEvent) {
 			report.note(e)
 			if e.Usage != nil {
 				s.conv.AddTokens(e.Usage.PromptTokens, e.Usage.CompletionTokens)
+				// The cost is taken from the same event as the counters, so
+				// each round of a turn that calls tools is added as it ends.
+				s.noteSpend(ctx, model, e)
 				s.updateStatus()
 			}
 			if e.Err != nil {
@@ -2077,6 +2092,10 @@ func (s *Session) updateStatus() {
 			float64(s.conv.EstimatedTokens())/float64(window)*100)
 	}
 
+	// The cost is the session's, and is read from the ledger, which has a lock
+	// of its own.
+	cost := s.cost.text()
+
 	var tokensIn, tokensOut string
 	if s.conv.TokensIn() > 0 {
 		tokensIn = tokenCount(s.conv.TokensIn())
@@ -2105,6 +2124,7 @@ func (s *Session) updateStatus() {
 	s.frame.Status.Context = share
 	s.frame.Status.TokensIn = tokensIn
 	s.frame.Status.TokensOut = tokensOut
+	s.frame.Status.Cost = cost
 	s.frame.Status.Approval = s.approvalLabel()
 	s.mu.Unlock()
 }

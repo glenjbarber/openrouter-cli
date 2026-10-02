@@ -19,6 +19,10 @@ type Status struct {
 	// figure against a limit. It is not the conversation context, which is the
 	// share of the model window a message occupies.
 	Credits string
+	// Cost is what the session has spent, in US dollars, as the ledger reports
+	// it. It is empty until a response has reported usage, and it carries a
+	// leading tilde when it is not wholly what the endpoint charged.
+	Cost string
 	// Context is the share of the model window the conversation occupies. It
 	// is a percentage rather than a figure, since what matters is how close
 	// the conversation is to the point where it must be compacted.
@@ -48,6 +52,7 @@ var fields = []struct {
 	{"Model", func(s Status) string { return s.Model }},
 	{"Status", func(s Status) string { return s.State }},
 	{"Credits", func(s Status) string { return s.Credits }},
+	{"Cost", func(s Status) string { return s.Cost }},
 	{"Context", func(s Status) string { return s.Context }},
 	{"In", func(s Status) string { return s.TokensIn }},
 	{"Out", func(s Status) string { return s.TokensOut }},
@@ -93,11 +98,12 @@ func StatusLine(s Status, width int) string {
 // too narrow.
 //
 // The order is by how much a reader loses, not by where the field sits. The
-// token counters go before the allowance, since a running total is the figure
-// most often watched, and the host goes before either, since it does not change
+// token counters go before the allowance and the cost, since a running total is
+// the figure most often watched, and the host goes before any of them, since it
+// does not change
 // while the session runs. Dropping by position instead would remove whichever
 // field happened to be last, which was the token count.
-var dropOrder = []string{"In", "Out", "Approval", "Credits", "Context", "Status", "Model"}
+var dropOrder = []string{"In", "Out", "Approval", "Credits", "Cost", "Context", "Status", "Model"}
 
 // trimToWidth removes fields until the line fits, sacrificing dropOrder first.
 func trimToWidth(parts []string, sep string, width int) string {
