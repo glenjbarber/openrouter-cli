@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/glenjbarber/openrouter-cli/internal/config"
 	"github.com/glenjbarber/openrouter-cli/internal/tools"
@@ -311,6 +312,17 @@ func (s *Session) questionKey() {
 		return
 	}
 
+	// The reader is given a moment before the first key is taken. The question
+	// is painted at once rather than through the coalescing interval, so the
+	// reader has it on screen, but a repaint is not the same as the reader
+	// having read it. A key pressed in the moment between the two would approve
+	// a program, or refuse one, over whatever the reader was typing.
+	//
+	// The wait is here rather than in the caller, since a question the reader
+	// has not seen cannot be answered, and it is short enough not to be felt by
+	// the reader who has been waiting for the question.
+	time.Sleep(questionFocusDelay)
+
 	b, err := s.editor.ReadByte()
 	if err != nil {
 		// A reader who interrupted, or whose input ended, approved nothing.
@@ -434,3 +446,10 @@ func (s *Session) setApprovalMode(mode approvalMode) {
 	s.approvals.setMode(mode)
 	s.mu.Unlock()
 }
+
+// questionFocusDelay is how long a question waits before its first key is taken.
+//
+// It closes the gap between the question being on the screen and the reader
+// having read it. Without it a reader mid-sentence when a question arrives has
+// their next keystroke taken as an answer to a question they had not read.
+const questionFocusDelay = 120 * time.Millisecond

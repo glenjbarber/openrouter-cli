@@ -152,21 +152,25 @@ func completionSession() *Session {
 // editor to compose in place of what was typed.
 func TestCompleteLineCompletesAUniquePrefix(t *testing.T) {
 	s := completionSession()
-	if got := s.completeLine("/comp"); got != "/compact" {
-		t.Errorf("completing /comp gave %q, want %q", got, "/compact")
+	// A completed command carries the space that separates it from what
+	// follows, so a reader who presses Tab and then Enter sends the line.
+	if got := s.completeLine("/comp"); got != "/compact " {
+		t.Errorf("completing /comp gave %q, want %q", got, "/compact ")
 	}
 	if len(s.frame.Reply) != 0 {
 		t.Errorf("a completion that chose a word wrote to the pane: %q", s.frame.Reply)
 	}
 }
 
-// An ambiguous prefix is listed rather than guessed at, and the line is left as
-// it stands. Choosing one of them would complete to a command the reader did
-// not ask for.
+// An ambiguous prefix completes to the first match and lists the rest, since a
+// reader pressing Tab is asking for a word and a reader who wanted the choices
+// still gets them.
 func TestCompleteLineListsAnAmbiguousPrefix(t *testing.T) {
 	s := completionSession()
-	if got := s.completeLine("/mo"); got != "" {
-		t.Errorf("completing /mo gave %q, want the line unchanged", got)
+
+	got := s.completeLine("/mo")
+	if got != "/models " {
+		t.Errorf("completing /mo gave %q, want the first match", got)
 	}
 	body := strings.Join(s.frame.Reply, "\n")
 	for _, want := range []string{"/models", "/model", "/mouse"} {
@@ -244,11 +248,12 @@ func TestCompleteLineIsNeverSilent(t *testing.T) {
 // which is a bare single word rather than a word inside a message.
 func TestCompleteLineOffersConfigurationOptions(t *testing.T) {
 	s := completionSession()
-	if got := s.completeLine("OPENROUTER_MOUSE"); got != "OPENROUTER_MOUSE" {
+	// A completed option carries the trailing space, as a command does.
+	if got := s.completeLine("OPENROUTER_MOUSE"); got != "OPENROUTER_MOUSE " {
 		t.Errorf("completing an option that was already whole gave %q", got)
 	}
-	if got := s.completeLine("OPENROUTER_B"); got != "OPENROUTER_BELL" {
-		t.Errorf("completing OPENROUTER_B gave %q, want %q", got, "OPENROUTER_BELL")
+	if got := s.completeLine("OPENROUTER_B"); got != "OPENROUTER_BELL " {
+		t.Errorf("completing OPENROUTER_B gave %q, want %q", got, "OPENROUTER_BELL ")
 	}
 	for _, line := range []string{"hello OPENRO", "what is a model OPENROUTER_MOUSE"} {
 		s := completionSession()
