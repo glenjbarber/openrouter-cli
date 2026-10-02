@@ -292,10 +292,17 @@ const maxHistory = 100
 // message, so a block left in the editor could never be delivered by the
 // filter, and would instead be prepended to whatever was composed next.
 func (le *LineEditor) ReadByte() (byte, error) {
-	b, err := le.readKey()
-	if len(le.pendingKeys) > 0 {
-		le.pendingKeys = le.pendingKeys[:0]
+	for {
+		b, haveByte, err := le.readKey()
+		if len(le.pendingKeys) > 0 {
+			le.pendingKeys = le.pendingKeys[:0]
+		}
+		if !haveByte && err == nil {
+			// Only key sequences arrived, and the filter takes characters
+			// only, so the next block is read.
+			continue
+		}
+		le.pasted = nil
+		return b, err
 	}
-	le.pasted = nil
-	return b, err
 }

@@ -256,24 +256,17 @@ func (le *LineEditor) chunkFor() []byte {
 // from ending the session, since every report opens with a bare escape and a
 // lone escape is an interrupt. Reading a byte at a time would see that opening
 // escape on its own, which is exactly the failure this avoids.
-func (le *LineEditor) readKey() (byte, error) {
+//
+// The byte is reported with whether there is one. A block that held only key
+// sequences has queued them and has no byte to return, and the caller acts on
+// the queue and calls again. Reading on from here instead would block on the
+// terminal with the keys still queued, so an arrow pressed alone would do
+// nothing until another key arrived, and would then be taken for typing.
+func (le *LineEditor) readKey() (byte, bool, error) {
 	for {
-		// A key already queued from a sequence is returned before anything
-		// else is read.
-		//
-		// The queue is drained in the line loop, after this returns, so
-		// returning a byte here while a sequence is queued would leave the
-		// sequence waiting for the next byte to arrive. A reader pressing a
-		// shifted arrow and getting nothing until they also pressed enter
-		// had exactly that: the arrow was read, queued, and left there.
-		if len(le.pendingKeys) > 0 {
-			key := le.pendingKeys[0]
-			le.pendingKeys = le.pendingKeys[1:]
-			return key, nil
-		}
 		if len(le.buf) == 0 {
 			if err := le.fill(); err != nil {
-				return 0, err
+				return 0, false, err
 			}
 		}
 		for len(le.buf) > 0 {
@@ -305,6 +298,12 @@ func (le *LineEditor) readKey() (byte, error) {
 			// is held on the same terms and is handed back as a key once the
 			// hold times out, which is what lets it interrupt.
 			if le.holdable() && (mousePrefix(le.buf) || pastePrefix(le.buf)) {
+				// A key already queued is acted on before the wait, since the
+				// wait is bounded but not short, and a key that is held up
+				// behind it is a key that seems not to have been pressed.
+				if len(le.pendingKeys) > 0 {
+					return 0, false, nil
+				}
 				if err := le.fillHeld(); err != nil {
 					// Nothing more arrived before the deadline, so the
 					// prefix was never a report. The bytes are handed back
@@ -352,7 +351,12 @@ func (le *LineEditor) readKey() (byte, error) {
 			}
 			b := le.buf[0]
 			le.buf = le.buf[1:]
-			return b, nil
+			return b, true, nil
+		}
+		// The block is spent and held keys are queued, so they are handed to
+		// the caller to act on. This is the point the read used to block at.
+		if len(le.buf) == 0 && len(le.pendingKeys) > 0 {
+			return 0, false, nil
 		}
 		// The buffer holds a prefix that was not completed. The bytes are
 		// handed back as keys, which is what a lone escape and an arrow are.
@@ -360,17 +364,17 @@ func (le *LineEditor) readKey() (byte, error) {
 			b := le.buf[0]
 			le.buf = le.buf[1:]
 			le.held = false
-			return b, nil
+			return b, true, nil
 		}
 
 		// The block held no key to return, which is what a block of mouse
 		// reports looks like. The next block is read rather than returning
 		// nothing, since an empty key would end the line.
 		if err := le.fill(); err != nil {
-			return 0, err
+			return 0, false, err
 		}
 		if len(le.buf) == 0 {
-			return 0, io.EOF
+			return 0, false, io.EOF
 		}
 	}
 }
@@ -452,7 +456,7 @@ func (le *LineEditor) ReadLine() (string, error) {
 	}()
 
 	for {
-		b, err := le.readKey()
+		b, haveByte, err := le.readKey()
 
 		// Every special key read on the way to this byte is acted on before
 		// the byte is handled, so that an arrow sharing a read block with a
@@ -482,6 +486,13 @@ func (le *LineEditor) ReadLine() (string, error) {
 				return "", ErrEndOfInput
 			}
 			return out.String(), err
+		}
+
+		// A block of keys with no byte after them has been acted on above and
+		// has nothing further to handle, so the next block is read. The
+		// question is not offered a byte that was never read.
+		if !haveByte {
+			continue
 		}
 
 		// A key is offered to whatever is waiting for one before it is acted
