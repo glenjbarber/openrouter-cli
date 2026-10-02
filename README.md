@@ -182,8 +182,9 @@ while a request, a compaction, or a connection test is in progress, and the
 status field reads `Working` for the same period. The twiddle is the one part of
 the frame drawn in colour: it scrolls through the six primaries, taking four
 seconds to come round, so an indicator that never changes is not one a reader
-learns to look past. The colour is confined to the figure itself, so selecting
-the pane copies the text with no escape sequence in it. A stream that fails
+learns to look past. The colour covers the figure and the word beside it, and is
+reset before the next row, so selecting the pane copies the text with no escape
+sequence in it. A stream that fails
 partway keeps the text received before the failure and reports the error beneath
 it.
 

@@ -1136,9 +1136,12 @@ so that a later change does not silently reverse it.
   the renderer as plain text with the bytes a terminal would act on removed, and
   a sequence inserted before that would be stripped along with the ones a model
   sent. The screen is the one place that writes bytes rather than text.
-- The sequence is written around the twiddle and reset immediately after it, so
-  the word beside it is not coloured and a selection of the pane carries the
-  characters rather than the colour.
+- The sequence covers the whole row, the twiddle and the word beside it alike,
+  and is reset before the next row is drawn. The row is an indicator rather than
+  prose: it is written by the client rather than by a model, it is on screen only
+  while work is in progress, and the next frame replaces it. A selection of the
+  pane carries the characters rather than the colour either way, since the
+  sequence is written by the screen and is not part of the row.
 - The twiddle row is found in the finished frame rather than tracked through the
   trims the pane applies. The pane drops lines from the front and adds blanks at
   the back, so an index moved by hand through both is a second thing to keep
