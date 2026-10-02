@@ -91,6 +91,11 @@ type Session struct {
 	// It is guarded by mu with the rest of the frame, since the spinner
 	// goroutine reads it on every frame.
 	startedAt time.Time
+	// panes is the numbered list of panes, with the main conversation as pane
+	// 0 and the index of the one being shown. It is guarded by mu. The zero
+	// value already holds pane 0, so a session assembled without it, as the
+	// tests do, shows the main conversation.
+	panes paneSet
 	// scroll is how many lines the pane is scrolled up from the newest
 	// output. Zero means the view is following the bottom. It is guarded by
 	// mu rather than by a lock of its own, since it is read by the renderer
