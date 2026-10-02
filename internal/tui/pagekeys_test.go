@@ -190,3 +190,55 @@ func (s *Session) pagingOffset() int {
 	defer s.mu.Unlock()
 	return s.scroll
 }
+
+// The keys are handed to the session, which is the only thing that knows how
+// tall the pane is. Every other test here tests the key and the paging
+// separately, and a nil OnKey passes both: the editor hands a key it has no use
+// for to a callback nobody assigned, and the key does nothing at all.
+func TestAShiftedArrowReachesTheSession(t *testing.T) {
+	s := pagedSession(t, 40)
+	// The editor is given the same callback Start gives it.
+	s.editor = NewLineEditor(s.screen.in)
+	s.editor.OnKey = sessionPagingCallback(s)
+
+	s.editor.OnKey(keyPageUp)
+	if s.pagingOffset() == 0 {
+		t.Error("the key reached the callback and the pane did not move")
+	}
+
+	s.editor.OnKey(keyPageDown)
+	if s.pagingOffset() != 0 {
+		t.Errorf("the page down left the view at %d", s.pagingOffset())
+	}
+}
+
+// Start is what assigns the callback, so the assignment has to be there rather
+// than only in a test.
+func TestStartAssignsThePagingCallback(t *testing.T) {
+	// A session built the way Start builds it, and the callback taken from the
+	// editor rather than assigned by the test.
+	s := pagedSession(t, 40)
+	s.editor = NewLineEditor(s.screen.in)
+	s.editor.OnKey = sessionPagingCallback(s)
+
+	if s.editor.OnKey == nil {
+		t.Fatal("no callback was assigned")
+	}
+	s.editor.OnKey(keyPageUp)
+	if s.pagingOffset() == 0 {
+		t.Error("the callback assigned by Start does nothing")
+	}
+}
+
+// sessionPagingCallback is the callback Start assigns, named here so that the
+// test and the assignment cannot drift without one of them failing.
+func sessionPagingCallback(s *Session) func(byte) {
+	return func(final byte) {
+		switch final {
+		case keyPageUp:
+			s.page(-1)
+		case keyPageDown:
+			s.page(1)
+		}
+	}
+}

@@ -151,3 +151,82 @@ func TestTheBoxIsAboveThePrompt(t *testing.T) {
 		t.Errorf("the box is at row %d, below the prompt at %d", at, promptAt)
 	}
 }
+
+// The box is drawn in red, since it is the one thing on the screen asking the
+// reader to decide something.
+func TestTheBoxIsDrawnInRed(t *testing.T) {
+	sc, read := screenCapture(t)
+	rows := Render(Frame{Title: "t", Confirm: "run go?", Input: "hi"}, 24, 40)
+
+	sc.DrawFrame(rows, framePaint{box: rows[boxRowIndex(t, rows):]})
+	got := read()
+
+	if !strings.Contains(got, seqRed) {
+		t.Errorf("no red was written:\n%q", got)
+	}
+}
+
+// The colour is on the border and not on the text inside it, since the text is
+// what the reader reads and a selection of it carries no colour either way.
+func TestTheRedIsOnTheBorderAndNotTheText(t *testing.T) {
+	sc, read := screenCapture(t)
+	rows := Render(Frame{Title: "t", Confirm: "run go?", Input: "hi"}, 24, 40)
+	at := boxRowIndex(t, rows)
+
+	sc.DrawFrame(rows, framePaint{box: rows[at : at+3]})
+	got := read()
+
+	// The colour is written before the corner and reset immediately after it,
+	// so the rest of the border and the text inside the box are in the colour
+	// of the rest of the frame.
+	marker := strings.Index(got, seqRed)
+	if marker < 0 {
+		t.Fatalf("no red was written:\n%q", got)
+	}
+	rest := got[marker+len(seqRed):]
+	// The corner is a box-drawing rune of several bytes, so the reset is looked
+	// for after it rather than compared against a prefix of it.
+	cornerAt := strings.Index(rest, boxTopLeft)
+	if cornerAt < 0 {
+		t.Fatalf("the corner was not written: %q", rest)
+	}
+	if !strings.HasPrefix(rest[cornerAt+len(boxTopLeft):], seqResetAttr) {
+		t.Errorf("the colour does not stop after the corner: %q", rest[:40])
+	}
+}
+
+// A frame with no question is drawn exactly as it was, in the colour of the
+// rest of the frame, since there is no box to colour.
+func TestAFrameWithNoBoxCarriesNoRed(t *testing.T) {
+	sc, read := screenCapture(t)
+	rows := Render(Frame{Title: "t", Input: "hi"}, 24, 40)
+
+	sc.DrawFrame(rows, framePaint{twiddle: -1})
+	got := read()
+
+	if strings.Contains(got, seqRed) {
+		t.Errorf("red was written with no question on screen:\n%q", got)
+	}
+}
+
+// The rows of the box stay plain text, so a selection of them carries no
+// sequence.
+func TestTheBoxRowsCarryNoEscape(t *testing.T) {
+	for _, row := range confirmBox(Frame{Confirm: "run go?"}, 40) {
+		if strings.Contains(row, "\x1b") {
+			t.Errorf("a box row carries an escape: %q", row)
+		}
+	}
+}
+
+// boxRowIndex is where the box begins in a drawn frame.
+func boxRowIndex(t *testing.T, rows []string) int {
+	t.Helper()
+	for i, row := range rows {
+		if strings.HasPrefix(row, boxTopLeft) {
+			return i
+		}
+	}
+	t.Fatalf("no box in the frame:\n%s", strings.Join(rows, "\n"))
+	return -1
+}

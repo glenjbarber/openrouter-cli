@@ -314,6 +314,21 @@ func Start(out, in *os.File, title string) (*Session, error) {
 	// candidates is settled here and the editor is handed back the line to
 	// compose.
 	s.editor.OnTab = func(line string) string { return s.completeLine(line) }
+	// A shifted arrow pages the pane. It is handled here rather than in the
+	// editor because a page is a screenful and only the session knows how tall
+	// the pane is; the editor knows the composed line and nothing of the frame.
+	//
+	// Without this the keys are queued and nothing acts on them: the editor
+	// hands a key it has no use for to OnKey, and a nil OnKey is a key that
+	// does nothing at all.
+	s.editor.OnKey = func(final byte) {
+		switch final {
+		case keyPageUp:
+			s.page(-1)
+		case keyPageDown:
+			s.page(1)
+		}
+	}
 	// The wheel is read on the same goroutine as the keys, since a report
 	// arrives in the same stream. The callback moves the view and repaints,
 	// which is what makes the scroll happen while the line is still being
@@ -2330,8 +2345,10 @@ func (s *Session) paintNow() {
 	}
 	// The colour is pointed at the row the renderer reported. A frame with no
 	// twiddle reports none, and the screen draws it exactly as it always has.
-	s.screen.DrawTinted(rows, tint{
-		row:      twiddle,
+	//
+	s.screen.DrawFrame(rows, framePaint{
+		box:      frame.ConfirmBox,
+		twiddle:  twiddle,
 		sequence: frame.Tint,
 		figure:   frame.Spinner,
 	})

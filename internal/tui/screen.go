@@ -58,6 +58,10 @@ const (
 	// Bracketed paste is private mode 2004. Without it a pasted block is
 	// indistinguishable from typing, and a newline inside a paste would submit
 	// the line halfway through and send half of it as a message.
+	// 31 is the bright red of the eight-colour foreground, which is the
+	// colour a terminal already means by danger. It is in the eight every
+	// terminal has rather than in a cube one of them may not show.
+	seqRed      = "\x1b[31m"
 	seqPasteOn  = "\x1b[?2004h"
 	seqPasteOff = "\x1b[?2004l"
 	// Mouse reporting is turned on and off with the private mode 1000, which
