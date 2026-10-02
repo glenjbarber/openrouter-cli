@@ -247,6 +247,17 @@ so that a later change does not silently reverse it.
   Tokens used in and out, and hostname. `Reasoning` and `Branch` were removed
   along with `Approval`, and `Approval` has since come back with the shell.
 - Commands and configuration options are completed with the Tab key.
+- A completion that matched nothing is reported on the input block, beside the
+  prompt, and not in the pane. It is about what the reader is typing rather than
+  about the conversation, and a notice written among the replies becomes a line
+  of output they have to read back through the history to find.
+- A notice is a separate field rather than a replacement for the composed line,
+  since a reader who pressed Tab has not asked to lose what they typed.
+  Overwriting the line would lose a half composed command over a keystroke that
+  was only meant to help with one.
+- A notice is cleared by the next keystroke and by a completion that succeeded.
+  A reader who has moved on from what it said should not have to dismiss it, and
+  one who has not sees it again on the next completion.
 - The interface behaves correctly with a terminal and mouse combination, and
   within tmux.
 - Text is always copyable with the ordinary terminal selection gesture, and a
