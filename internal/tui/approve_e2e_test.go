@@ -92,7 +92,9 @@ func TestTheModelCanRunACommandAndSeeWhatItPrinted(t *testing.T) {
 	defer srv.Close()
 
 	s, reader := askingSession(t, srv.URL, dir, true)
+	s.mu.Lock()
 	s.approvals.record("echo", true)
+	s.mu.Unlock()
 
 	s.startTurn("build it", s.conv)
 	waitFor(t, func() bool { return asked.Load() >= 2 }, "the turn never completed its tool round")
@@ -128,8 +130,11 @@ func TestAProgramApprovedOnceIsNotAskedAboutAgain(t *testing.T) {
 	// actually put.
 	s, reader := askingSession(t, srv.URL, dir, true)
 	// The grant stands for an answer the reader has already given, so the
-	// question is settled before it is put.
+	// question is settled before it is put. It is written under the session
+	// lock, since that is what guards the state.
+	s.mu.Lock()
 	s.approvals.record("echo", true)
+	s.mu.Unlock()
 
 	s.startTurn("build it", s.conv)
 	waitFor(t, func() bool { return asked.Load() >= 2 }, "the turn never completed")

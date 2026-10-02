@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -648,6 +647,7 @@ func init() {
 		{names: []string{"/mouse"}, description: "turn mouse reporting on or off, for wheel scrolling", run: (*Session).cmdMouse},
 		{names: []string{"/clear"}, description: "clear the pane", run: (*Session).cmdClear, idleOnly: true},
 		{names: []string{"/info"}, description: "report the session settings", run: (*Session).cmdInfo},
+		{names: []string{"/approve"}, usage: "/approve [ask|allow|refuse]", description: "report or set whether programs run without asking", run: (*Session).cmdApprove, idleOnly: true},
 		{names: []string{"/tools"}, description: "list the tools the model is given, and the root they are in", run: (*Session).cmdTools},
 		{names: []string{"/quit", "/exit"}, description: "leave the interface", run: (*Session).cmdQuit},
 	}
@@ -835,40 +835,6 @@ func (s *Session) cmdTools([]string) bool {
 	lines = append(lines, s.approvalListing()...)
 	s.appendLines(strings.Join(lines, "\n"))
 	return false
-}
-
-// approvalListing says what the shell will ask about and what it will not.
-func (s *Session) approvalListing() []string {
-	if s.tools.label(shellToolName) == "" {
-		// The shell was not built, which means there is nothing to say about
-		// approving it.
-		return nil
-	}
-	lines := []string{"approval: " + s.approvalLabel() +
-		" (a program runs without a question only where a rule or a grant says so)"}
-
-	var rules []config.ApprovalRule
-	if s.cfg != nil {
-		rules = s.cfg.Tools
-	}
-	if permitted := config.PermittedCommands(rules, s.tools.dir); len(permitted) > 0 {
-		lines = append(lines, "  permitted by the configuration file here: "+
-			strings.Join(permitted, ", "))
-	} else {
-		lines = append(lines, "  no rule covers this directory, so every program is asked about")
-	}
-
-	s.mu.Lock()
-	for name := range s.approvals.granted {
-		lines = append(lines, "  granted for this session: "+name)
-	}
-	for name := range s.approvals.refused {
-		lines = append(lines, "  refused for this session: "+name)
-	}
-	s.mu.Unlock()
-
-	slices.Sort(lines)
-	return lines
 }
 
 // toggleMouse turns mouse reporting on or off.
@@ -1828,22 +1794,38 @@ func (s *Session) updateStatus() {
 	s.mu.Unlock()
 }
 
-// approvalLabel says what the client will run without asking.
+// approvalLabel says what the client will do with a call it has not been told
+// about in advance.
 //
-// The field names the mode rather than the programs, since a bar is too narrow
-// to carry a list and a reader who wants the list has /tools. A question is the
-// mode whenever anything would be asked at all, which is the ordinary state
-// for a session with no rules written down.
+// The mode is read first, since it is what a reader has just asked for. A mode
+// of allow or refuse settles every call on its own, and a bar showing a partial
+// figure beside it would understate both: a reader who switched to allow needs
+// to see that nothing will be asked, and one who switched to refuse needs to
+// see that nothing will run.
+// The caller holds the lock, since the label is read where the rest of the
+// status is written and that is already inside the lock.
+//
+// A session built without the state, which is a test assembling one field at a
+// time, is reported as asking. That is the mode a session begins in and the one
+// that asks most, so it is the safe reading of a session that has not said
+// otherwise.
 func (s *Session) approvalLabel() string {
+	if s.approvals == nil {
+		return modeAsk.String()
+	}
+	mode := s.approvals.mode
+	if mode != modeAsk {
+		return mode.String()
+	}
 	if s.cfg == nil {
-		return stateAsk
+		return modeAsk.String()
 	}
 	permitted := config.PermittedCommands(s.cfg.Tools, s.tools.dir)
 	switch {
 	case len(permitted) == 0:
-		return stateAsk
+		return modeAsk.String()
 	case s.approvalsAllPermitted(permitted):
-		return stateAllow
+		return modeAllow.String()
 	default:
 		return statePartial
 	}
@@ -1856,9 +1838,11 @@ func (s *Session) approvalLabel() string {
 // keyboard, so a bar showing the file alone would understate what the model can
 // do. A session where the file settles everything is shown as settling
 // everything, since that is what a reader watching it wants to know.
+// The caller holds the lock, for the same reason approvalLabel does.
 func (s *Session) approvalsAllPermitted(permitted []string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if s.approvals == nil {
+		return false
+	}
 	for _, name := range permitted {
 		if !s.approvals.granted[name] {
 			return false
