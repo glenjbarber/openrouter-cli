@@ -30,7 +30,7 @@ func (s *Session) cmdPermission(args []string) bool {
 		args = args[1:]
 	}
 
-	dir, rest, err := permissionDir(args)
+	dir, rest, err := s.permissionDir(args)
 	if err != nil {
 		s.addReply("(" + err.Error() + ")")
 		return false
@@ -75,8 +75,15 @@ func (s *Session) cmdPermission(args []string) bool {
 // path is resolved so that the rule written is one the loader will match
 // against, rather than a relative path whose meaning depends on where the
 // session runs from.
-func permissionDir(args []string) (string, []string, error) {
+func (s *Session) permissionDir(args []string) (string, []string, error) {
 	if len(args) == 0 {
+		// The working directory the client was opened in, rather than the
+		// process one. They are the same in a running client, since nothing
+		// moves it, and the tools are contained to the former, so a rule
+		// written against the latter would settle nothing.
+		if s.tools != nil && s.tools.dir != "" {
+			return s.tools.dir, nil, nil
+		}
 		wd, err := os.Getwd()
 		if err != nil {
 			return "", nil, err
@@ -139,9 +146,13 @@ func (s *Session) permissionListing(rules []config.ApprovalRule) []string {
 		}
 	}
 
-	wd, err := os.Getwd()
-	if err != nil {
-		wd = ""
+	// The directory the listing is about is the one the tools are contained
+	// to, not the process one. They are the same in a running client, and a
+	// listing that marked rules against a different directory would show a
+	// rule as applying here when it settles nothing.
+	wd := ""
+	if s.tools != nil {
+		wd = s.tools.dir
 	}
 	lines := []string{plural(len(rules), "rule") + " set:"}
 	for _, rule := range rules {

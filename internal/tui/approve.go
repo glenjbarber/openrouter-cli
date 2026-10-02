@@ -216,6 +216,13 @@ func (s *Session) awaitAnswer() (bool, bool) {
 // buffered, so the input goroutine never blocks on the turn having arrived to
 // receive it, which it may not have when the keys are read.
 func (s *Session) putQuestion(command string, args []string, dir string) error {
+	// A session with nowhere to post an answer cannot be asked. This is a
+	// session assembled without one rather than a reader who walked away,
+	// since the reader walking away ends the context below.
+	if s.answered == nil {
+		return errors.New("this session has no way to receive an answer")
+	}
+
 	line := tools.Describe(command, args)
 	where := dir
 	if rel, err := filepath.Rel(s.tools.dir, dir); err == nil && rel != "." &&
