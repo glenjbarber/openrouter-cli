@@ -994,6 +994,13 @@ so that a later change does not silently reverse it.
   file, no history, and nothing kept once it finishes. That is what lets it
   coexist with the guarantee that /cognito makes, since display is not
   persistence.
+- A delegate is sent no tools, since it records nothing and a tool acts on the
+  host. The model is told so. A model that is not told asks for one anyway when
+  the question calls for it, and a provider asked for a call it was not offered
+  streams the markup as text: the reader sees a tool call written out in the
+  reply rather than a reply at all. The reader is told the same thing, since a
+  delegate that answers short of what the question needed is otherwise a reader
+  wondering whether the model misunderstood it.
 - The answer joins the pane as ordinary text rather than as a turn, so it is
   never replayed to the model as though the user had asked it.
 - The partial answer is kept apart from the reply while it arrives, so a line in
