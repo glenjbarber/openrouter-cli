@@ -38,6 +38,11 @@ type rawFile struct {
 	// setting, since the decision is settled per session by where the
 	// session is running and by whether the reader can select text.
 	Mouse bool `json:"OPENROUTER_MOUSE"`
+	// Tools are the approval rules, read from OPENROUTER_TOOLS. A rule
+	// permits some programs in a directory without asking, which is the
+	// only thing in the file that grants a capability the client would
+	// otherwise ask about on every call.
+	Tools []ApprovalRule `json:"OPENROUTER_TOOLS"`
 }
 
 // Config is the resolved configuration.
@@ -61,6 +66,28 @@ type Config struct {
 	// only outside tmux, since inside tmux the drag that begins a selection
 	// is the one gesture a reader is most likely to want.
 	Mouse bool
+	// Tools are the approval rules the file carries, in the order they were
+	// written. The order is kept rather than reduced to one resolved set,
+	// since which rule matched is what a reader needs to be able to see.
+	Tools []ApprovalRule
+}
+
+// Permits reports whether the configuration permits a command for a directory
+// without asking.
+//
+// The nearest enclosing rule decides, and a directory inside a permitted one
+// is permitted with a rule of its own. A session assembled without a
+// configuration still asks about everything.
+func (c *Config) Permits(command, dir string) bool {
+	if c == nil {
+		return false
+	}
+	for _, name := range PermittedCommands(c.Tools, dir) {
+		if name == strings.TrimSpace(command) {
+			return true
+		}
+	}
+	return false
 }
 
 // ErrNotFound reports that no configuration file exists at any search path.
@@ -88,6 +115,11 @@ type ErrNoAPIKey struct {
 	// same reason: a reader whose key has not been entered yet is still talking
 	// to whichever endpoint the file names.
 	URLBase string
+	// Tools are the approval rules the file carries. They travel with the
+	// error on the same reasoning as the model and the endpoint: a rule is
+	// not a credential, and dropping it would make a file that was read look
+	// as though it had not been.
+	Tools []ApprovalRule
 }
 
 // Error implements the error interface.
@@ -245,6 +277,7 @@ func parse(path string) (*Config, error) {
 		Path:    path,
 		Skipped: raw.SetupKey && unset,
 		Mouse:   raw.Mouse,
+		Tools:   raw.Tools,
 	}
 
 	if unset {
@@ -261,6 +294,7 @@ func parse(path string) (*Config, error) {
 			Model:   cfg.Model,
 			Mouse:   raw.Mouse,
 			URLBase: cfg.URLBase,
+			Tools:   raw.Tools,
 		}
 	}
 	return cfg, nil
@@ -310,4 +344,115 @@ func checkMode(path string) error {
 			"Run: chmod 0600 %s",
 		path, mode, RequiredMode, path,
 	)
+}
+
+// ApprovalRule permits some commands in a directory without asking.
+//
+// The rule is written for a directory rather than for a single call, since the
+// question it answers is about a place rather than about a moment: a reader who
+// trusts `go` in a project does not want to answer for every build in it, and
+// one who does not is asked each time.
+type ApprovalRule struct {
+	// Path is the directory the rule covers, and every directory beneath it.
+	// A relative path is taken against the directory the rule names as its
+	// base, which is how a rule written as "." covers the session it was
+	// written in.
+	Path string
+	// Commands are the programs permitted under Path. A command named by a
+	// directory is not permitted, since the rule is about a program rather
+	// than about a path that might reach one.
+	Commands []string
+}
+
+// Grants reports whether the rule permits a command.
+//
+// The comparison is on the program name as written, with the same trimming the
+// shell tool applies, so that a rule carrying a stray space around a name
+// matches rather than being a rule that silently permits nothing.
+func (r ApprovalRule) Grants(command string) bool {
+	command = strings.TrimSpace(command)
+	for _, name := range r.Commands {
+		if strings.TrimSpace(name) == command {
+			return true
+		}
+	}
+	return false
+}
+
+// Config fields for approval are resolved from the rule list at load time, so
+// that a rule matching the session is known before a tool is built rather than
+// at the point of a call.
+
+// PermittedCommands returns the programs a rule covering dir permits.
+//
+// The rules are searched from the nearest directory outwards, and the first
+// one that names dir decides. A child of a permitted directory is therefore
+// permitted without a rule of its own, which is the case the reader asked for:
+// a rule written for a project covers the tree beneath it rather than needing
+// one entry per repository.
+//
+// The nearest rule wins rather than the union of all of them. A union would
+// make a rule unable to say anything, since every rule anywhere under the
+// working directory would grant everything any other rule grants, and there
+// would be no way to narrow a permission granted above.
+func PermittedCommands(rules []ApprovalRule, dir string) []string {
+	resolved, err := filepath.Abs(dir)
+	if err != nil {
+		resolved = filepath.Clean(dir)
+	}
+	top := resolved
+	if r, err := filepath.EvalSymlinks(top); err == nil {
+		top = r
+	}
+
+	best := -1
+	bestLen := -1
+	for i, rule := range rules {
+		base := rule.Path
+		if strings.TrimSpace(base) == "" {
+			continue
+		}
+		if !filepath.IsAbs(base) {
+			base = filepath.Join(top, base)
+		}
+		base = filepath.Clean(base)
+		if r, err := filepath.EvalSymlinks(base); err == nil {
+			base = r
+		}
+		if !covers(base, top) {
+			continue
+		}
+		// The longest matching prefix is the nearest directory, since a
+		// directory beneath another is a longer prefix of the same path.
+		if depth := len(base); depth > bestLen {
+			best, bestLen = i, depth
+		}
+	}
+	if best < 0 {
+		return nil
+	}
+	names := rules[best].Commands
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		if trimmed := strings.TrimSpace(name); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+// covers reports whether dir is base or is beneath it.
+//
+// Both are resolved paths and both are compared as paths rather than as strings,
+// since a prefix check on a string would treat /home/gjb/work as covering
+// /home/gjb/workspace.
+func covers(base, dir string) bool {
+	if base == dir {
+		return true
+	}
+	rel, err := filepath.Rel(base, dir)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }

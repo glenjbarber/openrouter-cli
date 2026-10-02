@@ -230,13 +230,58 @@ func TestStatusLineShowsWorking(t *testing.T) {
 	}
 }
 
-// The removed fields must not reappear as permanent dashes.
+// Reasoning and Branch must not reappear as permanent dashes. Approval is no
+// longer among them: it was removed on the grounds that the client had no tools
+// and executed nothing, and the shell tool is what makes it mean something.
 func TestStatusLineHasNoDeadFields(t *testing.T) {
 	line := StatusLine(Status{Provider: providerName}, 400)
-	for _, gone := range []string{"Reasoning", "Branch", "Approval"} {
+	for _, gone := range []string{"Reasoning", "Branch"} {
 		if strings.Contains(line, gone) {
 			t.Errorf("line = %q, want %q removed", line, gone)
 		}
+	}
+}
+
+// The approval field says what the client will run without asking, so a reader
+// can see at a glance whether a model is about to be stopped for it.
+func TestApprovalFieldRenders(t *testing.T) {
+	line := StatusLine(Status{Approval: stateAsk}, 200)
+	if !strings.Contains(line, "Approval: ask") {
+		t.Errorf("line = %q, want the approval mode", line)
+	}
+}
+
+// The approval field is dropped before the token counters when the bar is
+// narrow, since a reader watching a model ask to run something wants to know
+// whether it will be stopped, and a running token total is the less urgent of
+// the two. The width is chosen so that the counters go and the field remains,
+// which is the ordering being asserted rather than the width.
+func TestTheApprovalFieldOutlastsTheTokenCounters(t *testing.T) {
+	status := Status{
+		Provider:  providerName,
+		Model:     "test/model",
+		State:     stateIdle,
+		Approval:  stateAsk,
+		TokensIn:  "1k",
+		TokensOut: "2k",
+	}
+	// The width is the one at which the counters no longer fit but the
+	// approval field does, found rather than guessed so that a change to the
+	// bar does not quietly make this test assert nothing.
+	width := 0
+	for w := 1; w <= 200; w++ {
+		line := StatusLine(status, w)
+		if strings.Contains(line, "Approval") && !strings.Contains(line, "In: ") {
+			width = w
+			break
+		}
+	}
+	if width == 0 {
+		t.Fatalf("no width keeps the approval field while dropping the counters: %q",
+			StatusLine(status, 200))
+	}
+	if got := StatusLine(status, width-1); strings.Contains(got, "In: ") {
+		t.Errorf("the counters survived at %d columns: %q", width-1, got)
 	}
 }
 

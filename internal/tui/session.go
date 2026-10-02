@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,6 +23,21 @@ type Session struct {
 	screen *Screen
 	editor *LineEditor
 	frame  Frame
+
+	// approvals is what the reader has already decided about a program this
+	// session, and it is guarded by mu because the question is asked from the
+	// turn goroutine rather than from the input one.
+	approvals *approvalState
+	// ask puts a question to the reader and returns the answer. It is a field
+	// rather than a call to askApproval so that the prompt has exactly one
+	// seam: a test substitutes the keyboard, and the decision made around the
+	// question is exercised without one.
+	ask func(command string, args []string, dir string) bool
+	// cfg is the configuration the session was started with, held for the
+	// approval rules rather than for the credential. The credential was
+	// copied into the client at startup and is not kept here, since a field
+	// that held it would be a field a diagnostic could reach.
+	cfg *config.Config
 
 	// hints is the state the hint row describes. It is guarded by mu and
 	// written by the input goroutine at the points where the keys that do
@@ -216,7 +232,9 @@ func Start(out, in *os.File, title string) (*Session, error) {
 	// nothing on screen explaining it. The report is made once, at startup,
 	// since repeating it on every turn would fill the pane with a line about
 	// something that is not going to change.
-	s.tools = toolsAt(workingDir())
+	s.approvals = newApprovalState()
+	s.ask = s.askApproval
+	s.tools = toolsAt(workingDir(), s)
 	if absence := s.tools.absence(); absence != "" {
 		s.addReply(absence)
 	}
@@ -408,14 +426,26 @@ func (s *Session) Note(format string, args ...any) {
 // The client is built here rather than at start, so that the interface works
 // before a connection exists and reports a missing key as an ordinary message
 // rather than refusing to open.
-func (s *Session) Configure(baseURL, apiKey, model string) {
+// Configure applies the configuration the session was started with.
+//
+// The whole configuration is taken rather than the three values the session
+// needs to reach a model, because the approval rules sit in the same file and
+// would otherwise have to be read again from somewhere else. A nil
+// configuration leaves the session asking about everything, which is what a
+// session assembled without one should do.
+func (s *Session) Configure(cfg *config.Config) {
+	s.cfg = cfg
+	if cfg == nil {
+		s.updateStatus()
+		return
+	}
 	// The model is adopted whether or not a credential is present, so that
 	// the status bar reflects the file from the first repaint.
-	if model != "" && s.conv.Model() == "" {
-		s.conv.SetModel(model)
+	if cfg.Model != "" && s.conv.Model() == "" {
+		s.conv.SetModel(cfg.Model)
 	}
-	if apiKey != "" {
-		s.client = openrouter.New(baseURL, apiKey)
+	if cfg.APIKey != "" {
+		s.client = openrouter.New(cfg.URLBase, cfg.APIKey)
 	}
 	// The status bar is refreshed here as well as in the conversation, since
 	// a model taken from the file must appear on the first repaint rather than
@@ -767,9 +797,52 @@ func (s *Session) cmdInfo([]string) bool {
 // reads a set built at startup and nothing that a turn in flight changes. A
 // reader who wants to know what a model can reach should not have to stop it
 // to find out.
+// cmdTools reports the tools, their schemas, and what the shell will ask about.
+//
+// The approval rules are listed with the tools rather than left to the
+// configuration file, since this is the one place a reader can find out what the
+// client is willing to run and on what terms. A reader who cannot see which
+// programs run without a question has no way to know what to expect when a
+// model asks for one.
 func (s *Session) cmdTools([]string) bool {
-	s.appendLines(strings.Join(s.tools.toolsListing(), "\n"))
+	lines := s.tools.toolsListing()
+	lines = append(lines, s.approvalListing()...)
+	s.appendLines(strings.Join(lines, "\n"))
 	return false
+}
+
+// approvalListing says what the shell will ask about and what it will not.
+func (s *Session) approvalListing() []string {
+	if s.tools.label(shellToolName) == "" {
+		// The shell was not built, which means there is nothing to say about
+		// approving it.
+		return nil
+	}
+	lines := []string{"approval: " + s.approvalLabel() +
+		" (a program runs without a question only where a rule or a grant says so)"}
+
+	var rules []config.ApprovalRule
+	if s.cfg != nil {
+		rules = s.cfg.Tools
+	}
+	if permitted := config.PermittedCommands(rules, s.tools.dir); len(permitted) > 0 {
+		lines = append(lines, "  permitted by the configuration file here: "+
+			strings.Join(permitted, ", "))
+	} else {
+		lines = append(lines, "  no rule covers this directory, so every program is asked about")
+	}
+
+	s.mu.Lock()
+	for name := range s.approvals.granted {
+		lines = append(lines, "  granted for this session: "+name)
+	}
+	for name := range s.approvals.refused {
+		lines = append(lines, "  refused for this session: "+name)
+	}
+	s.mu.Unlock()
+
+	slices.Sort(lines)
+	return lines
 }
 
 // toggleMouse turns mouse reporting on or off.
@@ -1725,8 +1798,60 @@ func (s *Session) updateStatus() {
 	s.frame.Status.Context = share
 	s.frame.Status.TokensIn = tokensIn
 	s.frame.Status.TokensOut = tokensOut
+	s.frame.Status.Approval = s.approvalLabel()
 	s.mu.Unlock()
 }
+
+// approvalLabel says what the client will run without asking.
+//
+// The field names the mode rather than the programs, since a bar is too narrow
+// to carry a list and a reader who wants the list has /tools. A question is the
+// mode whenever anything would be asked at all, which is the ordinary state
+// for a session with no rules written down.
+func (s *Session) approvalLabel() string {
+	if s.cfg == nil {
+		return stateAsk
+	}
+	permitted := config.PermittedCommands(s.cfg.Tools, s.tools.dir)
+	switch {
+	case len(permitted) == 0:
+		return stateAsk
+	case s.approvalsAllPermitted(permitted):
+		return stateAllow
+	default:
+		return statePartial
+	}
+}
+
+// approvalsAllPermitted reports whether every permitted program has been
+// granted for this session as well.
+//
+// The file permits some programs and the reader may have granted more at the
+// keyboard, so a bar showing the file alone would understate what the model can
+// do. A session where the file settles everything is shown as settling
+// everything, since that is what a reader watching it wants to know.
+func (s *Session) approvalsAllPermitted(permitted []string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, name := range permitted {
+		if !s.approvals.granted[name] {
+			return false
+		}
+	}
+	return true
+}
+
+// The values the approval field takes. They are short because a status bar is
+// narrow, and they name the mode rather than the programs.
+const (
+	// stateAsk means every program is asked about.
+	stateAsk = "ask"
+	// stateAllow means the programs a file names run without asking.
+	stateAllow = "allow"
+	// statePartial means some programs were granted at the keyboard on top of
+	// what a file names, and the rest are still asked about.
+	statePartial = "partial"
+)
 
 // orDash returns the value, or a dash when it is empty.
 func orDash(v string) string {

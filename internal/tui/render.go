@@ -28,7 +28,12 @@ type Status struct {
 	// about.
 	TokensIn  string
 	TokensOut string
-	Host      string
+	// Approval is what the client will run without asking. It is here
+	// because the client now does run programs, and a reader watching a
+	// model ask to build something wants to know at a glance whether it will
+	// be stopped and asked first.
+	Approval string
+	Host     string
 }
 
 // fields lists the status bar in the order the interface presents it.
@@ -46,6 +51,7 @@ var fields = []struct {
 	{"Context", func(s Status) string { return s.Context }},
 	{"In", func(s Status) string { return s.TokensIn }},
 	{"Out", func(s Status) string { return s.TokensOut }},
+	{"Approval", func(s Status) string { return s.Approval }},
 }
 
 // placeholder is shown for a value that is not yet known.
@@ -91,7 +97,7 @@ func StatusLine(s Status, width int) string {
 // most often watched, and the host goes before either, since it does not change
 // while the session runs. Dropping by position instead would remove whichever
 // field happened to be last, which was the token count.
-var dropOrder = []string{"In", "Out", "Credits", "Context", "Status", "Model"}
+var dropOrder = []string{"In", "Out", "Approval", "Credits", "Context", "Status", "Model"}
 
 // trimToWidth removes fields until the line fits, sacrificing dropOrder first.
 func trimToWidth(parts []string, sep string, width int) string {
