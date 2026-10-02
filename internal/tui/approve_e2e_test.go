@@ -10,29 +10,57 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/glenjbarber/openrouter-cli/internal/tools"
 )
 
 // recordingReader stands in for a reader at the keyboard.
 //
-// The prompt itself cannot be driven from a test, since it reads a key through
-// the terminal, so what is substituted here is the keyboard and the decision
-// made around the question is what gets exercised. It answers whatever it is
-// told to and records what it was asked, since a question that names something
-// other than what runs would be approved on the wrong terms.
+// It answers by running the input goroutine's half of the question, which is
+// what a reader pressing a key does. That is the point of the fix this
+// exercises: the turn puts the question over and the input side answers it, and
+// a harness that answered from the turn side would pass against the old
+// arrangement that raced the terminal.
 type recordingReader struct {
 	answer bool
+	s      *Session
 	mu     sync.Mutex
 	asked  []string
 }
 
-// ask records the question and answers it.
-func (a *recordingReader) ask(command string, args []string, dir string) bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.asked = append(a.asked, command+" "+strings.Join(args, " "))
-	return a.answer
+// watch answers every question the session asks, until the test ends.
+//
+// It runs on its own goroutine because the question is opened by the turn
+// goroutine and the input loop only reaches it between messages. It polls
+// rather than being signalled, since the session exposes no way to be woken by
+// the question being opened and a reader is in the same position.
+func (a *recordingReader) watch(t *testing.T) {
+	t.Helper()
+	go func() {
+		for {
+			if a.s == nil || a.s.ctx.Err() != nil {
+				return
+			}
+			if a.s.asking() {
+				a.s.mu.Lock()
+				q := a.s.asked
+				a.mu.Lock()
+				a.asked = append(a.asked, q.line+" in "+q.dir)
+				a.mu.Unlock()
+				a.s.mu.Unlock()
+				// The answer goes in as a key, so the switch that decides it
+				// is exercised rather than bypassed.
+				key := byte(keyRefuse)
+				if a.answer {
+					key = keyApproveOnce
+				}
+				a.s.answerQuestion(key == keyApproveOnce || key == keyApproveAll)
+				continue
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
 }
 
 // questions returns what the reader was asked.
@@ -98,10 +126,9 @@ func TestAProgramApprovedOnceIsNotAskedAboutAgain(t *testing.T) {
 	// being tested and a stand-in would bypass it. The recorder stands in for
 	// the keyboard, so a question reaching it is a question the reader was
 	// actually put.
-	reader := &recordingReader{answer: true}
-	s := toolSession(t, srv.URL, dir)
-	s.ask = reader.ask
-	// The grant stands for an answer the reader has already given.
+	s, reader := askingSession(t, srv.URL, dir, true)
+	// The grant stands for an answer the reader has already given, so the
+	// question is settled before it is put.
 	s.approvals.record("echo", true)
 
 	s.startTurn("build it", s.conv)
@@ -258,9 +285,96 @@ func textStream(text string) string {
 // was ever consulted, and the test would pass without asking anything.
 func askingSession(t *testing.T, baseURL, dir string, answer bool) (*Session, *recordingReader) {
 	t.Helper()
-	reader := &recordingReader{answer: answer}
 	s := newToolSession(t, baseURL, dir, nil)
 	s.tools = toolsAt(dir, s)
-	s.ask = reader.ask
+	if s.answered == nil {
+		// A session built by the harness rather than by Start, which is where
+		// the channel is made.
+		s.answered = make(chan bool, 1)
+	}
+	reader := &recordingReader{answer: answer, s: s}
+	reader.watch(t)
+	t.Cleanup(func() {
+		if s.cancel != nil {
+			s.cancel()
+		}
+	})
 	return s, reader
+}
+
+// A question must not be read from the goroutine that asked it. The turn runs
+// on its own goroutine and the input loop owns the terminal, so a question read
+// from the turn races the line editor for every key the reader presses. The
+// test drives both halves at once and would report a race under the detector
+// against the old arrangement.
+func TestAQuestionIsAnsweredFromTheInputSide(t *testing.T) {
+	dir := t.TempDir()
+	s, reader := askingSession(t, "http://127.0.0.1:1", dir, true)
+
+	// Both goroutines run: the turn puts the question, the reader answers it.
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		s.Approve("echo", []string{"hello"}, dir)
+	}()
+
+	waitFor(t, func() bool { return len(reader.questions()) > 0 },
+		"the question never reached the reader")
+	wg.Wait()
+
+	if approved, answered := s.approvals.remembered("echo"); !answered || !approved {
+		t.Error("the answer did not settle the program for the session")
+	}
+}
+
+// A question left unanswered is a refusal rather than a wait for ever. A turn
+// blocked here is a turn the reader reads as a hang.
+func TestAQuestionNobodyAnswersIsARefusal(t *testing.T) {
+	dir := t.TempDir()
+	s := newToolSession(t, "http://127.0.0.1:1", dir, nil)
+	s.tools = toolsAt(dir, s)
+	s.answered = make(chan bool, 1)
+
+	done := make(chan bool, 1)
+	go func() { done <- s.Approve("echo", nil, dir) }()
+
+	// Closing the session is the reader walking away from the question.
+	s.cancel()
+	select {
+	case approved := <-done:
+		if approved {
+			t.Error("a question nobody answered approved the program")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the turn waited for ever on a question nobody answered")
+	}
+}
+
+// The question is drawn on the input block rather than into the pane, since a
+// question written into the pane becomes history the moment a reply arrives.
+func TestTheQuestionIsOnTheInputBlock(t *testing.T) {
+	dir := t.TempDir()
+	s := newToolSession(t, "http://127.0.0.1:1", dir, nil)
+	s.tools = toolsAt(dir, s)
+	s.answered = make(chan bool, 1)
+
+	go func() { s.Approve("echo", []string{"hi"}, dir) }()
+	waitFor(t, func() bool { return s.asking() }, "the question was never put")
+
+	s.mu.Lock()
+	confirm, reply := s.frame.Confirm, len(s.frame.Reply)
+	s.mu.Unlock()
+
+	if confirm == "" {
+		t.Error("the question row is empty")
+	}
+	if reply != 0 {
+		t.Errorf("the question was written into the pane, %d rows deep", reply)
+	}
+	// The hint row names the keys, since nothing else says how to answer.
+	if got := (hintState{overlay: hintConfirm}).hints(); len(got) == 0 {
+		t.Error("the hint row names no keys for the question")
+	}
+	s.answerQuestion(false)
 }

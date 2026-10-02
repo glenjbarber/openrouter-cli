@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -101,53 +102,157 @@ func (s *Session) Approve(command string, args []string, dir string) bool {
 		return decided
 	}
 
-	ask := s.ask
-	if ask == nil {
-		// A session assembled without a seam has no reader to ask, and no
-		// answer is not permission.
+	if err := s.putQuestion(command, args, dir); err != nil {
+		// A question that could not be put is a refusal. A reader who was
+		// never asked has agreed to nothing.
 		return false
 	}
-	approved := ask(command, args, dir)
+	approved, ok := s.awaitAnswer()
+	if !ok {
+		// Nothing answered the question, so nothing approved it. A turn that
+		// waited here for ever would be a turn the reader reads as a hang,
+		// which is the one failure this path cannot have.
+		//
+		// The question is closed on the way out, so that the input loop does
+		// not go on taking keys for a question that will never be answered.
+		s.answerQuestion(false)
+		return false
+	}
 	s.mu.Lock()
 	s.approvals.record(command, approved)
 	s.mu.Unlock()
 	return approved
 }
 
-// askApproval puts the question to the reader and waits for an answer.
+// awaitAnswer waits for the answer to the question being asked.
 //
-// The question is drawn in the pane rather than on the prompt line, since the
-// prompt line belongs to the message being composed and overwriting it would
-// lose a half typed line to a question about something else. The keys are read
-// one at a time from the editor, which is the same reader the search uses, so
-// a question takes every key while it is open and cannot be answered by a
-// stray Enter left over from the message that triggered it.
-func (s *Session) askApproval(command string, args []string, dir string) bool {
+// The wait ends when the session ends as well as when the answer arrives,
+// since a question left open at exit would otherwise strand the turn on a
+// channel nobody is left to post to.
+func (s *Session) awaitAnswer() (bool, bool) {
+	select {
+	case approved := <-s.answered:
+		return approved, true
+	case <-s.ctx.Done():
+		return false, false
+	}
+}
+
+// putQuestion draws the question and waits for it to be answered.
+//
+// The question is put from the turn goroutine and answered from the input one,
+// which is the whole difficulty in it. A turn runs on its own goroutine so that
+// the input loop keeps reading while a model works, and the input loop owns the
+// terminal. A question read from the turn goroutine would race the line editor
+// for every key the reader pressed, and a `y` intended as an answer would be
+// taken as part of a message being composed.
+//
+// So the turn hands the question over and waits for the answer. The answer is
+// buffered, so the input goroutine never blocks on the turn having arrived to
+// receive it, which it may not have when the keys are read.
+func (s *Session) putQuestion(command string, args []string, dir string) error {
 	line := tools.Describe(command, args)
 	where := dir
-	if rel, err := filepath.Rel(s.tools.dir, dir); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+	if rel, err := filepath.Rel(s.tools.dir, dir); err == nil && rel != "." &&
+		!strings.HasPrefix(rel, "..") {
 		where = filepath.Join(s.tools.dir, rel)
 	}
 
-	s.addReply(fmt.Sprintf("[ask] run %s in %s?", line, where))
-	s.addReply("     y once   a all this session   n no")
+	s.mu.Lock()
+	if s.closing {
+		s.mu.Unlock()
+		return errors.New("the session is closing")
+	}
+	if s.asked != nil {
+		// A second question while one is open would have nowhere to put its
+		// answer, and the first would never be answered.
+		s.mu.Unlock()
+		return errors.New("a question is already open")
+	}
+	s.asked = &question{
+		line:     line,
+		dir:      where,
+		answered: s.answered,
+	}
+	// The question goes on the input row rather than into the pane. A question
+	// written into the pane scrolls back into the history the moment a reply
+	// arrives, which is about the moment a reader answering it would need to
+	// read it again. The pane is the conversation; the input block is the
+	// reader's own side of the screen.
+	s.frame.Confirm = fmt.Sprintf("run %s in %s?", line, where)
+	s.mu.Unlock()
 	s.draw()
+
+	return nil
+}
+
+// answerQuestion posts an answer to the question being asked, and does nothing
+// where none is open.
+//
+// It is called with the lock released, since the input loop draws after it and
+// a repaint inside the lock would hold the spinner off.
+func (s *Session) answerQuestion(approved bool) {
+	s.mu.Lock()
+	q := s.asked
+	s.asked = nil
+	if q != nil {
+		s.frame.Confirm = ""
+		s.frame.ConfirmChoice = ""
+	}
+	s.mu.Unlock()
+	if q == nil {
+		return
+	}
+	q.answered <- approved
+	// The row is repainted with the answer on it, so a reader who answered a
+	// question can see that they did rather than watching the row vanish.
+	s.draw()
+}
+
+// question is one approval waiting for an answer.
+type question struct {
+	// line is the command as it will be run, in the words the reader approves.
+	line string
+	// dir is the directory it will run in, resolved.
+	dir string
+	// answered receives the answer.
+	answered chan bool
+}
+
+// asking reports whether a question is open.
+func (s *Session) asking() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.asked != nil
+}
+
+// questionKey reads one key for the question being asked.
+//
+// The keys are read on the input goroutine, which is the one that owns the
+// terminal. The answer is posted and the question closed, so the input loop
+// returns to composing a message on its next round.
+func (s *Session) questionKey() {
+	s.mu.Lock()
+	q := s.asked
+	s.mu.Unlock()
+	if q == nil {
+		return
+	}
 
 	b, err := s.editor.ReadByte()
 	if err != nil {
-		// A question that could not be put is a refusal. A reader who was
-		// never asked has agreed to nothing, and the alternative here would be
-		// to run the program on the grounds that no answer came back.
-		return false
+		// A reader who interrupted, or whose input ended, approved nothing.
+		s.answerQuestion(false)
+		return
 	}
 	switch b {
 	case keyApproveOnce, keyApproveOnceUpper, keyApproveAll, keyApproveAllUpper:
-		return true
+		s.answerQuestion(true)
 	default:
 		// Anything else is a refusal, including escape. A reader who did not
 		// mean to answer must not approve a program by pressing a key they
 		// pressed for some other reason.
-		return false
+		s.answerQuestion(false)
 	}
 }
 

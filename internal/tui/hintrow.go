@@ -32,6 +32,9 @@ const (
 	hintListing
 	// hintSearch is the pane search being typed into.
 	hintSearch
+	// hintConfirm is an approval question being answered, where the keys that
+	// answer it are not the keys that compose a message.
+	hintConfirm
 )
 
 // hintState is what the row reads in order to decide which keys to name.
@@ -70,6 +73,12 @@ func (st hintState) hints() []string {
 		return []string{"Tab cycle", "Enter choose", "Esc close"}
 	case hintSearch:
 		return []string{"Enter jump to match", "Esc close"}
+	case hintConfirm:
+		// The keys are named because nothing else on screen says how to
+		// answer, and a question with no way to answer it is a question the
+		// reader can only escape. Escape is named as the refusal, since it is
+		// what the question answers to anything else.
+		return []string{"y once", "a all session", "n or Esc no"}
 	}
 	// Enter is named for what it does in this state rather than for what it
 	// does on an idle prompt, since a line sent while a model is working is
