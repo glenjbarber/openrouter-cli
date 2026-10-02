@@ -221,8 +221,8 @@ so that a later change does not silently reverse it.
   terminal state is saved and restored on exit, and a signal handler restores it
   before the process leaves, so that a crash cannot leave the terminal with no
   echo and no line discipline.
-- The status bar order is fixed rather than configurable, because a bar that
-  reorders itself between runs cannot be read at a glance.
+- The order of each status bar is fixed rather than configurable.
+  A bar that reorders itself between runs cannot be read at a glance.
 - A status field with no value yet is rendered as a dash rather than being
   hidden, so the layout does not shift as values arrive and a missing value is
   visible rather than ambiguous.
@@ -234,8 +234,8 @@ so that a later change does not silently reverse it.
   something to report. A dash that can never be filled is noise.
 - The provider is a constant rather than a derived value, since the endpoint is
   the only one the client speaks to.
-- The state reads `Working` while a request is in flight and `idle` otherwise,
-  restored on every exit including a failure.
+- The state reads `Working` while a request is in flight and `idle` otherwise, restored on every exit including a failure.
+  It is shown in the bar above the input box.
 - The field named `Credits` carries the allowance the key endpoint reports as a
   figure against a limit. It is not the conversation context, which is the
   share of the model window a message occupies.
@@ -255,15 +255,18 @@ so that a later change does not silently reverse it.
   accumulated total.
 - The counters accumulate across the session rather than describing one
   exchange.
-- When the bar is too narrow, fields are dropped rather than allowed to wrap,
-  since a wrapped bar pushes the input line off the screen. The order is by how
-  much a reader loses, not by position: the counters go before the allowance,
-  and the host goes before either, since it does not change while the session
-  runs. Dropping by position removed whichever field was last, which was the
-  token count.
-- The status bar shows Provider, Model, Status, Approval method, Context used,
-  Tokens used in and out, and hostname. `Reasoning` and `Branch` were removed
-  along with `Approval`, and `Approval` has since come back with the shell.
+- When a bar is too narrow, fields are dropped rather than allowed to wrap, since a wrapped bar pushes the input line off the screen.
+  The order is by how much a reader loses, not by position.
+  In the top bar the host goes first, since it does not change while the session runs.
+  The token counters go next, then the allowance, then the cost.
+  The context share is never dropped, since it is the figure that says when a compaction is due, and a share that does not fit is cut.
+  In the bar above the input box the approval goes first, then the state, then the model.
+  The provider is the last field left, and it is cut when even it does not fit.
+  Dropping by position removed whichever field was last, which was the token count.
+- The bar above the input box shows Provider, Model, Status, and Approval method, in that order.
+  The top bar shows Credits, Cost, Context used, Tokens used in and out, and hostname, in that order.
+  `Cost` is the cost of the session, and the Session cost section records its source.
+  `Reasoning` and `Branch` were removed along with `Approval`, and `Approval` has since come back with the shell.
 - Commands and configuration options are completed with the Tab key.
 - A completion that matched nothing is reported on the input block, beside the
   prompt, and not in the pane. It is about what the reader is typing rather than
@@ -1274,40 +1277,81 @@ so that a later change does not silently reverse it.
 - The caret sits one column past the last character, which is where the next one
   is written, and is bounded by the prompt width rather than the terminal.
 
-- The prompt is separated from the conversation by a blank row, a rule, and
-  another blank row. Without them the prompt sits directly under the last line of
-  a reply and the two are read as one block.
-- The rule is a box-drawing character rather than a run of dashes, since dashes
-  read as text and a rule reads as a rule.
-- The blank row below the rule matters as much as the one above it. A rule
-  touching the prompt reads as a border of the prompt rather than a division of
-  the screen.
-- The status bar sits in a header at the top: the title, a rule, then the bar.
-  It is drawn outside the scrolled slice, so it stays put while the reader scrolls
-  back through earlier output. At the foot it scrolled away at exactly the moment
-  the figures in it were wanted.
-- The header costs three rows, so the pane is given what is left. A frame taller
-  than the terminal pushes rows off the screen, so the pane shrinks rather than
-  the frame growing.
-- The scroll is clamped so that a full pane of history remains, or all of it when
-  there is less than that. Clamping to the pane height alone stops short of the
-  oldest lines, and clamping to the whole history leaves a single line at the top
-  of an empty pane.
-- A pane shorter than its history is padded with blank rows, so a blank row at
-  the foot of the pane is expected rather than a gap. The history itself must be
-  contiguous from the oldest line.
-- The row below the prompt is added only when the frame has not already filled
-  the height, so a short terminal is not pushed one row over.
-- A test that finds a region of the frame must do so by content rather than by
-  an offset, since the header grows and the division comes and goes with the
-  terminal height.
-- On a terminal too short to hold the division it is dropped rather than drawn,
-  for the same reason.
-- A test that checks the frame fits must count columns rather than bytes, since
-  the rule is a multibyte character and a byte count reports it as three times
-  too wide.
-- A test that finds the status bar must do so by content rather than by
-  position, since the division now sits between it and the prompt.
+- The prompt is separated from the conversation by a rule, a blank row, a bar, a blank row, and a second rule, in that order from the top.
+  The bar carries the values that change on the fly, which are the provider, the model, the state, and the approval.
+  The first rule sits directly under the pane, and the second sits directly above the input block.
+  The blanks around the bar are what give the rules air.
+- This replaces the earlier rule that the prompt was separated from the conversation by a blank row, a rule, and another blank row.
+  The earlier rule also held that a rule touching the prompt reads as a border of the prompt rather than a division of the screen.
+  That is relaxed deliberately for the second rule, since the bar above it already divides the prompt from the conversation.
+  The rows were fixed by the maintainer as pane, rule, blank, bar, blank, rule, input, so the two adjacent rules that would otherwise follow one another are one.
+- The rule is a box-drawing character rather than a run of dashes, since dashes read as text and a rule reads as a rule.
+- The status is split in two, and the split is a deliberate decision of the maintainer.
+  What changes on the fly sits next to the input box, in the bar between the two rules above the prompt.
+  The slower figures stay at the top, in the bar of the header.
+  A reader typing a message is looking at the input box, so the state of the request and the approval that governs what will run belong there.
+  The figures that move over a session need only be glanced at.
+- This reverses the earlier decision that the status bar sits in a header at the top.
+  That decision was taken because at the foot the bar scrolled away at exactly the moment its figures were wanted.
+  The reversal is for four fields only: Provider, Model, Status, and Approval.
+  The bar for them is drawn outside the scrolled slice, as the header is, so the reason for the original decision still holds: it does not scroll away.
+  The remaining fields stay in the header on the original reasoning.
+- The rows of the frame, from the top, are the header, the pane, and the input block.
+  The header is a rule, the title, a blank, a rule, a blank, the top bar, a blank, a rule, and a blank, which is nine rows.
+  The pane follows, then a rule, a blank, the bar, a blank, and a rule, which is five rows.
+  The input block is the pasted rows, the queue, the notice, the hint row, any question, and the prompt.
+  The foot is a blank and a rule, and one row is held below it.
+  With nothing above the prompt the frame costs eighteen rows, and the pane is given the rest.
+  It cost sixteen rows before the split, so the pane is two rows shorter at every height.
+  The earlier note that the header costs three rows was stale, since the header was nine rows already.
+- The height of the pane is worked out once, in `paneBudget`, from `baseInputRows`.
+  The renderer, the pane search, and the page keys all use it.
+  The search and the pager had each kept a count of their own, and both had drifted from what the renderer drew, so a page was longer than the pane it was paging.
+- On a terminal too short for the division, the rules and the blanks are given up and the bar is kept, from six rows up to nine.
+  Below six rows the bar is dropped as well.
+  The prompt is kept at every height, and the header still yields before the prompt does.
+  The mouse acts on the wheel only, so no coordinate is mapped onto a row and no hit test depends on the layout.
+- The scroll is clamped so that a full pane of history remains, or all of it when there is less than that.
+  Clamping to the pane height alone stops short of the oldest lines, and clamping to the whole history leaves a single line at the top of an empty pane.
+- A pane shorter than its history is padded with blank rows, so a blank row at the foot of the pane is expected rather than a gap.
+  The history itself must be contiguous from the oldest line.
+- The row below the prompt is added only when the frame has not already filled the height, so a short terminal is not pushed one row over.
+- A test that finds a region of the frame must do so by content rather than by an offset, since the header grows and the division comes and goes with the terminal height.
+- A test that checks the frame fits must count columns rather than bytes, since the rule is a multibyte character and a byte count reports it as three times too wide.
+- A test that finds a bar must do so by content rather than by position.
+  The top bar is found by `Context:` and the other bar by `Provider:`, since each is the one field its bar never drops.
+
+### Session cost
+
+- The top bar shows what the session has spent, as `Cost`, in US dollars.
+  It is shown in the top bar only.
+  It is a session figure: nothing is kept across sessions, per model or in total, and nothing is written to a file or to a saved session.
+  A total across sessions is recorded as an idea in `IDEAS.md` and is not built.
+- The cost is summed over every request the session makes: each turn, each tool round of a turn, each compaction, each `/delegate`, and each `/spawn`.
+  All of them go through the one client path, and each adds to the same ledger when its usage arrives.
+- The ledger belongs to the session and not to a conversation.
+  `/new`, a thread, and `/load` do not give back what was spent, and a new session starts at nothing.
+  The token counters are per conversation and are restored by `/load`, and the difference is deliberate, since money spent is not undone by clearing the conversation it was spent on.
+- The source is the cost the endpoint reports for each response.
+  Every request asks for usage accounting, and the usage object on the final chunk carries a `cost` member when the endpoint prices the response.
+  No fixture carried a cost before this decision, so the member is read as optional.
+  It is a pointer for the same reason the counters are: a reported zero is a free response, and an absent figure is one the endpoint did not price.
+  A figure that is negative, not finite, or not a number is read as absent.
+- With no reported cost, the cost is the token counts multiplied by the catalogue price of the model, which is quoted per token, and the total is marked as an estimate with a leading tilde.
+  A model priced at nothing adds zero exactly, with no mark, since that is a known cost.
+  A response with neither a cost nor a price adds nothing and marks the total with a tilde, since the total is then missing a response.
+  A session in which no response has added a figure shows a dash, so the bar does not claim the session was free.
+- The catalogue is fetched only when a response carries no cost, and once.
+  A failed fetch is not remembered, so the next response tries again.
+- The catalogue prices are read from a `pricing` object when the model carries one, and from the model itself otherwise.
+  The first reader of the catalogue looked for them on the model itself, and every fixture is written that way, while the documented response nests them.
+  Both are read, with the object winning, so the estimate and `/freemodels` work against either shape.
+- The figure has four decimal places under a dollar and two from a dollar up.
+  A response costs a fraction of a cent far more often than a cent, so rounding to cents would hide most requests.
+- A request that failed or was stopped before it reported usage adds nothing, since there is nothing to say what it cost.
+  Whether such a request should be counted is one of the questions left open in `IDEAS.md`.
+- `Cost` is not `Credits`.
+  `Credits` is the allowance the key endpoint reports, and `Cost` is the spend of this session as its responses reported it.
 
 ### Hint row
 
@@ -1475,6 +1519,9 @@ so that a later change does not silently reverse it.
 - The scope is the frame chrome, tool call lines, approval lines, notice lines,
   and reply text. The line the user types is never colored, since it is the
   user's own text and nothing is gained by marking it.
+- The bar above the input box and the rules around it are drawn in the chrome role, exactly as the top bar and its rules are.
+  No role was added for it, since it is the same kind of row.
+  With color off the bytes are those of a plain row.
 - The default palette is the sixteen ANSI colors, so that the terminal theme
   decides what they look like. No color is chosen on the terminal's behalf.
 - A theme may set a foreground and a background. Terminal.app supports 256
@@ -1646,11 +1693,9 @@ so that a later change does not silently reverse it.
   the height of the terminal on every terminal. A frame left short draws the
   bottom of the screen in whatever the terminal had there, which after a resize
   is not blank.
-- The frame is divided by rules: one on the first row, one under the title, one
-  under the status bar, one above the prompt, and one at the very bottom. Each
-  is separated from what it borders by a blank, except the title, which sits
-  against the rule above it so that the rule reads as the edge of the frame
-  rather than as an underline of the title.
+- The frame is divided by rules: one on the first row, one under the title, one under the top bar, one above the bar for what changes on the fly, one below it, and one at the very bottom.
+  Each is separated from what it borders by a blank, except the title, which sits against the rule above it so that the rule reads as the edge of the frame rather than as an underline of the title.
+  The two rules around the bar sit against the pane and against the input block, and the blanks on either side of the bar are what give them air.
 - The rule on the first row is kept rather than spent on decoration. It marks
   where the frame begins, so a pane scrolled back is visibly still inside a
   window, and without it the oldest line of a conversation runs into the edge of
@@ -1660,7 +1705,7 @@ so that a later change does not silently reverse it.
   a blank rather than against a rule.
 - The header yields before the prompt does, and gives up its rows in the order a
   reader loses least by: the rules first, since a rule is decoration and a
-  half-drawn one is not a rule, then the blanks, then the title, and the status
+  half-drawn one is not a rule, then the blanks, then the title, and the top
   bar is held to the end since it carries the figures. A kept row still has
   everything below it.
 - A pasted block takes only what is left once the prompt has been accounted

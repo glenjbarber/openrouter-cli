@@ -76,16 +76,14 @@ openrouter-cli
 The interface draws a frame on the alternate screen, so the shell history and
 whatever was on the screen before are left untouched and restored on exit.
 
-The frame opens with a header: the title, a rule, then the status bar. The bar
-lives at the top rather than the foot because it sits outside the scrolled
-slice, so the credits, the context share, and the token counts stay in view while
-reading earlier output. At the foot they scrolled away at exactly the moment
-they were wanted.
+The frame opens with a header: the title, a rule, then the top bar.
+The top bar lives at the top rather than at the foot because it sits outside the scrolled slice.
+The credits, the cost, the context share, and the token counts therefore stay in view while reading earlier output.
 
 ```
 openrouter-cli
 ──────────────────────────────────────────────────────────────────────────
-Provider: openrouter.ai | Model: stealth/space-bunny-alpha | Status: idle | Context: 12% | In: 1.2k | Out: 5.7k
+Credits: 0.42/5 | Cost: $0.0123 | Context: 12% | In: 1.2k | Out: 5.7k
 
 > what does this project do?
 ```
@@ -94,31 +92,46 @@ Provider: openrouter.ai | Model: stealth/space-bunny-alpha | Status: idle | Cont
 pane. It is off by default, since a terminal that reports the mouse cannot also
 be dragged to select text. See [Scrollback](#scrollback).
 
-The status bar sits above the input line, carrying Provider, Model, Status,
-Credits, the token counters, and the hostname:
+The status is split in two.
+The values that change on the fly sit next to the input box, in a bar between two rules just above the input line.
+The slower figures stay in the top bar.
+
+The bar above the input box carries Provider, Model, Status, and Approval:
 
 ```
-Provider: openrouter.ai | Model: stealth/space-bunny-alpha | Status: idle | Credits: 0.42/5 | Context: 12% | In: 1.2k | Out: 5.7k | claude1.lab3.home.arpa
+Provider: openrouter.ai | Model: stealth/space-bunny-alpha | Status: idle | Approval: ask
 ```
 
-`Status` reads `Working` while a request is in flight. `Credits` is the
-remaining allowance reported against the API key. `Context` is the share of the
-model window the conversation occupies, which is what says when a compaction is
-coming. The two are separate measures: one is money, the other is window. The
-token counters accumulate across the session.
+The top bar carries Credits, Cost, Context, the token counters, and the hostname:
 
-A field with no value yet is shown as a dash. Fields with no source in the
-client are not shown at all: `Branch` and `Reasoning` were removed, since the
-client has no branching and no reasoning parameter. `Approval` was removed with
-them and came back when the model was given a shell, since a field reporting what
-would run without a question has something to say. It reads `ask` when every
-program is put to you, `allow` when the configuration file settles them all, and
-`partial` when some were granted at the keyboard on top of that.
+```
+Credits: 0.42/5 | Cost: $0.0123 | Context: 12% | In: 1.2k | Out: 5.7k | claude1.lab3.home.arpa
+```
+
+`Status` reads `Working` while a request is in flight.
+`Credits` is the remaining allowance reported against the API key.
+`Cost` is what this session has spent, in US dollars, and it starts again at nothing with each new session.
+`Context` is the share of the model window the conversation occupies, which is what says when a compaction is coming.
+`Credits` and `Cost` are different measures, and so are the money and the window.
+The token counters accumulate across the session.
+
+`Cost` is the sum of what the API reports for each response, including each round of a turn that calls tools, each compaction, each `/delegate` and each `/spawn`.
+A leading tilde marks a total that is not wholly reported: some response was priced by the catalogue instead, or carried no price at all.
+Below a dollar the figure has four decimal places, so a single cheap request is visible.
+Nothing about the cost is saved, and nothing is totalled across sessions.
+
+A field with no value yet is shown as a dash.
+Fields with no source in the client are not shown at all.
+`Branch` and `Reasoning` were removed, since the client has no branching and no reasoning parameter.
+`Approval` was removed with them and came back when the model was given a shell, since a field reporting what would run without a question has something to say.
+It reads `ask` when every program is put to you, `allow` when the configuration file settles them all, and `partial` when some were granted at the keyboard on top of that.
 
 When the terminal is too narrow, fields are dropped rather than allowed to wrap.
-The order is by how much is lost: the token counters go first, then the
-allowance, and the hostname last, since it does not change while the session
-runs.
+The order is by how much is lost.
+In the top bar the hostname goes first, since it does not change while the session runs.
+The token counters, the allowance, and the cost follow, in that order, and the context share is the last figure left.
+In the bar above the input box the approval goes first, then the status, then the model.
+The provider is the last field left.
 
 The interface requires both stdout and stdin to be a terminal. A redirected run
 reports that and stops rather than writing escape sequences into the capture. A
@@ -329,21 +342,22 @@ A long line keeps its tail, since that is the end you are writing and the part
 you cannot read from memory. The conversation above is still drawn across the
 full width.
 
-The prompt sits in its own box at the foot of the screen, separated from the
-conversation by a full-width rule with a blank row either side:
+The prompt sits in its own box at the foot of the screen, below the bar that carries the values that change on the fly.
+A full-width rule sits above that bar and another below it, with a blank row on either side of the bar:
 
 ```
-Provider: openrouter.ai | Model: stealth/space-bunny-alpha | Status: idle | Credits: 0.42/5
-
 ────────────────────────────────────────────────
 
+Provider: openrouter.ai | Model: stealth/space-bunny-alpha | Status: idle | Approval: ask
+
+────────────────────────────────────────────────
 > what does this project do?
 ```
 
-The rule keeps a reply and the prompt from reading as one block, which they do
-when a reply ends mid-sentence directly above the prompt. On a terminal too
-short to hold the rule, it is dropped rather than drawn, since a frame taller
-than the screen would push the status bar off it.
+The rules keep a reply and the prompt from reading as one block, which they do when a reply ends mid-sentence directly above the prompt.
+The frame takes eighteen rows apart from the conversation, and the conversation is given the rest.
+On a terminal too short to hold all of that, the rules and the blank rows are dropped and the bar is kept, and on a very short one the bar is dropped too.
+The prompt is kept at every height, since a frame taller than the screen would push it off.
 
 ### Wrapping
 
@@ -645,19 +659,25 @@ overrides an individual value is an open decision.
 
 ### Status bar
 
-An interactive session displays a status bar showing the following fields:
+An interactive session displays two status bars.
+The bar above the input box shows the values that change on the fly:
 
 - Provider
 - Model
 - Status
+- Approval
+
+The top bar shows the slower figures:
+
 - Credits
+- Cost of the session
 - Context used
 - Tokens used (input and output)
 - Hostname
 
-The field set and the order are fixed rather than configurable. A bar that
-reorders itself between runs cannot be read at a glance. A field with no value
-yet is shown as a dash, so the layout does not shift as values arrive.
+The field set and the order of each bar are fixed rather than configurable.
+A bar that reorders itself between runs cannot be read at a glance.
+A field with no value yet is shown as a dash, so the layout does not shift as values arrive.
 
 `Reasoning` and `Branch` were removed rather than shown as a permanent dash. The
 client has no reasoning parameter and no branching, so there would be nothing for

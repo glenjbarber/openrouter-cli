@@ -155,8 +155,8 @@ they are alternatives or complements.
 **The resting indicator, on an idle prompt.** What already exists and what the
 work has to fit around:
 
-- The status bar reads `Working` while a request is in flight and `idle`
-  otherwise. That covers a request but not an idle prompt.
+- The bar above the input box reads `Working` while a request is in flight and
+  `idle` otherwise. That covers a request but not an idle prompt.
 - A twiddle runs while work is in progress. It is the closest thing to an
   always-on indicator that the client has.
 - The hint row is state-dependent and changes with what the interface is doing.
