@@ -1658,7 +1658,7 @@ func (s *Session) settleTurn(t *turnState) {
 		// The turn that was ahead of it has been answered, so the line that
 		// was queued behind it is a question of its own rather than an update
 		// to a request nobody is making any more.
-		s.startTurn(asQueued(next), t.conv)
+		s.startTurn(next, t.conv)
 	}
 }
 
@@ -1695,7 +1695,7 @@ func (s *Session) stopTurn(update string) {
 	t.stopped = true
 	// The queue goes ahead of the line being composed, since it is what was
 	// committed first.
-	parts := queuedTexts(s.queued)
+	parts := queuedLines(s.queued)
 	s.queued = nil
 	s.mu.Unlock()
 
