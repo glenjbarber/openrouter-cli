@@ -7,6 +7,11 @@ import (
 )
 
 // lastContent returns the last row of the frame that is not blank.
+// lastContent returns the last row carrying text.
+//
+// A rule counts as content, since a frame ends with one: the rule closing the
+// foot of the frame is the last row drawn, so a test that wants the prompt
+// wants promptRow rather than this.
 func lastContent(lines []string) string {
 	for i := len(lines) - 1; i >= 0; i-- {
 		if strings.TrimSpace(lines[i]) != "" {
@@ -27,11 +32,11 @@ func TestRenderFrameShape(t *testing.T) {
 	if len(lines) != 12 {
 		t.Errorf("len(lines) = %d, want 12", len(lines))
 	}
-	// The prompt is the last row carrying content, since a blank row sits
-	// below it so that the prompt is not flush against the foot of the screen.
-	prompt := lastContent(lines)
-	if !strings.HasPrefix(prompt, "> ") {
-		t.Errorf("prompt row = %q, want the input prompt", prompt)
+	// The prompt is found by what it is, using the helper the hint row already
+	// keeps. It is no longer the last row carrying content, since a blank and
+	// the rule closing the foot are drawn below it.
+	if i := promptRow(lines); i < 0 || !strings.HasPrefix(lines[i], promptMark) {
+		t.Errorf("prompt row index = %d, want the input prompt", i)
 	}
 
 	// The status bar is found by content rather than by position, since it sits

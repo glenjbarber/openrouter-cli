@@ -340,17 +340,42 @@ const (
 	inputRowsDivided = 5
 )
 
+// footRows is the blank and the rule below the prompt take, or none when the
+// terminal has no room for them.
+//
+// The rule above the input block is already counted in the divided figure, so
+// this is only the pair that closes the foot. The prompt comes first, so a
+// terminal too short to hold both keeps the prompt and gives up the rule: a
+// frame that pushed the prompt off the screen would leave a reader with no way
+// to write a next message, which is the one loss that cannot be recovered from
+// on the screen.
+func footRows(room int) int {
+	if room < 2 {
+		return 0
+	}
+	return 2
+}
+
 // maxBlockRows is how many lines of a block above the prompt are shown before
 // the rest are reported as a count instead. A paste of a thousand lines, or a
 // queue that has grown while a slow model works, would otherwise fill the
 // screen.
 const maxBlockRows = 5
 
-// headerRowCount is the height of the header above the reply pane: the title, a
-// rule, and the status bar. It is a constant rather than a local so that the
-// renderer and the search agree on how tall the pane is, since a jump that
-// placed a match under the prompt would be worse than not jumping at all.
-const headerRowCount = 3
+// headerRowCount is the height of the header above the reply pane: a rule, the
+// title, a blank, a rule, a blank, the status bar, a blank, a rule, and a
+// blank.
+//
+// The title sits directly under the top rule rather than a blank below it, so
+// that the rule reads as the edge of the frame rather than as an underline of
+// the title. The other two are separated from what they border by a blank, and
+// the last closes the header so that the conversation does not run into the
+// figures.
+//
+// It is a constant rather than a local so that the renderer and the search
+// agree on how tall the pane is, since a jump that placed a match under the
+// prompt would be worse than not jumping at all.
+const headerRowCount = 9
 
 // Frame is the whole interface at one moment.
 type Frame struct {
@@ -517,6 +542,12 @@ func render(f Frame, height, width int) ([]string, int, int) {
 	if divided {
 		inputRows = inputRowsDivided
 	}
+	// The bottom rule and the blank above it are part of the block, so they
+	// are budgeted with it. They are drawn whenever the frame has room rather
+	// than only when the division is drawn, since a reader who cannot see the
+	// edge of the frame on a short terminal is not served by a rule that
+	// appears and disappears with the height.
+	inputRows += footRows(height - inputRows)
 	// The rows a block above the prompt takes are held onto, rather than
 	// recomputed at the point where it is drawn. The budget is what keeps the
 	// block from pushing the prompt off the bottom of the screen, so the
@@ -648,13 +679,27 @@ func render(f Frame, height, width int) ([]string, int, int) {
 	// The header is drawn after the offset has been clamped, so that the
 	// marker on the title row describes the view that is on screen.
 	header := []string{
-		titleLine(f.Title, width, f.scrolled()),
 		rule(width),
+		titleLine(f.Title, width, f.scrolled()),
+		"",
+		rule(width),
+		"",
 		StatusLine(f.Status, width),
+		"",
+		rule(width),
+		"",
 	}
-	if headerRows < len(header) {
-		header = header[len(header)-headerRows:]
-	}
+	// The header is given up from the top when the terminal cannot hold it,
+	// so what survives is the foot of it. The rules are decoration and are the
+	// first rows to go, then the title, and the status bar is held to the end
+	// since it carries the figures a reader watches. The title is placed among
+	// the rules rather than above them for that reason: with the title second
+	// from the top it was the second row lost, and a reader on a short
+	// terminal was left with the figures and no heading at all.
+	//
+	// A kept row therefore still has everything below it, which is what the
+	// truncation gives.
+	header = headerFromTheTop(header, headerRows)
 	body = append(body, header...)
 
 	if f.Scroll > 0 {
@@ -740,17 +785,35 @@ func render(f Frame, height, width int) ([]string, int, int) {
 	if hints != "" && len(body)+2 <= height {
 		body = append(body, hints)
 	}
-	body = append(body, indent("> ", "", confirmInput(f), width))
+	body = append(body, indent(promptMark, "", confirmInput(f), width))
 
-	// The row below the prompt is added only when the frame has not already
-	// filled the height, so a short terminal is not pushed one row over.
+	// The row below the prompt is a rule at the very bottom of the frame, with
+	// a blank between it and the prompt. The blank is what keeps the rule from
+	// reading as an underline of the prompt rather than as the edge of the
+	// frame, and it leaves the caret on a blank rather than on a rule.
+	//
+	// The rule is placed rather than the blank alone, so the foot is budgeted
+	// for it. A row added past the budget would push the prompt off the top of
+	// a terminal with no room for it.
 	if len(body) < height {
 		body = append(body, "")
+	}
+	if len(body) < height {
+		body = append(body, rule(width))
 	}
 	// The frame is cut to the height as a last resort. Every row above is
 	// placed with a budget, but a terminal shorter than the prompt block
 	// leaves nothing to cut, and a frame past the bottom pushes the prompt
 	// off the screen and leaves the reader unable to continue.
+	//
+	// A frame shorter than the terminal is padded with blanks rather than
+	// left short, so that the rule closing the foot is the last row on every
+	// terminal. A frame that ended in blanks would draw the bottom of the
+	// screen in whatever the terminal had left there, which after a resize is
+	// not blank at all.
+	for len(body) < height {
+		body = append(body, "")
+	}
 	rows := body[:minInt(len(body), height)]
 	// The rows leave here as plain text. A reply is written by a model, and a
 	// model passes on whatever it was given, so a row can carry a byte the
@@ -903,6 +966,65 @@ func indent(marker, prefix, body string, width int) string {
 // prompt should get the message back marked as queued rather than as
 // something the model was asked.
 const queuedMarker = "queued "
+
+// headerFromTheTop keeps the last n rows of the header, dropping whole rows
+// rather than cutting one.
+//
+// A rule is given up before a line of text is, so a reader on a short terminal
+// loses the edges of the frame before they lose the words inside it. A half
+// drawn rule is not a rule, and a rule cut into two shorter ones reads as a
+// mistake rather than as a decision.
+func headerFromTheTop(header []string, n int) []string {
+	isRule := func(row string) bool {
+		return row != "" && strings.Trim(row, ruleRune) == ""
+	}
+	if n >= len(header) {
+		return header
+	}
+	if n < 0 {
+		n = 0
+	}
+	kept := header
+	for len(kept) > n {
+		// The rules go first, from the top of what is left.
+		dropped := false
+		for i, row := range kept {
+			if isRule(row) {
+				kept = append(kept[:i:i], kept[i+1:]...)
+				dropped = true
+				break
+			}
+		}
+		if dropped {
+			continue
+		}
+		// Then the blanks, which separate what a rule divides and mean nothing
+		// on their own.
+		for i, row := range kept {
+			if row == "" {
+				kept = append(kept[:i:i], kept[i+1:]...)
+				dropped = true
+				break
+			}
+		}
+		if dropped {
+			continue
+		}
+		// What is left is text, and the title is the first of it to go since
+		// the status bar carries the figures.
+		kept = kept[1:]
+	}
+	return kept
+}
+
+// promptMark is what the input line begins with, and is what finds the row the
+// caret belongs to.
+//
+// It is a constant rather than a literal at the point of drawing so that the
+// row the caret is placed against and the row the prompt is drawn on cannot be
+// two things that disagree, which is a caret that appears somewhere the reader
+// is not typing.
+const promptMark = "> "
 
 // ruleRune is the character a rule is drawn with. It is a box-drawing
 // character rather than an ASCII dash, since a run of dashes reads as text and
@@ -1067,26 +1189,27 @@ func (s *Screen) DrawTinted(lines []string, t tint) {
 	if len(lines) == 0 {
 		return
 	}
-	// The row holding the prompt is found rather than assumed, because the
-	// row below the prompt is drawn whenever the frame has not filled the
-	// height. Placing the caret on the last row would then put it one row
-	// under the prompt, on the blank the layout leaves there, and a reader
-	// typing would watch the character appear away from what they are typing
-	// into.
+	// The prompt is found by what it is rather than by being the last row with
+	// anything on it. The foot of the frame now carries a rule below the
+	// prompt, so the last row is that rule and the caret placed there would
+	// leave a reader typing under the prompt rather than into it.
 	//
-	// The row is the last one with anything on it, because everything drawn
-	// after the prompt is that blank: the hint row and the pasted lines are
-	// drawn above it, and the record puts both there so that the prompt stays
-	// the last row of the input block.
-	row := len(lines)
-	for row > 0 && lines[row-1] == "" {
-		row--
+	// It is found from the bottom, since there is one prompt and the rows
+	// below it are a blank and the rule closing the frame. A frame with no
+	// prompt draws no caret, which is the case a terminal too short to hold
+	// the input block leaves.
+	row := 0
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.HasPrefix(lines[i], promptMark) {
+			row = i + 1
+			break
+		}
 	}
 	if row == 0 {
 		return
 	}
-	last := lines[row-1]
-	s.write(fmt.Sprintf("\x1b[%d;%dH", row, minInt(displayWidth(last)+1, s.width)))
+	s.write(fmt.Sprintf("\x1b[%d;%dH", row,
+		minInt(displayWidth(lines[row-1])+1, s.width)))
 }
 
 // minInt returns the smaller of two ints.
