@@ -6,7 +6,7 @@ finished. Anything here that contradicts `AGENTS.md` is a bug in one of the two,
 and `AGENTS.md` is the one that decides.
 
 Research notes on features to consider live outside the repository, at
-`~/openrouter-cli-worktrees/ideas/`. What is here is the state of the work
+`build/openrouter-cli-worktrees/ideas/`. What is here is the state of the work
 itself.
 
 ## Last updated
@@ -30,7 +30,7 @@ each built in a worktree on its own branch, and each verified after the merge
 rather than before it.
 
 **The worktrees this file described did not exist on this host.** There was no
-`~/openrouter-cli-worktrees`, no `hintrow` source, and no uncommitted `hintrow`,
+`build/openrouter-cli-worktrees`, no `hintrow` source, and no uncommitted `hintrow`,
 `completion`, or `markdown` code to recover: no stash, no dangling objects, and
 nothing anywhere under `/Users/gjb`. The three remote branches all pointed at
 commits already merged into `main`, so they never carried the work. The
@@ -79,7 +79,7 @@ pushes.
 
 ## Ground rules
 
-- Feature work happens in a git worktree under `~/openrouter-cli-worktrees`, one
+- Feature work happens in a git worktree under `build/openrouter-cli-worktrees`, one
   directory per piece of work, named for it, merged into `main` with `--no-ff`.
 - A worktree is removed and its branch deleted once the merge lands.
 - A worktree that has no changes in it is not work in progress. It is a stale

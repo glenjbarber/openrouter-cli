@@ -413,7 +413,8 @@ so that a later change does not silently reverse it.
 ### Worktrees
 
 - Feature and bug work is done in a git worktree under
-  `~/openrouter-cli-worktrees`, one directory per piece of work, named for it.
+  `build/openrouter-cli-worktrees` inside the checkout, one directory per piece
+  of work, named for it.
   Work is merged into `main` after it is implemented and tested.
 - The main checkout is left on `main` and is not edited directly for a feature.
   A worktree keeps an unfinished change from sitting on `main`, where it would
@@ -429,7 +430,7 @@ so that a later change does not silently reverse it.
 - `IDEAS.md` in the repository root is the working list. It records what is
   being built, what is unfinished, and what has been shipped. Research notes on
   features that are only being considered live outside the repository, at
-  `~/openrouter-cli-worktrees/ideas/`.
+  `build/openrouter-cli-worktrees/ideas/`.
 - `IDEAS.md` is a status, not a decision. Where it disagrees with this file,
   this file decides, and the disagreement is a bug in one of them.
 - Every merge is gated on `make lint`, `make check`, and `make crossbuild`. The
