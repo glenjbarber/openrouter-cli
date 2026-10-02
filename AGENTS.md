@@ -844,7 +844,33 @@ so that a later change does not silently reverse it.
   written into the pane scrolls back into the history the moment a reply
   arrives, which is about the moment a reader answering it would need to read it
   again.
-- The hint row names the keys while a question is open. Nothing else on screen
+- A shifted up arrow pages the pane back and a shifted down pages it forward.
+  The modifier is read from the parameters of the sequence rather than from a
+  table of the forms a terminal writes, and only the shift is read: an arrow
+  held with another modifier is passed through as the plain arrow, since a page
+  on the strength of a guess is worse than an arrow that does what it always
+  did. A sequence carrying no parameter is not a shifted one, which matters for
+  the final bytes that are also digits.
+- A page is the height of the pane rather than a fixed count, since a fixed
+  count is a page on one terminal and a third of one on another. It is a little
+  under the height, so the row a reader was reading before is still on screen
+  afterwards.
+- A page needs history on the frame to move at all. The renderer clamps the
+  offset to what the pane can show, so a page in an empty conversation clamps to
+  zero and looks as though it did nothing.
+- `/copy` writes the conversation to the clipboard through the terminal, by the
+  OSC 52 sequence. An external command would be a subprocess, which on this
+  client means the approval path and a question about every copy, and it does
+  not work over a link where the clipboard belongs to the machine the reader is
+  sitting at.
+- The conversation is copied whole rather than the visible pane. The pane is
+  folded to the width of the terminal, so what a reader selected out of it is
+  not the reply as the model wrote it.
+- A copy the terminal refused is not known, since OSC 52 is written and nothing
+  comes back. The command says so once, since a copy that silently did nothing
+  is worse than one that reports that it did not.
+- The frame is repainted after a copy rather than before it, since the sequence
+  leaves the terminal wherever the copy ended. Nothing else on screen
   says how to answer, and a question with no way to answer it is a question the
   reader can only escape.
 - A question outranks the pane search and the model filter while it is open. A
