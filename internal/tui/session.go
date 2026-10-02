@@ -60,6 +60,12 @@ type Session struct {
 	// ramp is taken from. It is guarded by mu with the rest of the frame, since
 	// it is written by the spinner goroutine and read by the paint path.
 	step int
+	// startedAt is when the work in progress began, and is where the elapsed
+	// figure is measured from. It is zero while no work is running, which is
+	// what keeps the figure off the row when there is nothing to measure.
+	// It is guarded by mu with the rest of the frame, since the spinner
+	// goroutine reads it on every frame.
+	startedAt time.Time
 	// scroll is how many lines the pane is scrolled up from the newest
 	// output. Zero means the view is following the bottom. It is guarded by
 	// mu rather than by a lock of its own, since it is read by the renderer
@@ -1882,6 +1888,7 @@ func (s *Session) beginWork() {
 	s.mu.Lock()
 	s.frame.Busy = true
 	s.frame.Status.State = stateWorking
+	s.startedAt = time.Now()
 	s.mu.Unlock()
 	s.spinner.Start(func(frame string) {
 		// The step advances once per frame, which is what makes the colour
@@ -1892,10 +1899,43 @@ func (s *Session) beginWork() {
 		s.mu.Lock()
 		s.frame.Spinner = frame
 		s.frame.Tint = twiddleTint(s.step)
+		s.frame.Elapsed = elapsedSince(s.startedAt)
 		s.step++
 		s.mu.Unlock()
 		s.draw()
 	})
+}
+
+// elapsedSince renders how long work has been running, or nothing where none
+// has.
+//
+// The figure is kept short and grows by width rather than by precision: a
+// turn a reader is watching takes seconds, and one that runs long enough to
+// need minutes has stopped being a wait they are counting. Showing seconds
+// from the first rather than adding them later is what keeps the row from
+// changing width as the figures change length, which would shift the row under
+// the eye that is already on it.
+//
+// A zero time means no work is running, and the row carries nothing. A clock
+// running from zero would count from the epoch, and a row reading that would be
+// worse than no row at all.
+func elapsedSince(start time.Time) string {
+	if start.IsZero() {
+		return ""
+	}
+	d := time.Since(start)
+	if d < 0 {
+		// A clock that has been set back would otherwise show a negative
+		// figure, which is a thing that cannot have happened.
+		return "0s"
+	}
+	seconds := int(d.Seconds())
+	switch {
+	case seconds < 60:
+		return fmt.Sprintf("%ds", seconds)
+	default:
+		return fmt.Sprintf("%dm%02ds", seconds/60, seconds%60)
+	}
 }
 
 // endWork stops the twiddle and clears it from the frame.
@@ -1911,6 +1951,8 @@ func (s *Session) endWork() {
 	// The tint is cleared with the twiddle rather than left behind, since a
 	// tint with no twiddle would colour whichever row it was pointed at.
 	s.frame.Tint = ""
+	s.frame.Elapsed = ""
+	s.startedAt = time.Time{}
 	s.frame.Busy = false
 	s.frame.Status.State = stateIdle
 	s.mu.Unlock()
