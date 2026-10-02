@@ -1452,6 +1452,10 @@ so that a later change does not silently reverse it.
 - When a theme sets a foreground or a background, every reset re-applies it
   before the row is cleared, so the fill takes the background, and the screen
   clears it again on the way out so the shell is not left on the theme.
+- The palette is resolved at paint time from the flag and the theme, and the
+  command and the configuration key set only those two, so they cannot produce
+  different frames. The command prints one line saying what it did, and the
+  input loop repaints after every command.
 - The approval box border is drawn in the approval colour when colour is on, and
   the corner is no longer a special case of its own.
 - The approval box corner is red only when colour is on. It was red

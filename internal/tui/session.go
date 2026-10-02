@@ -2440,6 +2440,7 @@ func (s *Session) paintNow() {
 	s.screen.DrawFrame(rows, framePaint{
 		box:      frame.ConfirmBox,
 		spans:    spans,
+		pal:      s.framePalette(),
 		twiddle:  twiddle,
 		sequence: frame.Tint,
 		figure:   frame.Spinner,
