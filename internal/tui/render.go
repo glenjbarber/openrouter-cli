@@ -523,19 +523,35 @@ func Render(f Frame, height, width int) []string {
 	return rows
 }
 
-// render draws a frame and reports the offset it drew it at. The offset is
+// render draws a frame and reports the offset it drew it at and the twiddle
+// row. It is renderStyled with the spans left out, so every caller that wants
+// text alone keeps the contract it had before colour existed.
+func render(f Frame, height, width int) ([]string, int, int) {
+	rows, _, drawn, twiddle := renderStyled(f, height, width)
+	return rows, drawn, twiddle
+}
+
+// renderStyled draws a frame and reports the offset it drew it at. The offset is
 // returned because it is clamped here, and the session keeps its own copy of
 // it: an offset the renderer silently reduced would leave the session holding
 // a position the reader cannot see, and coming back down from it would take a
 // notch per line rather than per screen.
-// render draws a frame, reports the offset it drew it at, and reports the row
-// carrying the twiddle.
+// renderStyled draws a frame, reports the offset it drew it at, and reports the
+// row carrying the twiddle.
+//
+// It also returns the style spans of the rows, one list for each row. A span is
+// three integers, a byte start, a byte end and a role, so nothing that styles a
+// row is ever written into its text: the rows are measured, folded, scrolled,
+// searched and copied exactly as they were before colour existed. The spans are
+// built beside the rows and are trimmed, padded and cut with them, so the span
+// list is always as long as the row list. Only the screen turns a span into
+// bytes, and only when colour is on.
 //
 // The twiddle row is reported rather than coloured here. Every row leaves this
 // function as plain text with the bytes a terminal would act on removed, and a
 // sequence inserted before that would be stripped along with the ones a model
 // sent. The screen applies it, having written the bytes.
-func render(f Frame, height, width int) ([]string, int, int) {
+func renderStyled(f Frame, height, width int) ([]string, [][]span, int, int) {
 	if width < 1 {
 		width = 1
 	}
@@ -635,6 +651,14 @@ func render(f Frame, height, width int) ([]string, int, int) {
 	}
 
 	body := make([]string, 0, height)
+	// bodySpans runs beside body. Every row is added through put, so the two
+	// cannot get out of step: a row with no span carries nil, and the cut and
+	// the padding below act on both.
+	bodySpans := make([][]span, 0, height)
+	put := func(row string, spans ...span) {
+		body = append(body, row)
+		bodySpans = append(bodySpans, spans)
+	}
 
 	// Every reply entry is folded before the pane is filled, since folding
 	// changes how many rows a reply occupies. Truncating instead would lose
@@ -724,6 +748,10 @@ func render(f Frame, height, width int) ([]string, int, int) {
 		rule(width),
 		"",
 	}
+	// The role of each header row, in the same order. A blank row has none.
+	headerRoles := []role{
+		roleChrome, roleTitle, noRole, roleChrome, noRole, roleChrome, noRole, roleChrome, noRole,
+	}
 	// The header is given up from the top when the terminal cannot hold it,
 	// so what survives is the foot of it. The rules are decoration and are the
 	// first rows to go, then the title, and the status bar is held to the end
@@ -734,8 +762,9 @@ func render(f Frame, height, width int) ([]string, int, int) {
 	//
 	// A kept row therefore still has everything below it, which is what the
 	// truncation gives.
-	header = headerFromTheTop(header, headerRows)
-	body = append(body, header...)
+	for _, i := range headerKept(header, headerRows) {
+		put(header[i], wholeRow(header[i], headerRoles[i])...)
+	}
 
 	if f.Scroll > 0 {
 		reply = reply[:len(reply)-f.Scroll]
@@ -751,7 +780,7 @@ func render(f Frame, height, width int) ([]string, int, int) {
 		// A folded line already fits. One that came from a code block may
 		// not, and is cut rather than allowed to wrap, since a wrapped code
 		// line would push the rest of the frame down.
-		body = append(body, truncate(line, width))
+		put(truncate(line, width))
 	}
 
 	// The input box is separated from the conversation by a blank row and a
@@ -768,9 +797,10 @@ func render(f Frame, height, width int) ([]string, int, int) {
 		// it separates the rule from the prompt it belongs to. A rule touching
 		// the prompt reads as a border of the prompt rather than as a
 		// division of the screen.
-		body = append(body, "")
-		body = append(body, rule(width))
-		body = append(body, "")
+		put("")
+		r := rule(width)
+		put(r, wholeRow(r, roleChrome)...)
+		put("")
 	}
 
 	// A paste occupies the rows above the prompt. They are appended after the
@@ -786,10 +816,10 @@ func render(f Frame, height, width int) ([]string, int, int) {
 	for i := 0; i < pasteShown; i++ {
 		// The lines are indented the same way as the notice that counts the
 		// rest, so that the block reads as one thing rather than as a message.
-		body = append(body, indent("", "  ", f.Pasted[i], width))
+		put(indent("", "  ", f.Pasted[i], width))
 	}
 	if pasteNotice {
-		body = append(body, indent("", "  ", fmt.Sprintf(
+		put(indent("", "  ", fmt.Sprintf(
 			"... %d more pasted lines", len(f.Pasted)-pasteShown), width))
 	}
 
@@ -799,10 +829,10 @@ func render(f Frame, height, width int) ([]string, int, int) {
 	// they say.
 	queueShown, queueNotice := blockLayout(len(f.Queued), queueBudget)
 	for i := 0; i < queueShown; i++ {
-		body = append(body, indent(queuedMarker, "  ", f.Queued[i], width))
+		put(indent(queuedMarker, "  ", f.Queued[i], width))
 	}
 	if queueNotice {
-		body = append(body, indent("", "  ", fmt.Sprintf(
+		put(indent("", "  ", fmt.Sprintf(
 			"... %d more queued messages", len(f.Queued)-queueShown), width))
 	}
 
@@ -821,10 +851,10 @@ func render(f Frame, height, width int) ([]string, int, int) {
 	// The notice is drawn before the hint, since it is about the keystroke the
 	// reader has just made where the hint is about the state they are in.
 	if notice != "" && len(body)+2 <= height {
-		body = append(body, notice)
+		put(notice, wholeRow(notice, roleNotice)...)
 	}
 	if hints != "" && len(body)+2 <= height {
-		body = append(body, hints)
+		put(hints, wholeRow(hints, roleDim)...)
 	}
 	// The box goes above the prompt, and after the hint row, since a hint is a
 	// caption for the prompt and a question is a different thing entirely.
@@ -835,9 +865,10 @@ func render(f Frame, height, width int) ([]string, int, int) {
 		if i >= confirmBoxRows(box, height-len(body)) {
 			break
 		}
-		body = append(body, line)
+		put(line, boxSpans(line)...)
 	}
-	body = append(body, indent(promptMark, "", confirmInput(f), inputWidth(width)))
+	// The prompt row is the reader's own text, and it never carries a span.
+	put(indent(promptMark, "", confirmInput(f), inputWidth(width)))
 
 	// The row below the prompt is a rule at the very bottom of the frame, with
 	// a blank between it and the prompt. The blank is what keeps the rule from
@@ -848,10 +879,11 @@ func render(f Frame, height, width int) ([]string, int, int) {
 	// for it. A row added past the budget would push the prompt off the top of
 	// a terminal with no room for it.
 	if len(body) < height {
-		body = append(body, "")
+		put("")
 	}
 	if len(body) < height {
-		body = append(body, rule(width))
+		r := rule(width)
+		put(r, wholeRow(r, roleChrome)...)
 	}
 	// The frame is cut to the height as a last resort. Every row above is
 	// placed with a budget, but a terminal shorter than the prompt block
@@ -864,16 +896,23 @@ func render(f Frame, height, width int) ([]string, int, int) {
 	// screen in whatever the terminal had left there, which after a resize is
 	// not blank at all.
 	for len(body) < height {
-		body = append(body, "")
+		put("")
 	}
 	rows := body[:minInt(len(body), height)]
+	spans := bodySpans[:len(rows)]
 	// The rows leave here as plain text. A reply is written by a model, and a
 	// model passes on whatever it was given, so a row can carry a byte the
 	// terminal would act on rather than show. Render is the last place the
 	// frame is whole, and it is the boundary between text from elsewhere and
 	// the terminal, so it is where such a byte is dropped.
 	for i, row := range rows {
-		rows[i] = plainRow(row)
+		plain := plainRow(row)
+		if plain != row {
+			// A byte dropped from the row moves every offset after it, so the
+			// spans are carried over to the row as it now reads.
+			spans[i] = remapSpans(row, spans[i])
+		}
+		rows[i] = plain
 	}
 
 	// The twiddle row is found in the finished frame rather than tracked
@@ -894,7 +933,7 @@ func render(f Frame, height, width int) ([]string, int, int) {
 			}
 		}
 	}
-	return rows, f.Scroll, tinted
+	return rows, spans, f.Scroll, tinted
 }
 
 // confirmLine renders the question onto one row above the prompt.
@@ -1112,21 +1151,39 @@ const queuedMarker = "queued "
 // drawn rule is not a rule, and a rule cut into two shorter ones reads as a
 // mistake rather than as a decision.
 func headerFromTheTop(header []string, n int) []string {
+	if n >= len(header) {
+		return header
+	}
+	kept := headerKept(header, n)
+	out := make([]string, len(kept))
+	for i, k := range kept {
+		out[i] = header[k]
+	}
+	return out
+}
+
+// headerKept is the choice headerFromTheTop makes, as the positions of the rows
+// that survive. The renderer keeps the spans of a row beside the row, so it
+// needs to know which rows were kept rather than only what they say.
+func headerKept(header []string, n int) []int {
 	isRule := func(row string) bool {
 		return row != "" && strings.Trim(row, ruleRune) == ""
 	}
+	kept := make([]int, len(header))
+	for i := range kept {
+		kept[i] = i
+	}
 	if n >= len(header) {
-		return header
+		return kept
 	}
 	if n < 0 {
 		n = 0
 	}
-	kept := header
 	for len(kept) > n {
 		// The rules go first, from the top of what is left.
 		dropped := false
-		for i, row := range kept {
-			if isRule(row) {
+		for i, k := range kept {
+			if isRule(header[k]) {
 				kept = append(kept[:i:i], kept[i+1:]...)
 				dropped = true
 				break
@@ -1137,8 +1194,8 @@ func headerFromTheTop(header []string, n int) []string {
 		}
 		// Then the blanks, which separate what a rule divides and mean nothing
 		// on their own.
-		for i, row := range kept {
-			if row == "" {
+		for i, k := range kept {
+			if header[k] == "" {
 				kept = append(kept[:i:i], kept[i+1:]...)
 				dropped = true
 				break
@@ -1271,11 +1328,24 @@ type tint struct {
 	figure string
 }
 
-// framePaint is what one frame needs beyond its rows: a box to draw around
-// given rows, and a figure to colour on one row.
+// framePaint is what one frame needs beyond its rows: the style spans of the
+// rows and the palette they are drawn in, and a figure to colour on one row.
 type framePaint struct {
 	// box is the rows of a question drawn as a box, empty where there is none.
+	//
+	// It no longer decides anything. The border is coloured from the spans, and
+	// only when colour is on, so a frame drawn with colour off is the same
+	// whether it carries a box or not. The field is kept so that a caller
+	// naming the box still compiles and still says what the frame holds.
 	box []string
+	// spans are the style spans of the rows, one list for each row, as
+	// renderStyled returns them. They are integers only: the rows themselves
+	// are plain text and are never altered to carry a colour.
+	spans [][]span
+	// pal is the palette the spans are drawn in. A nil palette is colour off,
+	// and with it the spans are ignored and the frame is drawn with no colour
+	// of its own at all.
+	pal *palette
 	// twiddle is the row carrying the figure in colour, negative where none.
 	twiddle int
 	// sequence is what colours the figure.
@@ -1289,15 +1359,22 @@ type framePaint struct {
 // It is one pass rather than one per thing to colour, since drawing the frame
 // twice would flicker it: each pass clears every row before writing it, so the
 // second would wipe the first.
+//
+// With no palette the bytes written are the bytes of a frame drawn with no
+// colour in it. With one, a span start writes the sequence of its role and a
+// span end writes the palette reset, which also sets the base colours again, so
+// the rest of the row and the clear that follows take the background of the
+// theme. The twiddle row is coloured by its own path and that path wins on its
+// row.
 func (s *Screen) DrawFrame(lines []string, p framePaint) {
-	var top, bottom string
-	for _, row := range p.box {
-		switch {
-		case strings.HasPrefix(row, boxTopLeft):
-			top = row
-		case strings.HasPrefix(row, boxBottomLeft):
-			bottom = row
-		}
+	pal := p.pal
+	// reset is what begins a row and what ends a coloured stretch. With no
+	// palette it is the bare reset the frame has always begun a row with.
+	reset := seqResetAttr
+	s.base = false
+	if pal != nil {
+		reset = pal.reset()
+		s.base = pal.base() != ""
 	}
 
 	s.write(seqHome)
@@ -1305,38 +1382,57 @@ func (s *Screen) DrawFrame(lines []string, p framePaint) {
 		if i > 0 {
 			s.write("\r\n")
 		}
-		s.write(seqResetAttr)
+		s.write(reset)
 		s.write(seqClearLine)
 		switch {
-		case (line == top || line == bottom) && len(line) > 0:
-			// The corner is the first column, and it is what says which of
-			// these rows is a border rather than a line of output. The rest of
-			// the row is left in the colour of the text: a border entirely in
-			// one colour reads as a line of text that happens to be long.
-			//
-			// The corner is taken whole rather than by its first byte, since
-			// the box-drawing runes are several bytes each and cutting one in
-			// half draws half a glyph followed by the rest of it as text.
-			corner := firstRune(line)
-			s.write(seqRed)
-			s.write(corner)
-			s.write(seqResetAttr)
-			s.write(strings.TrimPrefix(line, corner))
 		case p.sequence != "" && p.figure != "" && i == p.twiddle &&
 			strings.HasPrefix(line, p.figure):
 			s.write(p.sequence)
 			s.write(line)
 			s.write(seqResetAttr)
+		case pal != nil && i < len(p.spans) && len(p.spans[i]) > 0:
+			s.writeSpans(line, p.spans[i], pal)
 		default:
 			s.write(line)
 		}
 	}
 	for i := len(lines); i < s.height; i++ {
 		s.write("\r\n")
+		// The rows below the frame are cleared with the base set, so a theme
+		// background fills them as well. With no base there is nothing to set.
+		if pal != nil && pal.base() != "" {
+			s.write(pal.base())
+		}
 		s.write(seqClearLine)
 	}
 	s.write(seqHome)
 	s.placeCaret(lines)
+}
+
+// writeSpans writes one row with its spans in colour.
+//
+// The spans are taken in order and a span that is out of order, outside the row
+// or empty is skipped, so a bad span costs the colour it asked for and never a
+// character of the text. The cut is at the offsets, which lie on rune
+// boundaries, so no glyph is split.
+func (s *Screen) writeSpans(line string, spans []span, pal *palette) {
+	pos := 0
+	for _, sp := range spans {
+		if sp.start < pos || sp.end > len(line) || sp.start >= sp.end {
+			continue
+		}
+		seq := pal.role(sp.role)
+		s.write(line[pos:sp.start])
+		if seq == "" {
+			s.write(line[sp.start:sp.end])
+		} else {
+			s.write(seq)
+			s.write(line[sp.start:sp.end])
+			s.write(pal.reset())
+		}
+		pos = sp.end
+	}
+	s.write(line[pos:])
 }
 
 // DrawTinted draws the rows, colouring one figure in part.
@@ -1449,18 +1545,6 @@ func (s *Screen) placeCaret(lines []string) {
 	}
 	s.write(fmt.Sprintf("\x1b[%d;%dH", row,
 		minInt(displayWidth(lines[row-1])+1, s.width)))
-}
-
-// firstRune returns the first character of a string, however many bytes it is.
-//
-// The box-drawing characters a border is drawn from are multi-byte, so taking a
-// prefix by bytes would cut one in half and the terminal would draw half a
-// glyph followed by the rest of it as text of its own.
-func firstRune(s string) string {
-	for _, r := range s {
-		return string(r)
-	}
-	return ""
 }
 
 // inputNumerator and inputDenominator are the fraction of the terminal the

@@ -2421,7 +2421,7 @@ func (s *Session) paintNow() {
 	s.mu.Unlock()
 
 	height, width := s.screen.Size()
-	rows, drawn, twiddle := render(frame, height, width)
+	rows, spans, drawn, twiddle := renderStyled(frame, height, width)
 	// The offset the renderer drew at is adopted back into the session, so
 	// that scrolling up further than there is history does not leave the
 	// session holding an offset the pane cannot show. The change is made
@@ -2439,6 +2439,7 @@ func (s *Session) paintNow() {
 	//
 	s.screen.DrawFrame(rows, framePaint{
 		box:      frame.ConfirmBox,
+		spans:    spans,
 		twiddle:  twiddle,
 		sequence: frame.Tint,
 		figure:   frame.Spinner,

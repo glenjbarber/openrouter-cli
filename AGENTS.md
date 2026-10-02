@@ -1443,6 +1443,17 @@ so that a later change does not silently reverse it.
 - The environment is deliberately excluded. `NO_COLOR` and every other variable
   are not read, and the key has no environment twin. Colour is decided by the
   file and by `/color` alone, on the same terms as the API key.
+- Colour travels beside the rows as spans, which are a byte start, a byte end
+  and a role, and never inside them. The renderer builds the spans with the
+  rows and trims, pads and cuts them together, so folding, width, scrolling,
+  search and `/copy` see plain text. Only `DrawFrame` turns a span into bytes, in
+  the one pass the frame is drawn in, and only when colour is on. With colour
+  off the bytes are those of a frame that has no colour in it.
+- When a theme sets a foreground or a background, every reset re-applies it
+  before the row is cleared, so the fill takes the background, and the screen
+  clears it again on the way out so the shell is not left on the theme.
+- The approval box border is drawn in the approval colour when colour is on, and
+  the corner is no longer a special case of its own.
 - The approval box corner is red only when colour is on. It was red
   unconditionally, and the change is deliberate.
 - A routine successful tool line is dimmed, and dim wins over the colour of the
