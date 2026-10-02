@@ -19,20 +19,20 @@ func clipboardSession(t *testing.T) (*Session, func() string) {
 	}
 	conv := NewConversation()
 	return &Session{
-		conv:      conv,
-		mainConv:  conv,
-		screen:    &Screen{out: out, in: out, height: 24, width: 80},
-		spinner:   NewSpinner(),
-		windows:   newContextLength(),
-		approvals: newApprovalState(),
-		tools:     &toolSet{dir: t.TempDir()},
-	}, func() string {
-		data, err := os.ReadFile(out.Name())
-		if err != nil {
-			t.Fatalf("reading the capture: %v", err)
+			conv:      conv,
+			mainConv:  conv,
+			screen:    &Screen{out: out, in: out, height: 24, width: 80},
+			spinner:   NewSpinner(),
+			windows:   newContextLength(),
+			approvals: newApprovalState(),
+			tools:     &toolSet{dir: t.TempDir()},
+		}, func() string {
+			data, err := os.ReadFile(out.Name())
+			if err != nil {
+				t.Fatalf("reading the capture: %v", err)
+			}
+			return string(data)
 		}
-		return string(data)
-	}
 }
 
 // The sequence is the one a terminal reads as a copy, and the text in it has to
