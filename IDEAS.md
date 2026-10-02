@@ -639,3 +639,29 @@ What the decision needs:
    `gh` should be excluded from that mode rather than covered by it.
 3. What the pane shows. A call line names the program and its arguments, and
    `gh pr create --title ... --body ...` is a long argument to draw on one row.
+
+### A running total of cost for each model
+
+Raised by the maintainer during the status bar move.
+Recorded as an intent, not as a settled decision, because the storage is not yet chosen.
+
+The status bar move shows the cost of the current session in the top bar.
+This entry is the other half of the request: the total spend on a model across all sessions, kept per model.
+The figure would follow the reader as the model is switched, so that the top bar shows what the selected model has cost to date beside what the session has cost.
+
+What the work has to fit around:
+
+- The session cost resets with the session, so it needs no storage.
+  A total across sessions does, and it has to survive a crash as well as a clean exit.
+- The client already has a sqlite store for saved conversations.
+  The leading proposal is to keep the totals there, in a table of its own, rather than in the config file.
+  The config file is read by hand and edited in place by `/color`, and a figure that changes on every reply does not belong in a file the reader maintains.
+- The cost of a response has to come from somewhere.
+  The session cost needs the same source, so the choice is made once for both: the cost the API reports for each response, or the tokens multiplied by the catalogue pricing and marked as an estimate.
+
+What is not chosen:
+
+- Whether the total is per model name or per model and provider, since the same model can be served by providers at different prices.
+- Whether the reader can reset a total, and if so with which command.
+- Whether a request that failed after tokens were spent is counted.
+- How a model that cost nothing is shown, as a zero or as a dash.
