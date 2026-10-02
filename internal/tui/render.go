@@ -467,6 +467,14 @@ type Frame struct {
 	// the line would lose a half composed command over a keystroke that was
 	// only meant to help with one.
 	Notice string
+	// ConfirmBox is the rows of the question drawn as a box, held on the frame
+	// so that the screen can colour the border of it.
+	//
+	// It is separate from Confirm because Confirm is the text of the question
+	// and this is how it is drawn. A frame is rendered into plain text as well
+	// as onto a terminal, and a sequence written into a row would have to be
+	// stripped again before that row could be measured or copied out.
+	ConfirmBox []string
 	// Scroll is how many lines the pane is scrolled up from the newest
 	// output. Zero means the view is following the bottom, which is the only
 	// behaviour the pane had before scrolling existed.
@@ -822,6 +830,7 @@ func render(f Frame, height, width int) ([]string, int, int) {
 	// caption for the prompt and a question is a different thing entirely.
 	// Only the rows the budget allowed are drawn, so a terminal with no room
 	// gets the prompt rather than a box that has pushed it off.
+	f.ConfirmBox = box
 	for i, line := range box {
 		if i >= confirmBoxRows(box, height-len(body)) {
 			break
@@ -1262,6 +1271,74 @@ type tint struct {
 	figure string
 }
 
+// framePaint is what one frame needs beyond its rows: a box to draw around
+// given rows, and a figure to colour on one row.
+type framePaint struct {
+	// box is the rows of a question drawn as a box, empty where there is none.
+	box []string
+	// twiddle is the row carrying the figure in colour, negative where none.
+	twiddle int
+	// sequence is what colours the figure.
+	sequence string
+	// figure is the leading text of the row in colour.
+	figure string
+}
+
+// DrawFrame draws the rows once, with whatever the frame carries.
+//
+// It is one pass rather than one per thing to colour, since drawing the frame
+// twice would flicker it: each pass clears every row before writing it, so the
+// second would wipe the first.
+func (s *Screen) DrawFrame(lines []string, p framePaint) {
+	var top, bottom string
+	for _, row := range p.box {
+		switch {
+		case strings.HasPrefix(row, boxTopLeft):
+			top = row
+		case strings.HasPrefix(row, boxBottomLeft):
+			bottom = row
+		}
+	}
+
+	s.write(seqHome)
+	for i, line := range lines {
+		if i > 0 {
+			s.write("\r\n")
+		}
+		s.write(seqResetAttr)
+		s.write(seqClearLine)
+		switch {
+		case (line == top || line == bottom) && len(line) > 0:
+			// The corner is the first column, and it is what says which of
+			// these rows is a border rather than a line of output. The rest of
+			// the row is left in the colour of the text: a border entirely in
+			// one colour reads as a line of text that happens to be long.
+			//
+			// The corner is taken whole rather than by its first byte, since
+			// the box-drawing runes are several bytes each and cutting one in
+			// half draws half a glyph followed by the rest of it as text.
+			corner := firstRune(line)
+			s.write(seqRed)
+			s.write(corner)
+			s.write(seqResetAttr)
+			s.write(strings.TrimPrefix(line, corner))
+		case p.sequence != "" && p.figure != "" && i == p.twiddle &&
+			strings.HasPrefix(line, p.figure):
+			s.write(p.sequence)
+			s.write(line)
+			s.write(seqResetAttr)
+		default:
+			s.write(line)
+		}
+	}
+	for i := len(lines); i < s.height; i++ {
+		s.write("\r\n")
+		s.write(seqClearLine)
+	}
+	s.write(seqHome)
+	s.placeCaret(lines)
+}
+
 // DrawTinted draws the rows, colouring one figure in part.
 //
 // A tint naming no row, no sequence, or no figure draws exactly what Draw
@@ -1306,38 +1383,7 @@ func (s *Screen) DrawTinted(lines []string, t tint) {
 	}
 	s.write(seqHome)
 
-	// The cursor is placed after the prompt on the last row of the input
-	// block, so that the caret sits where the next character will appear.
-	// The column is taken from the input row rather than from the first row,
-	// which is the title.
-	//
-	// A frame with no rows leaves the cursor where it is. There is no last row
-	// to place it against, and a terminal too short to hold the frame is the
-	// one case where guessing would put the caret somewhere meaningless.
-	if len(lines) == 0 {
-		return
-	}
-	// The prompt is found by what it is rather than by being the last row with
-	// anything on it. The foot of the frame now carries a rule below the
-	// prompt, so the last row is that rule and the caret placed there would
-	// leave a reader typing under the prompt rather than into it.
-	//
-	// It is found from the bottom, since there is one prompt and the rows
-	// below it are a blank and the rule closing the frame. A frame with no
-	// prompt draws no caret, which is the case a terminal too short to hold
-	// the input block leaves.
-	row := 0
-	for i := len(lines) - 1; i >= 0; i-- {
-		if strings.HasPrefix(lines[i], promptMark) {
-			row = i + 1
-			break
-		}
-	}
-	if row == 0 {
-		return
-	}
-	s.write(fmt.Sprintf("\x1b[%d;%dH", row,
-		minInt(displayWidth(lines[row-1])+1, s.width)))
+	s.placeCaret(lines)
 }
 
 // minInt returns the smaller of two ints.
@@ -1367,4 +1413,52 @@ func noticeRows(line string, room int) int {
 		return 0
 	}
 	return 1
+}
+
+// placeCaret puts the caret where the reader is typing.
+//
+// The caret goes after the prompt on the last row of the input block, so that
+// it sits where the next character will appear. The column is taken from the
+// input row rather than from the first row, which is the title.
+//
+// A frame with no rows leaves the caret where it is. There is no last row to
+// place it against, and a terminal too short to hold the frame is the one case
+// where guessing would put the caret somewhere meaningless.
+func (s *Screen) placeCaret(lines []string) {
+	if len(lines) == 0 {
+		return
+	}
+	// The prompt is found by what it is rather than by being the last row with
+	// anything on it. The foot of the frame now carries a rule below the
+	// prompt, so the last row is that rule and the caret placed there would
+	// leave a reader typing under the prompt rather than into it.
+	//
+	// It is found from the bottom, since there is one prompt and the rows
+	// below it are a blank and the rule closing the frame. A frame with no
+	// prompt draws no caret, which is the case a terminal too short to hold
+	// the input block leaves.
+	row := 0
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.HasPrefix(lines[i], promptMark) {
+			row = i + 1
+			break
+		}
+	}
+	if row == 0 {
+		return
+	}
+	s.write(fmt.Sprintf("\x1b[%d;%dH", row,
+		minInt(displayWidth(lines[row-1])+1, s.width)))
+}
+
+// firstRune returns the first character of a string, however many bytes it is.
+//
+// The box-drawing characters a border is drawn from are multi-byte, so taking a
+// prefix by bytes would cut one in half and the terminal would draw half a
+// glyph followed by the rest of it as text of its own.
+func firstRune(s string) string {
+	for _, r := range s {
+		return string(r)
+	}
+	return ""
 }

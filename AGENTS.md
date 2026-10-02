@@ -872,6 +872,16 @@ so that a later change does not silently reverse it.
   lines of prose is read as part of the conversation. A reader who has just been
   asked whether a program may run must not be able to mistake the question for
   output.
+- The box is drawn in red, since it is the one thing on the screen asking the
+  reader to decide something. The colour is on the corner and stops there, so
+  the text inside the box is the colour of the rest of the frame: a border
+  entirely in one colour reads as a line of text that happens to be long.
+- A corner is taken whole rather than by its first byte. The box-drawing runes
+  are several bytes each, and cutting one in half draws half a glyph followed by
+  the rest of it as text.
+- The frame is drawn in one pass rather than one per thing to colour. Each pass
+  clears every row before writing it, so a second pass would wipe the first and
+  the frame would flicker.
 - The box is drawn with the box-drawing set rather than with pipes and hyphens,
   which read as text, and in the same font as the rules the frame is divided by.
 - A question is folded inside the box rather than cut. The command it asks about
@@ -894,6 +904,10 @@ so that a later change does not silently reverse it.
   on the strength of a guess is worse than an arrow that does what it always
   did. A sequence carrying no parameter is not a shifted one, which matters for
   the final bytes that are also digits.
+- The keys are handed to the session through a callback the editor calls for a
+  key it has no use for. Without one assigned the key reaches a nil and nothing
+  happens, and every test of the key and of the paging passes anyway since each
+  is tested apart.
 - A page is the height of the pane rather than a fixed count, since a fixed
   count is a page on one terminal and a third of one on another. It is a little
   under the height, so the row a reader was reading before is still on screen

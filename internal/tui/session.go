@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -71,6 +72,13 @@ type Session struct {
 	conv   *Conversation
 	// spinner turns the twiddle while work is in progress.
 	spinner *Spinner
+	// completedPrefix is the token the held candidates were completed from,
+	// and completedNames are those candidates with completedAt the one being
+	// shown. They are guarded by mu, since completion runs on the input
+	// goroutine and the frame is drawn from the paint path.
+	completedPrefix string
+	completedNames  []string
+	completedAt     int
 	// step is how many twiddle frames have been drawn, and is where the colour
 	// ramp is taken from. It is guarded by mu with the rest of the frame, since
 	// it is written by the spinner goroutine and read by the paint path.
@@ -292,6 +300,11 @@ func Start(out, in *os.File, title string) (*Session, error) {
 		// to dismiss it, and one who has not will see it again on the next
 		// completion.
 		s.frame.Notice = ""
+		// The held candidates are dropped too, since a prefix the reader has
+		// typed past is not the one they were offered for.
+		s.completedPrefix = ""
+		s.completedNames = nil
+		s.completedAt = 0
 		s.mu.Unlock()
 		s.draw()
 	}
@@ -301,6 +314,21 @@ func Start(out, in *os.File, title string) (*Session, error) {
 	// candidates is settled here and the editor is handed back the line to
 	// compose.
 	s.editor.OnTab = func(line string) string { return s.completeLine(line) }
+	// A shifted arrow pages the pane. It is handled here rather than in the
+	// editor because a page is a screenful and only the session knows how tall
+	// the pane is; the editor knows the composed line and nothing of the frame.
+	//
+	// Without this the keys are queued and nothing acts on them: the editor
+	// hands a key it has no use for to OnKey, and a nil OnKey is a key that
+	// does nothing at all.
+	s.editor.OnKey = func(final byte) {
+		switch final {
+		case keyPageUp:
+			s.page(-1)
+		case keyPageDown:
+			s.page(1)
+		}
+	}
 	// The wheel is read on the same goroutine as the keys, since a report
 	// arrives in the same stream. The callback moves the view and repaints,
 	// which is what makes the scroll happen while the line is still being
@@ -976,20 +1004,126 @@ func candidates() []complete.Candidate {
 // the editor, which reports the line after every key, so that a report with no
 // change to the line is drawn by the same path that draws any other keystroke.
 func (s *Session) completeLine(line string) string {
-	res := s.completer.Complete(line, len(line))
+	// The caret is placed at the end of the last word rather than at the end of
+	// the line. A completion ends the line with a space, and a caret past that
+	// space is in an argument rather than in the word, so completing it again
+	// would find nothing to complete and the reader could never cycle.
+	res := s.completer.Complete(line, lastWordEnd(line))
+	// A cycle is held against the prefix rather than the line, since a line
+	// that has been completed carries a whole word and completing that again
+	// would ask about a prefix the reader never typed. The first Tab on a
+	// prefix completes to a word; each Tab after it moves to the next match,
+	// which is what a reader pressing Tab again is asking for.
+	//
+	// The cycle is consulted before the kind, so that a line already completed
+	// to a whole word still cycles rather than completing uniquely to itself.
+	// That is the case the second Tab falls in: the line now names one command,
+	// so completing it yields that command again and the reader would never
+	// reach the second match at all.
+	if s.cycleNext(res) {
+		return s.cycleLine(res)
+	}
+
 	switch res.Kind {
 	case complete.Unique:
 		s.notice("")
-		return res.Line
+		s.clearCycle()
+		return withTrailingSpace(res.Line)
 	case complete.Ambiguous:
 		s.notice("")
+		// The first Tab completes to the first match rather than only listing
+		// them, since a reader pressing Tab is asking for a word. The rest are
+		// listed as well, since a reader who wants the choices rather than a
+		// word still wants them.
+		s.holdCycle(res)
 		s.showCandidates(res)
+		return s.cycleLine(res)
 	case complete.NoMatch:
 		s.notice("nothing matches " + res.Prefix)
 	case complete.NotApplicable:
 		s.notice("nothing to complete here")
 	}
 	return ""
+}
+
+// withTrailingSpace adds the space that separates a word from what follows it.
+//
+// The space is added once the token is a whole word rather than while it is
+// still being typed, since a reader midway through "/mod" would see the line
+// jump under them on every keystroke. It is added on completion, where the
+// reader has said they meant that word.
+func withTrailingSpace(line string) string {
+	if line == "" || strings.HasSuffix(line, " ") {
+		return line
+	}
+	return line + " "
+}
+
+// cycleNext moves to the next held candidate and reports whether there was one.
+//
+// It is what a second Tab on an unchanged prefix does. The prefix is part of
+// the key: a reader who typed more since the last Tab is asking something else,
+// and cycling would complete to a word that no longer matches what they wrote.
+func (s *Session) cycleNext(res complete.Result) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.completedNames) == 0 {
+		return false
+	}
+	// The cycle continues while the line still names one of the candidates it
+	// was drawn from. That covers both the line as the reader typed it and the
+	// line as a completion left it, since a completed word is one of its own
+	// candidates and the prefix has grown into a word. A line that names
+	// something else has been typed since, and cycling from it would complete
+	// to a word the reader did not ask for.
+	if res.Prefix != s.completedPrefix && !s.holdingName(res.Prefix) {
+		return false
+	}
+	if s.completedAt+1 >= len(s.completedNames) {
+		// The last match is where it stays, since wrapping round would put the
+		// reader back at a word they had already been offered and moved past.
+		return false
+	}
+	s.completedAt++
+	return true
+}
+
+// holdCycle remembers the candidates a prefix matched, for the Tabs after it.
+func (s *Session) holdCycle(res complete.Result) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.completedPrefix = res.Prefix
+	s.completedNames = candidateNames(res)
+	s.completedAt = 0
+}
+
+// clearCycle drops what is held, which is what typing past it does.
+func (s *Session) clearCycle() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.completedPrefix = ""
+	s.completedNames = nil
+	s.completedAt = 0
+}
+
+// cycleLine is the line the held candidate is completed into.
+//
+// It is empty where none is held, which is the case where the line is left as
+// it stands.
+func (s *Session) cycleLine(res complete.Result) string {
+	s.mu.Lock()
+	names, at := s.completedNames, s.completedAt
+	s.mu.Unlock()
+	if len(names) == 0 || at >= len(names) {
+		return ""
+	}
+	// The candidate replaces the whole token rather than being put after the
+	// prefix, since the prefix is what the token was and the reader is looking
+	// at a word rather than at a fragment. A candidate that carries its own
+	// leading slash is used as it stands, which is why the prefix is not put in
+	// front of it: the names come from the command table and already begin the
+	// way the line does.
+	return withTrailingSpace(names[at])
 }
 
 // showCandidates lists what a prefix matched, so that an ambiguous prefix can
@@ -2211,8 +2345,10 @@ func (s *Session) paintNow() {
 	}
 	// The colour is pointed at the row the renderer reported. A frame with no
 	// twiddle reports none, and the screen draws it exactly as it always has.
-	s.screen.DrawTinted(rows, tint{
-		row:      twiddle,
+	//
+	s.screen.DrawFrame(rows, framePaint{
+		box:      frame.ConfirmBox,
+		twiddle:  twiddle,
 		sequence: frame.Tint,
 		figure:   frame.Spinner,
 	})
@@ -2261,4 +2397,32 @@ func (s *Session) notice(text string) {
 		return
 	}
 	s.draw()
+}
+
+// candidateNames is the matches of a result, in the order they were offered.
+func candidateNames(res complete.Result) []string {
+	names := make([]string, 0, len(res.Candidates))
+	for _, c := range res.Candidates {
+		names = append(names, c.Name)
+	}
+	return names
+}
+
+// holdingName reports whether a token is one of the candidates being cycled.
+//
+// A completed line is one of them, which is how a second Tab reaches the
+// candidates even though the line it is given names a whole command rather than
+// the prefix they were drawn from.
+func (s *Session) holdingName(name string) bool {
+	return slices.Contains(s.completedNames, strings.TrimSpace(name))
+}
+
+// lastWordEnd is where the last word of a line ends.
+//
+// It is the caret a completion leaves behind: the line ends with the space that
+// separates the word from what follows, and the word is what the next Tab acts
+// on. A caret at the end of the line would be past the space and in nothing.
+func lastWordEnd(line string) int {
+	trimmed := strings.TrimRight(line, " \t")
+	return len(trimmed)
 }
