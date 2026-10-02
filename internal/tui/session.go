@@ -420,7 +420,7 @@ func (s *Session) handleKey(final byte) {
 // the top of an otherwise empty frame.
 func (s *Session) page(direction int) {
 	height, _ := s.screen.Size()
-	rows := height - headerRowCount - inputRowsBare - 1
+	rows := paneRows(height) - 1
 	if rows < 1 {
 		rows = 1
 	}

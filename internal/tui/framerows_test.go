@@ -175,9 +175,13 @@ func TestFrameShapeHoldsAtEverySize(t *testing.T) {
 func TestStatusBarWidthIsCountedInColumns(t *testing.T) {
 	s := Status{Model: "some/model", Context: "10%", Host: "a-host"}
 	for _, width := range []int{4, 7, 10, 20, 40, 80} {
-		line := StatusLine(s, width)
-		if n := len([]rune(line)); n > width {
-			t.Errorf("width=%d: status line is %d columns: %q", width, n, line)
+		for name, line := range map[string]string{
+			"top":   TopLine(s, width),
+			"input": InputLine(s, width),
+		} {
+			if n := len([]rune(line)); n > width {
+				t.Errorf("width=%d: the %s bar is %d columns: %q", width, name, n, line)
+			}
 		}
 	}
 }

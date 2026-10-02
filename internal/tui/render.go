@@ -6,7 +6,12 @@ import (
 	"unicode"
 )
 
-// Status holds the values shown in the status bar.
+// Status holds the values shown in the two status bars.
+//
+// The values that change as a conversation goes on, which are the provider,
+// the model, the state and the approval, are shown in the bar above the input
+// box, so that they sit where the reader is looking while they type. The
+// figures that move slowly are shown in the bar at the top of the frame.
 //
 // Most fields are empty until the API client reports them. An empty field is
 // rendered as a dash rather than being hidden, so that the layout stays stable
@@ -40,34 +45,62 @@ type Status struct {
 	Host     string
 }
 
-// fields lists the status bar in the order the interface presents it.
-//
-// The order is fixed here rather than being configurable, because a status bar
-// that reorders itself between runs cannot be read at a glance.
-var fields = []struct {
+// field is one entry of a status bar: its label and how its value is read out
+// of the status.
+type field struct {
 	label string
 	value func(Status) string
-}{
-	{"Provider", func(s Status) string { return s.Provider }},
-	{"Model", func(s Status) string { return s.Model }},
-	{"Status", func(s Status) string { return s.State }},
+}
+
+// topFields lists the bar at the top of the frame in the order the interface
+// presents it. These are the figures that move slowly.
+//
+// The order is fixed here rather than being configurable, because a status bar
+// that reorders itself between runs cannot be read at a glance. The host is
+// not in the list, since it is held back and added last.
+var topFields = []field{
 	{"Credits", func(s Status) string { return s.Credits }},
 	{"Cost", func(s Status) string { return s.Cost }},
 	{"Context", func(s Status) string { return s.Context }},
 	{"In", func(s Status) string { return s.TokensIn }},
 	{"Out", func(s Status) string { return s.TokensOut }},
+}
+
+// inputFields lists the bar above the input box in the order the interface
+// presents it. These are the values that change on the fly, so they sit next to
+// the line the reader is typing on.
+var inputFields = []field{
+	{"Provider", func(s Status) string { return s.Provider }},
+	{"Model", func(s Status) string { return s.Model }},
+	{"Status", func(s Status) string { return s.State }},
 	{"Approval", func(s Status) string { return s.Approval }},
 }
 
 // placeholder is shown for a value that is not yet known.
 const placeholder = "-"
 
-// StatusLine renders the status bar.
+// TopLine renders the bar at the top of the frame.
 //
 // A field is dropped when its label and placeholder together would not fit the
 // width, so that the bar degrades by losing the least important fields rather
 // than by wrapping onto a second line.
-func StatusLine(s Status, width int) string {
+func TopLine(s Status, width int) string {
+	return barLine(s, topFields, topDropOrder, s.Host, width)
+}
+
+// InputLine renders the bar above the input box, on the same terms as TopLine.
+// It carries no host, since the host does not change and has a place at the
+// top.
+func InputLine(s Status, width int) string {
+	return barLine(s, inputFields, inputDropOrder, "", width)
+}
+
+// barLine renders one bar from its fields.
+//
+// The host is held back rather than appended. It is the field a reader can most
+// afford to lose, since it does not change while the session runs, and appending
+// it last meant a narrow bar dropped the token counters before it instead.
+func barLine(s Status, fields []field, drop []string, host string, width int) string {
 	sep := " | "
 	parts := make([]string, 0, len(fields))
 	for _, f := range fields {
@@ -78,15 +111,9 @@ func StatusLine(s Status, width int) string {
 		parts = append(parts, f.label+": "+value)
 	}
 
-	// The host is held back rather than appended. It is the field a reader
-	// can most afford to lose, since it does not change while the session
-	// runs, and appending it last meant a narrow bar dropped the token
-	// counters before it instead.
-	host := s.Host
-
 	line := strings.Join(parts, sep)
 	if width > 0 && displayWidth(line) > width {
-		line = trimToWidth(parts, sep, width)
+		line = trimToWidth(parts, drop, sep, width)
 	}
 	if host != "" && (width <= 0 || displayWidth(line)+displayWidth(host)+displayWidth(sep) <= width) {
 		line += sep + host
@@ -94,23 +121,29 @@ func StatusLine(s Status, width int) string {
 	return line
 }
 
-// dropOrder names the fields in the order they are sacrificed when the bar is
-// too narrow.
+// topDropOrder and inputDropOrder name the fields of each bar in the order they
+// are sacrificed when the bar is too narrow.
 //
-// The order is by how much a reader loses, not by where the field sits. The
-// token counters go before the allowance and the cost, since a running total is
-// the figure most often watched, and the host goes before any of them, since it
-// does not change
-// while the session runs. Dropping by position instead would remove whichever
-// field happened to be last, which was the token count.
-var dropOrder = []string{"In", "Out", "Approval", "Credits", "Cost", "Context", "Status", "Model"}
+// The order is by how much a reader loses, not by where the field sits. At the
+// top the token counters go first, then the allowance, then the cost, and the
+// context share is never dropped, since it is the figure that says when a
+// compaction is due. The host goes before any of them, since it does not change
+// while the session runs. Above the input box the approval goes first and then
+// the state and the model; the provider is the last field left, and is cut
+// rather than dropped when even it does not fit. Dropping by position instead
+// would remove whichever field happened to be last, which was the token count.
+var (
+	topDropOrder   = []string{"In", "Out", "Credits", "Cost"}
+	inputDropOrder = []string{"Approval", "Status", "Model"}
+)
 
-// trimToWidth removes fields until the line fits, sacrificing dropOrder first.
-func trimToWidth(parts []string, sep string, width int) string {
+// trimToWidth removes fields until the line fits, sacrificing the drop order
+// first.
+func trimToWidth(parts, drop []string, sep string, width int) string {
 	kept := make([]string, len(parts))
 	copy(kept, parts)
 
-	for _, label := range dropOrder {
+	for _, label := range drop {
 		if displayWidth(join(kept, sep)) <= width {
 			break
 		}
@@ -335,26 +368,91 @@ func truncate(s string, width int) string {
 	return fitPrefix(s, width-len(ellipsis)) + ellipsis
 }
 
-// minHeightForDivision is the shortest terminal that still has room for the
-// rows around the rule, once the pane and the prompt have taken theirs.
-const minHeightForDivision = 8
-
-// The rows below the pane are the status bar, the pasted rows, and the prompt.
-// The division adds a blank, a rule, and another blank when it is drawn.
+// The rows below the pane are the division, the pasted rows, the prompt and the
+// foot.
+//
+// The division is the rule, a blank, the status bar for what changes on the fly,
+// another blank, and a second rule. It sits directly under the pane and directly
+// above the input block, so the pane and the input block are each divided from
+// the bar by a rule and the bar is given air by the blanks around it.
+//
+// A terminal too short for the whole division keeps the bar and gives up the
+// rules and the blanks, since the bar carries the values and the rest is
+// decoration. One too short for even that has no bar at all.
 const (
-	inputRowsBare    = 2
-	inputRowsDivided = 5
+	// inputRowsBare is the prompt and the row held under it, which is drawn
+	// only when the frame has not already filled the height.
+	inputRowsBare = 2
+	// divisionRowsFull is the rule, the blank, the bar, the blank and the rule.
+	divisionRowsFull = 5
+	// divisionRowsBar is the bar alone.
+	divisionRowsBar = 1
+	// minHeightForDivision is the shortest terminal that holds the whole
+	// division: one row of header, one of pane, the division, the prompt, and
+	// the blank and the rule that close the foot.
+	minHeightForDivision = 10
+	// minHeightForBar is the shortest terminal that holds the bar on its own,
+	// on the same count with one row for the bar in place of the division.
+	minHeightForBar = 6
 )
+
+// divisionRows is how many rows the division takes on a terminal of the given
+// height: all of it, the bar alone, or nothing.
+func divisionRows(height int) int {
+	switch {
+	case height >= minHeightForDivision:
+		return divisionRowsFull
+	case height >= minHeightForBar:
+		return divisionRowsBar
+	default:
+		return 0
+	}
+}
+
+// baseInputRows is the rows below the pane before any block above the prompt is
+// added: the division, the prompt, the row held under it, and the foot.
+//
+// It is one function so that the renderer, the search and the pager agree on
+// how tall the pane is. Each of them had its own count, and they had drifted.
+func baseInputRows(height int) int {
+	inputRows := inputRowsBare + divisionRows(height)
+	// The bottom rule and the blank above it are part of the block, so they
+	// are budgeted with it. They are drawn whenever the frame has room rather
+	// than only when the division is drawn, since a reader who cannot see the
+	// edge of the frame on a short terminal is not served by a rule that
+	// appears and disappears with the height.
+	return inputRows + footRows(height-inputRows)
+}
+
+// paneBudget is how many rows the header and the pane are given, once the rows
+// below the pane have taken theirs.
+//
+// The header yields before the prompt does, and the title is the first row it
+// gives up. A terminal too short to hold the header and the prompt together
+// keeps the prompt, since a reader with no prompt has no way to write a next
+// message. The pane takes a row out of the row the budget holds below the
+// prompt, since that row is only drawn when the frame has not already filled the
+// height. Where the rows below the pane alone are taller than the terminal there
+// is nothing left to give, and the pane gives way to the prompt instead.
+func paneBudget(height, inputRows int) (headerRows, paneHeight int) {
+	headerRows = headerRowCount
+	if height < headerRows+inputRows+1 {
+		headerRows = maxInt(0, height-inputRows)
+	}
+	paneHeight = height - headerRows - inputRows
+	if paneHeight < 1 {
+		paneHeight = maxInt(0, paneHeight+1)
+	}
+	return headerRows, paneHeight
+}
 
 // footRows is the blank and the rule below the prompt take, or none when the
 // terminal has no room for them.
 //
-// The rule above the input block is already counted in the divided figure, so
-// this is only the pair that closes the foot. The prompt comes first, so a
-// terminal too short to hold both keeps the prompt and gives up the rule: a
-// frame that pushed the prompt off the screen would leave a reader with no way
-// to write a next message, which is the one loss that cannot be recovered from
-// on the screen.
+// The prompt comes first, so a terminal too short to hold both keeps the prompt
+// and gives up the rule: a frame that pushed the prompt off the screen would
+// leave a reader with no way to write a next message, which is the one loss
+// that cannot be recovered from on the screen.
 func footRows(room int) int {
 	if room < 2 {
 		return 0
@@ -369,14 +467,17 @@ func footRows(room int) int {
 const maxBlockRows = 5
 
 // headerRowCount is the height of the header above the reply pane: a rule, the
-// title, a blank, a rule, a blank, the status bar, a blank, a rule, and a
-// blank.
+// title, a blank, a rule, a blank, the top bar, a blank, a rule, and a blank.
 //
 // The title sits directly under the top rule rather than a blank below it, so
 // that the rule reads as the edge of the frame rather than as an underline of
 // the title. The other two are separated from what they border by a blank, and
 // the last closes the header so that the conversation does not run into the
 // figures.
+//
+// The top bar holds the figures that move slowly. The values that change on the
+// fly are in the bar above the input box instead, and are not part of the
+// header.
 //
 // It is a constant rather than a local so that the renderer and the search
 // agree on how tall the pane is, since a jump that placed a match under the
@@ -588,27 +689,22 @@ func renderStyled(f Frame, height, width int) ([]string, [][]span, int, int) {
 		box = []string{confirm}
 	}
 
-	// The rows below the pane are the status bar, a blank, the rule, the
-	// pasted rows, the prompt, and a blank. The pane is given what remains, so
-	// that adding the division does not make the frame taller than the
-	// terminal and push the status bar off the screen.
-	divided := height >= minHeightForDivision
+	// The bar above the input box is rendered once, here, for the same
+	// reason: the budget below reserves its rows only when it is drawn.
+	bar := InputLine(f.Status, width)
 
-	// The rows the input block takes depend on whether the division is drawn
-	// and on how much was pasted. A frame on a short terminal therefore gives
-	// more of itself to the conversation rather than to decoration, since a
-	// pane with no rows is not a pane, and a pasted block takes only what is
+	// The rows below the pane are the division, the pasted rows, the prompt, and
+	// the foot. The pane is given what remains, so that the division does not
+	// make the frame taller than the terminal and push the prompt off the
+	// screen.
+	//
+	// The rows the input block takes depend on how much of the division is
+	// drawn and on how much was pasted. A frame on a short terminal therefore
+	// gives more of itself to the conversation rather than to decoration, since
+	// a pane with no rows is not a pane, and a pasted block takes only what is
 	// left once the prompt has been accounted for.
-	inputRows := inputRowsBare
-	if divided {
-		inputRows = inputRowsDivided
-	}
-	// The bottom rule and the blank above it are part of the block, so they
-	// are budgeted with it. They are drawn whenever the frame has room rather
-	// than only when the division is drawn, since a reader who cannot see the
-	// edge of the frame on a short terminal is not served by a rule that
-	// appears and disappears with the height.
-	inputRows += footRows(height - inputRows)
+	division := divisionRows(height)
+	inputRows := baseInputRows(height)
 	// The rows a block above the prompt takes are held onto, rather than
 	// recomputed at the point where it is drawn. The budget is what keeps the
 	// block from pushing the prompt off the bottom of the screen, so the
@@ -634,35 +730,20 @@ func renderStyled(f Frame, height, width int) ([]string, [][]span, int, int) {
 	// which is the one failure here worth costing a row for.
 	inputRows += confirmBoxRows(box, height-inputRows)
 
-	// The header is the model name, a rule, and the status bar. It is drawn
-	// above the conversation and outside the scrolled slice, so it stays put
-	// while the reader scrolls back through earlier output. At the foot it
-	// scrolled away at exactly the moment the figures in it were wanted.
+	// The header is the model name, a rule, and the top bar. It is drawn above
+	// the conversation and outside the scrolled slice, so it stays put while
+	// the reader scrolls back through earlier output. At the foot it scrolled
+	// away at exactly the moment the figures in it were wanted.
 	//
 	// The title is the first thing dropped on a terminal too short to hold
 	// the whole header, since the pane is what a reader is reading and the
-	// status bar carries the figures worth keeping. A frame that runs past
-	// the bottom pushes the prompt off the screen, which leaves no way to type
-	// a next message, so something in the header has to yield.
-	headerRows := headerRowCount
-	if height < headerRows+inputRows+1 {
-		// The header yields before the prompt does, and the title is the first
-		// row it gives up. A terminal too short to hold the header and the
-		// prompt together keeps the prompt, since a reader with no prompt has
-		// no way to write a next message.
-		headerRows = maxInt(0, height-inputRows)
-	}
-
-	// The pane takes a row out of the row the budget holds below the prompt,
-	// since that row is only drawn when the frame has not already filled the
-	// height. Where the input block alone is taller than the terminal there is
-	// nothing left to give, and the pane gives way to the prompt instead,
-	// since a frame showing a pane and no way to type is one the reader cannot
-	// continue.
-	paneHeight := height - headerRows - inputRows
-	if paneHeight < 1 {
-		paneHeight = maxInt(0, height-headerRows-inputRows+1)
-	}
+	// top bar carries the figures worth keeping. A frame that runs past the
+	// bottom pushes the prompt off the screen, which leaves no way to type a
+	// next message, so something in the header has to yield. The pane takes a
+	// row out of the row held below the prompt, and gives way to the prompt
+	// where there is nothing left to give. Both are worked out in paneBudget,
+	// which the search and the pager share.
+	headerRows, paneHeight := paneBudget(height, inputRows)
 
 	body := make([]string, 0, height)
 	// bodySpans runs beside body. Every row is added through put, so the two
@@ -786,7 +867,7 @@ func renderStyled(f Frame, height, width int) ([]string, [][]span, int, int) {
 		"",
 		rule(width),
 		"",
-		StatusLine(f.Status, width),
+		TopLine(f.Status, width),
 		"",
 		rule(width),
 		"",
@@ -848,24 +929,28 @@ func renderStyled(f Frame, height, width int) ([]string, [][]span, int, int) {
 		put(cut, lineSpans...)
 	}
 
-	// The input box is separated from the conversation by a blank row and a
-	// rule. Without them the prompt sits directly under the last line of a
-	// reply, and the two are read as one block: a reply ending mid-sentence
-	// above a prompt reads as a single run of text rather than as an exchange.
+	// The input box is separated from the conversation by a rule, the bar that
+	// carries what changes on the fly, and a second rule. The bar has a blank
+	// row above and below it, so that it reads as a line of its own rather than
+	// as the last row of the pane or the first of the input block. The rules
+	// sit directly against the pane above and the input block below, since the
+	// blanks around the bar are what give them air.
 	//
-	// On a terminal too short to hold the division it is dropped rather than
-	// drawn, since a frame taller than the screen pushes the status bar off the
-	// top of it, and a status bar that cannot be seen is worse than a missing
-	// rule.
-	if divided {
-		// The blank row above the rule gives it air, and the blank row below
-		// it separates the rule from the prompt it belongs to. A rule touching
-		// the prompt reads as a border of the prompt rather than as a
-		// division of the screen.
-		put("")
+	// On a terminal too short to hold the whole division the rules and the
+	// blanks are dropped and the bar is kept, since the bar carries values and
+	// the rest is decoration. On one too short for the bar it is dropped too,
+	// since a frame taller than the screen pushes the prompt off the bottom of
+	// it, and a prompt that cannot be seen is worse than a missing bar.
+	switch division {
+	case divisionRowsFull:
 		r := rule(width)
 		put(r, wholeRow(r, roleChrome)...)
 		put("")
+		put(bar, wholeRow(bar, roleChrome)...)
+		put("")
+		put(r, wholeRow(r, roleChrome)...)
+	case divisionRowsBar:
+		put(bar, wholeRow(bar, roleChrome)...)
 	}
 
 	// A paste occupies the rows above the prompt. They are appended after the

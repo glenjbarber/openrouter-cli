@@ -100,7 +100,7 @@ func TestAPageMovesByTheHeightOfThePane(t *testing.T) {
 
 	s.page(-1)
 
-	rows := 40 - headerRowCount - inputRowsBare - 1
+	rows := paneRows(40) - 1
 	if s.pagingOffset() != rows {
 		t.Errorf("a page back moved %d lines, want %d", s.pagingOffset(), rows)
 	}

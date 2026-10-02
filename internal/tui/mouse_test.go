@@ -437,17 +437,17 @@ func TestRenderScrollPastTopFillsThePane(t *testing.T) {
 	out := Render(f, height, 40)
 
 	// The pane starts below the header, which is the title, a rule, and the
-	// status bar. It is found by content rather than by arithmetic, since the
+	// top bar. It is found by content rather than by arithmetic, since the
 	// header grows and shrinks with the terminal.
 	barAt := -1
 	for i, l := range out {
-		if strings.Contains(l, "Provider") {
+		if strings.Contains(l, "Context") {
 			barAt = i
 			break
 		}
 	}
-	if barAt < 2 {
-		t.Fatalf("no status bar found in %d rows", len(out))
+	if barAt < 0 {
+		t.Fatalf("no top bar found in %d rows", len(out))
 	}
 	// The pane runs from below the header to above the rule that divides it
 	// from the prompt.
