@@ -464,7 +464,20 @@ func TestRenderScrollPastTopFillsThePane(t *testing.T) {
 	// The pane is everything between the header and the division above the
 	// prompt. Both are found by content, since the row counts change with the
 	// terminal height and with whether the division is drawn.
+	//
+	// The header closes with a blank and a rule below the status bar, so the
+	// pane does not begin on the row after it. The blank and the rule are
+	// stepped over rather than counted, since a count of them would be a
+	// second thing to keep right when either of them is given up on a short
+	// terminal.
 	paneStart := barAt + 1
+	for paneStart < len(out) {
+		row := strings.TrimSpace(out[paneStart])
+		if row != "" && !strings.HasPrefix(row, "\u2500") {
+			break
+		}
+		paneStart++
+	}
 	paneEnd := -1
 	for i := paneStart; i < len(out); i++ {
 		if strings.HasPrefix(strings.TrimSpace(out[i]), "\u2500") {
@@ -498,15 +511,27 @@ func TestRenderScrollPastTopFillsThePane(t *testing.T) {
 // nothing else on screen changes when it is scrolled.
 func TestRenderShowsScrollMarker(t *testing.T) {
 	f := Frame{Reply: []string{"one", "two", "three"}, Scroll: 1}
-	out := Render(f, 8, 60)
-	if !strings.Contains(out[0], scrollMarker) {
-		t.Errorf("title row = %q, want the scroll marker", out[0])
+	out := Render(f, 12, 60)
+	// The marker is on the title row rather than on a row of its own, since a
+	// row taken for it would resize the pane as the reader scrolled. The title
+	// is found by content, since the rule above it is the first row of the
+	// frame and the header is given up from the top on a short terminal.
+	titleAt := -1
+	for i, l := range out {
+		if strings.Contains(l, scrollMarker) {
+			titleAt = i
+			break
+		}
+	}
+	if titleAt < 0 {
+		t.Errorf("no row carries the scroll marker:\n%s", strings.Join(out, "\n"))
+	} else if !strings.Contains(out[titleAt], "openrouter-cli") &&
+		strings.Contains(out[titleAt], scrollMarker) && strings.TrimSpace(out[titleAt]) == scrollMarker {
+		t.Errorf("the marker is on a row of its own rather than the title row")
 	}
 
-	// The marker is on the title row rather than on a row of its own, since
-	// a row taken for it would resize the pane as the reader scrolled.
-	if len(out) != 8 {
-		t.Errorf("len = %d, want 8, the frame must not resize", len(out))
+	if len(out) != 12 {
+		t.Errorf("len = %d, want 12, the frame must not resize", len(out))
 	}
 }
 

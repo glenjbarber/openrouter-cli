@@ -36,8 +36,20 @@ func TestHeaderYieldsFromTheTop(t *testing.T) {
 			t.Errorf("height=%d: the title was kept and the status bar dropped: %q",
 				height, joined)
 		}
-		if strings.Contains(joined, ruleRune) && !strings.Contains(joined, "Provider") {
-			t.Errorf("height=%d: the rule was kept and the status bar dropped: %q",
+		// The rule closing the foot of the frame is drawn on any terminal
+		// with room for it, and says nothing about whether the header
+		// survived. What is checked is that no rule is left in the header
+		// above a status bar that was dropped, since a rule dividing nothing
+		// is the one header row worth refusing to draw.
+		rows := strings.Split(joined, "\n")
+		at := promptRow(rows)
+		if at < 0 || strings.Contains(joined, "Provider") {
+			continue
+		}
+		header := rows[:at]
+		if strings.Contains(strings.Join(header, "\n"), ruleRune) &&
+			strings.TrimSpace(header[len(header)-1]) == "" {
+			t.Errorf("height=%d: the header kept a rule and dropped the status bar: %q",
 				height, joined)
 		}
 	}

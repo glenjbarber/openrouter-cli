@@ -206,10 +206,13 @@ func TestReadLineNilCallback(t *testing.T) {
 }
 
 // The input row carries the composed line, so it must be visible in the frame.
+// It is found by what it is rather than by being the last row, since the rule
+// closing the foot is drawn below the prompt.
 func TestRenderShowsComposedInput(t *testing.T) {
-	lines := Render(Frame{Input: "/connect"}, 8, 40)
-	if lines[len(lines)-1] != "> /connect" {
-		t.Errorf("last line = %q, want the composed line", lines[len(lines)-1])
+	lines := Render(Frame{Input: "/connect"}, 12, 40)
+	i := promptRow(lines)
+	if i < 0 || lines[i] != "> /connect" {
+		t.Errorf("prompt row = %d %q, want the composed line", i, lastContent(lines))
 	}
 }
 

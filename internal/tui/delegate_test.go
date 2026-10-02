@@ -124,7 +124,7 @@ func TestFrameShowsDelegateSeparately(t *testing.T) {
 	lines := Render(Frame{
 		Reply:    []string{"> the main question"},
 		Delegate: "the delegate answer",
-	}, 12, 40)
+	}, 18, 40)
 
 	body := strings.Join(lines, "\n")
 	if !strings.Contains(body, "the delegate answer") {
