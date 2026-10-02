@@ -198,6 +198,14 @@ path is doubled first so it cannot be read as a replacement. `/autosave now`
 writes one at once. It is refused in cognito and in a thread, since both
 promise nothing is recorded.
 
+`/permission` grants, removes and reports what a model may run in a directory
+without being asked: `/permission add go, or go make`, naming a directory to
+cover one other than the one you are in. A rule covers the directories beneath
+it, so a rule written for a project covers a session running anywhere inside
+it. The rules are kept in `~/.openrouter-cli/permissions.json`, which is what
+`OPENROUTER_TOOLS` is read from as well, so a rule written by hand there is
+honoured the same way.
+
 `/approve` reports or sets whether programs run without being asked: `ask`,
 `allow` or `refuse`. A mode of allow does not widen the list of programs the
 model may propose, and a permission you want to keep is a rule under
