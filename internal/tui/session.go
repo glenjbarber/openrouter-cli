@@ -31,6 +31,10 @@ type Session struct {
 	// open. It is guarded by mu, since the turn goroutine opens it and the
 	// input goroutine closes it.
 	asked *question
+	// rules are the approval rules the session decides from, loaded at startup
+	// and replaced by /permission. They are held apart from the configuration
+	// because the configuration is read once and never written.
+	rules []config.ApprovalRule
 	// autosaveStop ends the autosave timer, and is nil while no timer runs. It
 	// is guarded by mu, since the command starts and stops it and the command
 	// runs on the input goroutine.
@@ -255,6 +259,12 @@ func Start(out, in *os.File, title string) (*Session, error) {
 	// something that is not going to change.
 	s.approvals = newApprovalState()
 	s.answered = make(chan bool, 1)
+	// The rules are read at startup rather than on each call, since they change
+	// only through /permission and a call asking the filesystem what is
+	// permitted is a call on the path of every program run.
+	if rules, err := config.LoadRules(nil); err == nil {
+		s.rules = rules
+	}
 	// The autosave timer runs for the whole session rather than being started
 	// by the command, since a reader who asked for it once should not have to
 	// ask again after a /new.
@@ -655,6 +665,7 @@ func init() {
 		{names: []string{"/mouse"}, description: "turn mouse reporting on or off, for wheel scrolling", run: (*Session).cmdMouse},
 		{names: []string{"/clear"}, description: "clear the pane", run: (*Session).cmdClear, idleOnly: true},
 		{names: []string{"/info"}, description: "report the session settings", run: (*Session).cmdInfo},
+		{names: []string{"/permission"}, usage: "/permission [add|remove] [DIR] PROG...", description: "grant or refuse programs in a directory", run: (*Session).cmdPermission},
 		{names: []string{"/autosave"}, usage: "/autosave [on|off|now]", description: "write the conversation without being asked", run: (*Session).cmdAutosave},
 		{names: []string{"/approve"}, usage: "/approve [ask|allow|refuse]", description: "report or set whether programs run without asking", run: (*Session).cmdApprove, idleOnly: true},
 		{names: []string{"/tools"}, description: "list the tools the model is given, and the root they are in", run: (*Session).cmdTools},
@@ -1824,6 +1835,8 @@ func (s *Session) updateStatus() {
 // time, is reported as asking. That is the mode a session begins in and the one
 // that asks most, so it is the safe reading of a session that has not said
 // otherwise.
+// The caller holds the lock, since the label is read where the rest of the
+// status is written.
 func (s *Session) approvalLabel() string {
 	if s.approvals == nil {
 		return modeAsk.String()
@@ -1832,10 +1845,13 @@ func (s *Session) approvalLabel() string {
 	if mode != modeAsk {
 		return mode.String()
 	}
-	if s.cfg == nil {
+	// A session without tools has no directory for a rule to cover, which is a
+	// test assembling one field at a time or a session whose working directory
+	// could not be opened. Nothing is permitted either way.
+	if s.tools == nil || s.tools.dir == "" {
 		return modeAsk.String()
 	}
-	permitted := config.PermittedCommands(s.cfg.Tools, s.tools.dir)
+	permitted := config.PermittedCommands(s.rules, s.tools.dir)
 	switch {
 	case len(permitted) == 0:
 		return modeAsk.String()

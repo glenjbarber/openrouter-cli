@@ -781,6 +781,33 @@ so that a later change does not silently reverse it.
 - The newest link is replaced rather than written over, since a symlink written
   over another becomes a link to the link on some systems, and a link pointing
   at a file about to be replaced would resolve to nothing.
+- `/permission` grants, removes and reports the programs a model may run in a
+  directory without being asked. The rules are the same ones a reader can write
+  by hand under `OPENROUTER_TOOLS`, and the two are read as one set.
+- The rules are kept in a file beside the configuration rather than in it, since
+  the configuration holds the credential and is treated as read-only outside
+  setup. A reader editing rules should not have to open a file whose mode they
+  have to get right, and a command rewriting one could damage the key in it. The
+  file is written at 0600, since it names the directories a model may run
+  programs in.
+- The file is written whole and renamed over, so a reader never reads half a
+  list. A crash during a write leaves the previous list rather than a truncated
+  one.
+- A rule for a directory is replaced rather than added to, since a rule is about
+  a place and two rules for one place would have no way to say which applies. It
+  is also removed whole rather than one program at a time, since a rule that
+  permits three programs and refuses one has no way to say so.
+- The rules are held by the session and replaced in place, so a permission
+  granted now takes effect rather than at the next run.
+- A rule is read against the directory a command would run in, not the one the
+  session was opened in, so a rule written for a project covers a build run in
+  a subdirectory of it. The listing is read against the same directory rather
+  than the process one, since a rule marked as applying here and settling
+  nothing is worse than no marking.
+- A rule written for a directory outside the working directory settles nothing
+  until a session is opened there, since the tools are contained to the
+  directory the client was opened in. The rules are kept anyway, so a reader can
+  set up a project before opening the client in it.
 - A write that asks to overwrite creates the file where there is nothing yet.
   Every autosave names a file that is not there, and truncating a path with
   nothing at it fails, which refused `/save` under the same name as well.

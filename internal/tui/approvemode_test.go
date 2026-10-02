@@ -109,9 +109,9 @@ func TestAFileRuleSettlesTheCallWhateverTheMode(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := askingSession(t, "http://127.0.0.1:1", dir, true)
 	s.setApprovalMode(modeRefuse)
-	s.Configure(&config.Config{Tools: []config.ApprovalRule{
-		{Path: dir, Commands: []string{"echo"}},
-	}})
+	// The rules are held by the session rather than reached for, so that a
+	// rule added by /permission takes effect without a restart.
+	s.setRules([]config.ApprovalRule{{Path: dir, Commands: []string{"echo"}}})
 
 	if !s.Approve("echo", nil, dir) {
 		t.Error("a mode of refuse revoked a rule the file had permitted")
