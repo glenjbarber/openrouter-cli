@@ -220,15 +220,11 @@ func (s *Session) jumpToMatch() {
 // paneRows returns how many rows the reply pane holds on a terminal of the
 // given height.
 //
-// It is stated here rather than read back from the renderer, so that a jump
-// lands the match in the pane rather than under the prompt. The header and the
-// rows below the pane are the ones the renderer reserves, so the two agree.
+// It is worked out by the same budget the renderer uses, so that a jump lands
+// the match in the pane rather than under the prompt. It is the pane of a frame
+// with nothing above the prompt but the prompt itself, and at least one row.
 func paneRows(height int) int {
-	inputRows := inputRowsBare
-	if height >= minHeightForDivision {
-		inputRows = inputRowsDivided
-	}
-	rows := height - headerRowCount - inputRows
+	_, rows := paneBudget(height, baseInputRows(height))
 	if rows < 1 {
 		rows = 1
 	}

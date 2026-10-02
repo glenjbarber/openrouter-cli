@@ -185,17 +185,23 @@ func TestTailFitsItsWidth(t *testing.T) {
 // drop fields that would have fitted, since two bytes were read for one
 // column.
 func TestStatusBarKeepsFieldsThatFitInColumns(t *testing.T) {
-	s := Status{Model: "你好世界", State: "idle", Host: "a-host"}
+	s := Status{Model: "你好世界", State: "idle", Host: "你好-host"}
 	for _, width := range []int{10, 20, 30, 40, 60, 80, 120} {
-		line := StatusLine(s, width)
-		if n := displayWidth(line); n > width {
-			t.Errorf("width=%d: the status bar is %d columns: %q", width, n, line)
+		for name, line := range map[string]string{
+			"top":   TopLine(s, width),
+			"input": InputLine(s, width),
+		} {
+			if n := displayWidth(line); n > width {
+				t.Errorf("width=%d: the %s bar is %d columns: %q", width, name, n, line)
+			}
 		}
 	}
-	// Wide enough for the model and the host, so both must be there.
-	if line := StatusLine(s, 120); !strings.Contains(line, "你好世界") ||
-		!strings.Contains(line, "a-host") {
-		t.Errorf("a wide bar dropped a field that fitted: %q", line)
+	// Wide enough for the model and the host, so each must be on its bar.
+	if line := InputLine(s, 120); !strings.Contains(line, "你好世界") {
+		t.Errorf("a wide bar dropped the model, which fitted: %q", line)
+	}
+	if line := TopLine(s, 120); !strings.Contains(line, "你好-host") {
+		t.Errorf("a wide bar dropped the host, which fitted: %q", line)
 	}
 }
 

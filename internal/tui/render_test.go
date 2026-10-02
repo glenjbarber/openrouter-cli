@@ -39,52 +39,90 @@ func TestRenderFrameShape(t *testing.T) {
 		t.Errorf("prompt row index = %d, want the input prompt", i)
 	}
 
-	// The status bar is found by content rather than by position, since it sits
-	// above the conversation rather than below it.
-	var bar string
+	// The bars are found by content rather than by position, since one sits
+	// above the conversation and the other below it.
+	var top, input string
 	for _, l := range lines {
-		if strings.Contains(l, "Provider") {
-			bar = l
+		if strings.Contains(l, "Context:") {
+			top = l
+		}
+		if strings.Contains(l, "Provider:") {
+			input = l
 		}
 	}
-	if bar == "" {
-		t.Error("no status bar in the frame")
+	if top == "" {
+		t.Error("no top bar in the frame")
+	}
+	if input == "" {
+		t.Error("no bar above the input box in the frame")
 	}
 }
 
 // A field that is not yet known is shown as a dash rather than hidden, so the
 // layout does not shift as values arrive.
-func TestStatusLinePlaceholder(t *testing.T) {
-	line := StatusLine(Status{Host: "h"}, 200)
-	if !strings.Contains(line, "Provider: -") {
-		t.Errorf("line = %q, want a placeholder", line)
+func TestTopLinePlaceholder(t *testing.T) {
+	line := TopLine(Status{Host: "h"}, 200)
+	for _, want := range []string{"Credits: -", "Cost: -", "Context: -", "In: -", "Out: -"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("line = %q, want a placeholder %q", line, want)
+		}
 	}
 	if !strings.HasSuffix(line, "h") {
 		t.Errorf("line = %q, want the host at the end", line)
 	}
 }
 
-func TestStatusLineFitsWidth(t *testing.T) {
-	line := StatusLine(Status{Host: "h"}, 30)
-	if len(line) > 30 {
-		t.Errorf("len = %d, want at most 30: %q", len(line), line)
+func TestInputLinePlaceholder(t *testing.T) {
+	line := InputLine(Status{Host: "h"}, 200)
+	for _, want := range []string{"Provider: -", "Model: -", "Status: -", "Approval: -"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("line = %q, want a placeholder %q", line, want)
+		}
+	}
+	if strings.Contains(line, "h") && strings.HasSuffix(line, " | h") {
+		t.Errorf("line = %q, want the host at the top and not here", line)
+	}
+}
+
+func TestTheBarsFitTheirWidth(t *testing.T) {
+	for _, width := range []int{10, 30, 60, 120} {
+		if line := TopLine(Status{Host: "h"}, width); len(line) > width {
+			t.Errorf("top bar len = %d, want at most %d: %q", len(line), width, line)
+		}
+		if line := InputLine(Status{Host: "h"}, width); len(line) > width {
+			t.Errorf("input bar len = %d, want at most %d: %q", len(line), width, line)
+		}
 	}
 }
 
 // The host is dropped before the fields are, since it is the least useful when
 // the bar is narrow.
-func TestStatusLineDropsHostWhenNarrow(t *testing.T) {
-	line := StatusLine(Status{Host: "host.example"}, 30)
+func TestTopLineDropsHostWhenNarrow(t *testing.T) {
+	line := TopLine(Status{Host: "host.example"}, 30)
 	if strings.Contains(line, "host.example") {
 		t.Errorf("line = %q, want the host dropped", line)
 	}
 }
 
-func TestStatusLineOrderIsFixed(t *testing.T) {
-	line := StatusLine(Status{}, 400)
-	// Branch, Reasoning, and Approval were removed: they have no source in
-	// this client, so a dash would be permanent rather than temporary.
-	order := []string{"Provider", "Model", "Status", "Credits", "In:", "Out:"}
+func TestTopLineOrderIsFixed(t *testing.T) {
+	line := TopLine(Status{}, 400)
+	order := []string{"Credits", "Cost", "Context", "In:", "Out:"}
+	at := -1
+	for _, label := range order {
+		i := strings.Index(line, label)
+		if i < 0 {
+			t.Fatalf("label %q missing from %q", label, line)
+		}
+		if i < at {
+			t.Errorf("label %q out of order in %q", label, line)
+		}
+		at = i
+	}
+}
+
+func TestInputLineOrderIsFixed(t *testing.T) {
+	line := InputLine(Status{}, 400)
+	order := []string{"Provider", "Model", "Status", "Approval"}
 	at := -1
 	for _, label := range order {
 		i := strings.Index(line, label)
@@ -137,7 +175,7 @@ func TestRuleSpansWidth(t *testing.T) {
 // The prompt must be separated from the conversation, so that a reply ending
 // above it is not read as part of it.
 func TestRenderSeparatesInputFromOutput(t *testing.T) {
-	lines := Render(Frame{Reply: []string{"a reply"}, Input: "typing"}, 14, 30)
+	lines := Render(Frame{Reply: []string{"a reply"}, Input: "typing"}, 20, 30)
 
 	ruleAt, promptAt := -1, -1
 	for i, l := range lines {
@@ -155,16 +193,24 @@ func TestRenderSeparatesInputFromOutput(t *testing.T) {
 		t.Fatal("no prompt in the frame")
 	}
 
-	// The rule above the prompt is separated from it by a blank row, so that
-	// the rule reads as a division of the screen rather than a border of the
-	// prompt.
+	// The bar is between two rules and a blank on each side of each rule, so a
+	// reply is not read as part of the prompt. The rows above the prompt are a
+	// blank, a rule, a blank, the bar, a blank, a rule, a blank, and then the
+	// conversation.
 	if lines[promptAt-1] != "" {
-		t.Errorf("the row above the prompt is %q, want it blank", lines[promptAt-1])
+		t.Errorf("the row above the prompt is %q, want a blank", lines[promptAt-1])
 	}
-	// A reply must not sit directly against the prompt.
-	if lines[promptAt-2] == "" || strings.HasPrefix(lines[promptAt-2], ">") {
-		t.Errorf("the row before the blank is %q, want the conversation",
-			lines[promptAt-2])
+	if !isRuleRow(lines[promptAt-2]) {
+		t.Errorf("the row two above the prompt is %q, want a rule", lines[promptAt-2])
+	}
+	if !strings.Contains(lines[promptAt-4], "Provider") {
+		t.Errorf("the row four above the prompt is %q, want the bar", lines[promptAt-4])
+	}
+	if !isRuleRow(lines[promptAt-6]) {
+		t.Errorf("the row six above the prompt is %q, want a rule", lines[promptAt-6])
+	}
+	if lines[promptAt-7] != "" {
+		t.Errorf("the row seven above the prompt is %q, want a blank", lines[promptAt-7])
 	}
 }
 
@@ -219,8 +265,8 @@ func TestTruncateAsciiUnchanged(t *testing.T) {
 }
 
 // The provider is a constant rather than a derived value, and must appear.
-func TestStatusLineShowsProvider(t *testing.T) {
-	line := StatusLine(Status{Provider: providerName}, 200)
+func TestInputLineShowsProvider(t *testing.T) {
+	line := InputLine(Status{Provider: providerName}, 200)
 	if !strings.Contains(line, providerName) {
 		t.Errorf("line = %q, want the provider", line)
 	}
@@ -228,8 +274,8 @@ func TestStatusLineShowsProvider(t *testing.T) {
 
 // The state reads Working while a request is in flight, so a slow model is
 // visible as working rather than as idle.
-func TestStatusLineShowsWorking(t *testing.T) {
-	line := StatusLine(Status{State: stateWorking}, 200)
+func TestInputLineShowsWorking(t *testing.T) {
+	line := InputLine(Status{State: stateWorking}, 200)
 	if !strings.Contains(line, stateWorking) {
 		t.Errorf("line = %q, want the working state", line)
 	}
@@ -238,11 +284,15 @@ func TestStatusLineShowsWorking(t *testing.T) {
 // Reasoning and Branch must not reappear as permanent dashes. Approval is no
 // longer among them: it was removed on the grounds that the client had no tools
 // and executed nothing, and the shell tool is what makes it mean something.
-func TestStatusLineHasNoDeadFields(t *testing.T) {
-	line := StatusLine(Status{Provider: providerName}, 400)
-	for _, gone := range []string{"Reasoning", "Branch"} {
-		if strings.Contains(line, gone) {
-			t.Errorf("line = %q, want %q removed", line, gone)
+func TestTheBarsHaveNoDeadFields(t *testing.T) {
+	for _, line := range []string{
+		TopLine(Status{Provider: providerName}, 400),
+		InputLine(Status{Provider: providerName}, 400),
+	} {
+		for _, gone := range []string{"Reasoning", "Branch"} {
+			if strings.Contains(line, gone) {
+				t.Errorf("line = %q, want %q removed", line, gone)
+			}
 		}
 	}
 }
@@ -250,50 +300,76 @@ func TestStatusLineHasNoDeadFields(t *testing.T) {
 // The approval field says what the client will run without asking, so a reader
 // can see at a glance whether a model is about to be stopped for it.
 func TestApprovalFieldRenders(t *testing.T) {
-	line := StatusLine(Status{Approval: stateAsk}, 200)
+	line := InputLine(Status{Approval: stateAsk}, 200)
 	if !strings.Contains(line, "Approval: ask") {
 		t.Errorf("line = %q, want the approval mode", line)
 	}
 }
 
-// The approval field is dropped before the token counters when the bar is
-// narrow, since a reader watching a model ask to run something wants to know
-// whether it will be stopped, and a running token total is the less urgent of
-// the two. The width is chosen so that the counters go and the field remains,
-// which is the ordering being asserted rather than the width.
-func TestTheApprovalFieldOutlastsTheTokenCounters(t *testing.T) {
+// The token counters are dropped before the allowance and the cost when the top
+// bar is narrow, and the context share is the last figure left. The width is
+// found rather than guessed, so that a change to the bar does not quietly make
+// this test assert nothing.
+func TestTheTokenCountersAreDroppedBeforeTheCost(t *testing.T) {
 	status := Status{
-		Provider:  providerName,
-		Model:     "test/model",
-		State:     stateIdle,
-		Approval:  stateAsk,
+		Credits:   "0.42/5",
+		Cost:      "$0.0123",
+		Context:   "12%",
 		TokensIn:  "1k",
 		TokensOut: "2k",
 	}
-	// The width is the one at which the counters no longer fit but the
-	// approval field does, found rather than guessed so that a change to the
-	// bar does not quietly make this test assert nothing.
 	width := 0
 	for w := 1; w <= 200; w++ {
-		line := StatusLine(status, w)
-		if strings.Contains(line, "Approval") && !strings.Contains(line, "In: ") {
+		line := TopLine(status, w)
+		if strings.Contains(line, "Cost") && !strings.Contains(line, "In: ") {
 			width = w
 			break
 		}
 	}
 	if width == 0 {
-		t.Fatalf("no width keeps the approval field while dropping the counters: %q",
-			StatusLine(status, 200))
+		t.Fatalf("no width keeps the cost while dropping the counters: %q",
+			TopLine(status, 200))
 	}
-	if got := StatusLine(status, width-1); strings.Contains(got, "In: ") {
+	if got := TopLine(status, width-1); strings.Contains(got, "In: ") {
 		t.Errorf("the counters survived at %d columns: %q", width-1, got)
+	}
+}
+
+// The approval is the first field the bar above the input box gives up, then the
+// state, then the model, and the provider is the last left. At every width the
+// fields kept are therefore a leading run of the bar.
+func TestTheInputBarGivesUpApprovalFirst(t *testing.T) {
+	status := Status{Provider: providerName, Model: "test/model", State: stateIdle, Approval: stateAsk}
+	has := func(line, label string) bool { return strings.Contains(line, label+": ") }
+	dropped := map[string]bool{}
+	for w := 200; w >= 1; w-- {
+		line := InputLine(status, w)
+		if has(line, "Approval") && !has(line, "Status") {
+			t.Errorf("width %d keeps the approval without the state: %q", w, line)
+		}
+		if has(line, "Status") && !has(line, "Model") {
+			t.Errorf("width %d keeps the state without the model: %q", w, line)
+		}
+		if has(line, "Model") && !has(line, "Provider") {
+			t.Errorf("width %d keeps the model without the provider: %q", w, line)
+		}
+		for _, label := range []string{"Approval", "Status", "Model"} {
+			if !has(line, label) {
+				dropped[label] = true
+			}
+		}
+	}
+	for _, label := range []string{"Approval", "Status", "Model"} {
+		if !dropped[label] {
+			t.Errorf("no width dropped %s, so the order was not exercised", label)
+		}
 	}
 }
 
 // The context field shows the share of the window, which is what a reader
 // watches to know when a compaction is coming.
 func TestContextFieldRenders(t *testing.T) {
-	line := StatusLine(Status{Context: "42%"}, 200)
+	line := TopLine(Status{Context: "42%"}, 200)
 	if !strings.Contains(line, "Context: 42%") {
 		t.Errorf("line = %q, want the context share", line)
 	}
@@ -302,7 +378,7 @@ func TestContextFieldRenders(t *testing.T) {
 // Context and Credits are different measures and must not be confused. Credits
 // is the billing allowance; context is the window the conversation occupies.
 func TestContextIsSeparateFromCredits(t *testing.T) {
-	line := StatusLine(Status{Credits: "0.42/5", Context: "42%"}, 200)
+	line := TopLine(Status{Credits: "0.42/5", Context: "42%"}, 200)
 	if !strings.Contains(line, "Credits: 0.42/5") {
 		t.Errorf("line = %q, want the credits figure", line)
 	}
@@ -317,7 +393,7 @@ func TestContextIsSeparateFromCredits(t *testing.T) {
 func TestContextKeptOverCredits(t *testing.T) {
 	s := Status{Credits: "0.42/5", Context: "42%", Model: "m"}
 	for w := 20; w < 80; w++ {
-		line := StatusLine(s, w)
+		line := TopLine(s, w)
 		if strings.Contains(line, "Credits") && !strings.Contains(line, "Context") {
 			t.Errorf("width %d: %q, want the context share kept", w, line)
 		}
@@ -342,7 +418,7 @@ func TestContextOmittedWithoutAWindow(t *testing.T) {
 // leaves an empty pane with the scroll marker still on the title.
 func TestRenderScrollPastShortHistoryShowsEverything(t *testing.T) {
 	f := Frame{Reply: []string{"one", "two", "three"}, Scroll: 500}
-	out := Render(f, 20, 40)
+	out := Render(f, 24, 40)
 	for _, want := range []string{"one", "two", "three"} {
 		if !containsLine(out, want) {
 			t.Errorf("frame = %q, want the line %q to be shown", out, want)

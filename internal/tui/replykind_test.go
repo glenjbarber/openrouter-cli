@@ -260,7 +260,7 @@ func TestApprovalNoticeAndFailureKinds(t *testing.T) {
 		"> typed", entryKind{},
 		"model text", entryKind{kind: kindReply},
 	)
-	got := replySpansOf(t, f, 24, 80)
+	got := replySpansOf(t, f, 30, 80)
 	for line, want := range map[string]string{
 		"approval needed: go build": "approval=approval needed: go build",
 		"a notice":                  "notice=a notice",

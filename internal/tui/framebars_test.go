@@ -5,9 +5,10 @@ import (
 	"testing"
 )
 
-// The frame is divided by rules at the top, under the title, under the status
-// bar, above the prompt, and at the very bottom. These check the shape, since
-// it is what a reader reads the window by.
+// The frame is divided by rules at the top, under the title, under the top bar,
+// above the bar that carries the values that change on the fly, below it, and at
+// the very bottom. These check the shape, since it is what a reader reads the
+// window by.
 
 func isRuleRow(row string) bool {
 	return row != "" && strings.Trim(row, ruleRune) == ""
@@ -54,36 +55,37 @@ func TestTheTitleSitsDirectlyUnderTheTopRule(t *testing.T) {
 	}
 }
 
-func TestTheStatusBarIsBetweenTwoRulesAndABlank(t *testing.T) {
+// Each bar is between two rules, with a blank on either side of it. The bars are
+// found by content, since one sits above the conversation and one below it.
+func TestEachBarIsBetweenTwoRulesAndABlank(t *testing.T) {
 	rows := Render(Frame{
 		Title:  "openrouter-cli",
-		Status: Status{Provider: "openrouter.ai"},
+		Status: Status{Provider: "openrouter.ai", Context: "42%"},
 	}, 24, 50)
 
-	barAt := -1
-	for i, row := range rows {
-		if strings.Contains(row, "Provider") {
-			barAt = i
-			break
+	for _, marker := range []string{"Context", "Provider"} {
+		barAt := -1
+		for i, row := range rows {
+			if strings.Contains(row, marker) {
+				barAt = i
+				break
+			}
 		}
-	}
-	if barAt < 0 {
-		t.Fatalf("no status bar in the frame:\\n%s", strings.Join(rows, "\\n"))
-	}
-	if !isRuleRow(rows[barAt-2]) {
-		t.Errorf("the row two above the bar is %q, want a rule", rows[barAt-2])
-	}
-	if strings.TrimSpace(rows[barAt-1]) != "" {
-		t.Errorf("the row above the bar is %q, want a blank", rows[barAt-1])
-	}
-	// The rule closing the header, then the blank, then the pane.
-	// The rule closing the header, with a blank on either side of it.
-	if strings.TrimSpace(rows[barAt+1]) != "" {
-		t.Errorf("the row below the bar is %q, want a blank", rows[barAt+1])
-	}
-	if !isRuleRow(rows[barAt+2]) {
-		t.Errorf("the row two below the bar is %q, want the rule closing the header",
-			rows[barAt+2])
+		if barAt < 0 {
+			t.Fatalf("no bar carrying %s in the frame:\n%s", marker, strings.Join(rows, "\n"))
+		}
+		if !isRuleRow(rows[barAt-2]) {
+			t.Errorf("%s: the row two above the bar is %q, want a rule", marker, rows[barAt-2])
+		}
+		if strings.TrimSpace(rows[barAt-1]) != "" {
+			t.Errorf("%s: the row above the bar is %q, want a blank", marker, rows[barAt-1])
+		}
+		if strings.TrimSpace(rows[barAt+1]) != "" {
+			t.Errorf("%s: the row below the bar is %q, want a blank", marker, rows[barAt+1])
+		}
+		if !isRuleRow(rows[barAt+2]) {
+			t.Errorf("%s: the row two below the bar is %q, want a rule", marker, rows[barAt+2])
+		}
 	}
 }
 
@@ -117,21 +119,21 @@ func TestTheFrameFillsTheTerminalAtEveryHeight(t *testing.T) {
 }
 
 // The header is nine rows, so a short terminal gives them up from the top. The
-// rules go first, then the blanks, then the title, and the status bar is held.
+// rules go first, then the blanks, then the title, and the top bar is held.
 func TestTheHeaderGivesUpRulesBeforeText(t *testing.T) {
 	for height := 4; height <= 14; height++ {
 		rows := Render(Frame{
 			Title:  "TITLEROW",
-			Status: Status{Provider: "PROVIDER"},
+			Status: Status{Context: "CONTEXT"},
 			Input:  "hi",
 		}, height, 40)
 		joined := strings.Join(rows, "\n")
 
 		hasTitle := strings.Contains(joined, "TITLEROW")
-		hasBar := strings.Contains(joined, "PROVIDER")
+		hasBar := strings.Contains(joined, "CONTEXT")
 
 		if hasTitle && !hasBar {
-			t.Errorf("height=%d: the title was kept and the status bar dropped:\\n%s",
+			t.Errorf("height=%d: the title was kept and the top bar dropped:\\n%s",
 				height, joined)
 		}
 	}
@@ -139,14 +141,14 @@ func TestTheHeaderGivesUpRulesBeforeText(t *testing.T) {
 
 // A rule the header keeps while the figures are dropped divides nothing, which
 // is the one header row worth refusing.
-func TestTheHeaderDropsItsLastRuleWithTheStatusBar(t *testing.T) {
+func TestTheHeaderDropsItsLastRuleWithTheTopBar(t *testing.T) {
 	for height := 4; height <= 12; height++ {
 		rows := Render(Frame{
 			Title:  "TITLEROW",
-			Status: Status{Provider: "PROVIDER"},
+			Status: Status{Context: "CONTEXT"},
 			Input:  "hi",
 		}, height, 40)
-		if strings.Contains(strings.Join(rows, "\n"), "PROVIDER") {
+		if strings.Contains(strings.Join(rows, "\n"), "CONTEXT") {
 			continue
 		}
 		// The frame is a prompt, a blank and the closing rule, with nothing
@@ -157,7 +159,7 @@ func TestTheHeaderDropsItsLastRuleWithTheStatusBar(t *testing.T) {
 		}
 		for _, row := range rows[:at] {
 			if isRuleRow(row) {
-				t.Errorf("height=%d: a header rule survived with no status bar:\\n%s",
+				t.Errorf("height=%d: a header rule survived with no top bar:\\n%s",
 					height, strings.Join(rows, "\n"))
 				break
 			}

@@ -43,7 +43,7 @@ func TestTheBlankRowIsDrawnUnderTheQuestion(t *testing.T) {
 	s.mu.Lock()
 	frame := s.frame
 	s.mu.Unlock()
-	rows := Render(frame, 20, 40)
+	rows := Render(frame, 24, 40)
 	asked := -1
 	for i, row := range rows {
 		if strings.Contains(row, "> the question") {

@@ -3,6 +3,7 @@ package openrouter
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"strconv"
 )
 
@@ -39,6 +40,12 @@ func (m *Model) UnmarshalJSON(b []byte) error {
 		ContextLength json.RawMessage `json:"context_length"`
 		Prompt        json.RawMessage `json:"prompt"`
 		Completion    json.RawMessage `json:"completion"`
+		// Pricing is where the catalogue documents the prices, as an object
+		// beside the other members of the model.
+		Pricing struct {
+			Prompt     json.RawMessage `json:"prompt"`
+			Completion json.RawMessage `json:"completion"`
+		} `json:"pricing"`
 	}
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
@@ -47,8 +54,19 @@ func (m *Model) UnmarshalJSON(b []byte) error {
 	m.Name = raw.Name
 	m.Description = raw.Description
 	m.ContextLength = tokenCount(raw.ContextLength)
-	m.PromptPrice = scalarText(raw.Prompt)
-	m.CompletionPrice = scalarText(raw.Completion)
+	// The prices are read from the pricing object when the model carries one,
+	// and from the model itself otherwise, which is where the first reader of
+	// the catalogue looked for them. The object wins, since it is the shape the
+	// endpoint documents, and a member of it that is absent falls back to the
+	// model's own so that a catalogue quoted either way is read.
+	m.PromptPrice = scalarText(raw.Pricing.Prompt)
+	if m.PromptPrice == "" {
+		m.PromptPrice = scalarText(raw.Prompt)
+	}
+	m.CompletionPrice = scalarText(raw.Pricing.Completion)
+	if m.CompletionPrice == "" {
+		m.CompletionPrice = scalarText(raw.Completion)
+	}
 	return nil
 }
 
@@ -138,6 +156,34 @@ func (c *Client) KeyUsage(ctx context.Context) (*Usage, error) {
 		return nil, c.wrapf(err, "decoding the key usage")
 	}
 	return &envelope.Data, nil
+}
+
+// Prices returns what the model charges for a token sent to it and for a token
+// it sends back, in US dollars, and whether both are known.
+//
+// They are the figures the catalogue quotes, which are per token and not per
+// million, so a caller wanting a cost multiplies them by a count. A price that
+// is absent, unreadable, negative or not finite is not known, and neither is
+// the pair when one of them is not. The endpoint quotes a negative price for a
+// model whose cost depends on the route chosen, and a figure like that is not
+// one to multiply a count by.
+func (m Model) Prices() (prompt, completion float64, ok bool) {
+	read := func(s string) (float64, bool) {
+		if s == "" {
+			return 0, false
+		}
+		v, err := strconv.ParseFloat(s, 64)
+		if err != nil || v < 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+			return 0, false
+		}
+		return v, true
+	}
+	p, okP := read(m.PromptPrice)
+	c, okC := read(m.CompletionPrice)
+	if !okP || !okC {
+		return 0, 0, false
+	}
+	return p, c, true
 }
 
 // Free reports whether the model costs nothing to call.

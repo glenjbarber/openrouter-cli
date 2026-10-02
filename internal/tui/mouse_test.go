@@ -437,17 +437,17 @@ func TestRenderScrollPastTopFillsThePane(t *testing.T) {
 	out := Render(f, height, 40)
 
 	// The pane starts below the header, which is the title, a rule, and the
-	// status bar. It is found by content rather than by arithmetic, since the
+	// top bar. It is found by content rather than by arithmetic, since the
 	// header grows and shrinks with the terminal.
 	barAt := -1
 	for i, l := range out {
-		if strings.Contains(l, "Provider") {
+		if strings.Contains(l, "Context") {
 			barAt = i
 			break
 		}
 	}
-	if barAt < 2 {
-		t.Fatalf("no status bar found in %d rows", len(out))
+	if barAt < 0 {
+		t.Fatalf("no top bar found in %d rows", len(out))
 	}
 	// The pane runs from below the header to above the rule that divides it
 	// from the prompt.
@@ -510,8 +510,10 @@ func TestRenderScrollPastTopFillsThePane(t *testing.T) {
 // The marker is what tells a reader the view is not at the bottom, since
 // nothing else on screen changes when it is scrolled.
 func TestRenderShowsScrollMarker(t *testing.T) {
-	f := Frame{Reply: []string{"one", "two", "three"}, Scroll: 1}
-	out := Render(f, 12, 60)
+	// The pane is four rows at this height, so the reply is longer than it and
+	// there is somewhere to scroll back to.
+	f := Frame{Reply: []string{"one", "two", "three", "four", "five", "six", "seven"}, Scroll: 1}
+	out := Render(f, 24, 60)
 	// The marker is on the title row rather than on a row of its own, since a
 	// row taken for it would resize the pane as the reader scrolled. The title
 	// is found by content, since the rule above it is the first row of the
@@ -530,8 +532,8 @@ func TestRenderShowsScrollMarker(t *testing.T) {
 		t.Errorf("the marker is on a row of its own rather than the title row")
 	}
 
-	if len(out) != 12 {
-		t.Errorf("len = %d, want 12, the frame must not resize", len(out))
+	if len(out) != 24 {
+		t.Errorf("len = %d, want 24, the frame must not resize", len(out))
 	}
 }
 

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// The header yields before the prompt does. A frame that keeps the status bar
+// The header yields before the prompt does. A frame that keeps the top bar
 // and loses the prompt leaves a reader with no way to type a next message,
 // which is the one row the interface cannot do without.
 func TestShortFrameKeepsThePrompt(t *testing.T) {
@@ -26,30 +26,30 @@ func TestShortFrameKeepsThePrompt(t *testing.T) {
 	}
 }
 
-// The header is given up from the top. The title goes first and the status bar
+// The header is given up from the top. The title goes first and the top bar
 // goes last, so a reader who has lost rows has lost the heading rather than the
 // figures, and a row that was kept still has everything below it.
 func TestHeaderYieldsFromTheTop(t *testing.T) {
 	for height := 1; height <= 12; height++ {
 		joined := strings.Join(Render(Frame{Title: "TITLEROW", Input: "hi"}, height, 30), "\n")
-		if strings.Contains(joined, "TITLEROW") && !strings.Contains(joined, "Provider") {
-			t.Errorf("height=%d: the title was kept and the status bar dropped: %q",
+		if strings.Contains(joined, "TITLEROW") && !strings.Contains(joined, "Context") {
+			t.Errorf("height=%d: the title was kept and the top bar dropped: %q",
 				height, joined)
 		}
 		// The rule closing the foot of the frame is drawn on any terminal
 		// with room for it, and says nothing about whether the header
 		// survived. What is checked is that no rule is left in the header
-		// above a status bar that was dropped, since a rule dividing nothing
+		// above a top bar that was dropped, since a rule dividing nothing
 		// is the one header row worth refusing to draw.
 		rows := strings.Split(joined, "\n")
 		at := promptRow(rows)
-		if at < 0 || strings.Contains(joined, "Provider") {
+		if at < 0 || strings.Contains(joined, "Context") {
 			continue
 		}
 		header := rows[:at]
 		if strings.Contains(strings.Join(header, "\n"), ruleRune) &&
 			strings.TrimSpace(header[len(header)-1]) == "" {
-			t.Errorf("height=%d: the header kept a rule and dropped the status bar: %q",
+			t.Errorf("height=%d: the header kept a rule and dropped the top bar: %q",
 				height, joined)
 		}
 	}

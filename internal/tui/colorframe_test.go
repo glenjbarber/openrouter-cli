@@ -26,6 +26,7 @@ func frameCorpus() []Frame {
 		{Title: "t", Confirm: "run it?", Notice: "n", Hints: []string{"Esc"}, Pasted: []string{"p1", "p2"}, Queued: []string{"q"}},
 		{Title: "t", Status: Status{Provider: "p", Model: "m"}, Partial: "streaming", Spinner: spinnerFrames[0], Elapsed: "3s"},
 		{Title: "t", Reply: []string{"a\x1b[31mred\x1b[0m", "tab\there"}, Input: "x"},
+		fullFrame(),
 	}
 }
 
