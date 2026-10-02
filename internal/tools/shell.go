@@ -59,6 +59,7 @@ var shellPermitted = []string{
 	"tail",
 	"sed",
 	"awk",
+	"ps",
 }
 
 // shellPermittedMap is shellPermitted as a lookup, so that the two cannot drift
@@ -77,7 +78,7 @@ const shellParameters = `{
   "properties": {
     "command": {
       "type": "string",
-      "description": "The program to run, such as go. It must be one of: go, gofmt, make, git, ls, cat, pwd, echo, grep, find, wc, head, tail, sed, awk. Anything else is refused before it runs."
+      "description": "The program to run, such as go. It must be one of: go, gofmt, make, git, ls, cat, pwd, echo, grep, find, wc, head, tail, sed, awk, ps. Anything else is refused before it runs."
     },
     "args": {
       "type": "array",
