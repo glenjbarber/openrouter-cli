@@ -354,6 +354,62 @@ what it does say.
 
 ## Backlog
 
+
+### Chrome on the shell allowlist, or as a tool of its own
+
+Raised by the maintainer. An intent rather than a decision. Not started, and
+no worktree exists.
+
+A name on `shellPermitted` would let a model launch Chrome, and nothing more.
+The two are different questions, and the record does not say which is meant, so
+this entry covers both.
+
+**A list entry is three edits and buys three things.** Chrome launches with its
+own window rather than inside the terminal. Headless works, and
+`--headless --dump-dom URL` prints the rendered DOM as text, which is the one
+of the three a model can genuinely use. Launching it so a reader can watch is
+the third. None of that is driving it.
+
+**Driving it needs a tool, not a name.** Four things stand between the
+allowlist and a browser a model can navigate, and none of them is a program
+already on the list:
+
+1. A debugging port. Chrome must be launched with `--remote-debugging-port`,
+which is an argument, so a model could do it after the reader approves.
+2. An HTTP client to reach it. Every DevTools request is HTTP, and `curl` is not
+on the list.
+3. A JSON protocol. Navigating, clicking and evaluating script are DevTools
+methods, not arguments, and `sed` and `awk` cannot speak them.
+4. A websocket. DevTools is not plain HTTP, and nothing on the list can hold one.
+
+So the work is a new tool of the same order as the terminal layer rather than
+as a list edit. It would launch Chrome under a profile in a directory the tool
+owns, bind the port to localhost, and speak DevTools over it.
+
+**The containment point, which is not settled anywhere.** A shell program is
+contained only in the directory it runs in. Its arguments are not checked. So
+Chrome given `--user-data-dir=/somewhere` writes there, and `--headless --dump-dom`
+writes a whole profile wherever it is told. That is already true of `git` and of
+`make`, and the record does not say so in as many words. The `curl` question, in the note at build/IDEAS-tail.md,
+raises the same one.
+
+What the decision needs:
+
+1. A list entry, a tool, or both.
+2. If an entry, whether `--user-data-dir` is refused outside the working directory, on
+the pattern `gitRefused` already uses.
+3. Whose profile. A reader launching their own browser and a tool launching one
+under a directory it owns are different things with different consequences.
+4. What the reader sees. A browser window opening on its own is not something a
+reader asked for.
+5. Whether `file://` URLs are refused, on the maintainers instruction. A
+browser a model drives can be pointed at `file:///etc/passwd` or at any other
+file the account reads, and a page it loads can carry content back out. That is
+the one URL scheme with no network between the model and the filesystem, so it
+is the one worth refusing. The question is where: refused by name beside the
+other options, or refused wherever a URL appears as an argument, which is the
+check `gitRefused` already models. A browser tool would want the second, since
+the URL reaches it by several routes.
 ### An urgent queued message bypasses the queue
 
 Raised by the maintainer. An intent rather than a decision, and it contradicts a
