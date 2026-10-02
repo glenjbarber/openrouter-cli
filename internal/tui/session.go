@@ -166,6 +166,8 @@ type Session struct {
 	// that leaving does not leave one writing to a frame nobody is drawing on,
 	// and so that the count can be reported.
 	delegates map[*Delegate]bool
+	// dpane is the output pane for /delegate, guarded by mu. See delegatepane.go.
+	dpane delegatePane
 	// delegateWG counts the delegate goroutines that are running, so that Close
 	// waits for them rather than returning while one is still writing to the
 	// frame and still holding its request open. A delegate is counted under mu
@@ -751,6 +753,7 @@ func init() {
 		{names: []string{"/verbosity"}, usage: "/verbosity [0-6]", description: "how much the model is asked to answer with", run: (*Session).cmdVerbosity},
 		{names: []string{"/verbose"}, description: "report the shape of each streamed turn, on or off", run: (*Session).cmdVerbose},
 		{names: []string{"/delegate"}, usage: "/delegate QUESTION", description: "ask a question alongside, without recording it", run: (*Session).cmdDelegate},
+		{names: []string{"/pane"}, usage: "/pane [main|delegate]", description: "show the conversation or the /delegate output", run: (*Session).cmdPane},
 		{names: []string{"/btw"}, description: "start a thread branched from this conversation", run: (*Session).cmdBtw, idleOnly: true},
 		{names: []string{"/main"}, description: "leave the thread and return to the conversation", run: (*Session).cmdMain, idleOnly: true},
 		{names: []string{"/compact"}, description: "summarise the conversation and start again", run: (*Session).cmdCompact, idleOnly: true},
@@ -2339,6 +2342,7 @@ func (s *Session) paintNow() {
 	// is the opposite of what the spinner is for.
 	frame := s.frame
 	frame.Scroll = s.scroll
+	s.applyDelegatePane(&frame)
 	// The queue is copied rather than shared, since the renderer draws it
 	// after the lock is released and the input goroutine is what appends to
 	// it. A frame built from a slice being appended to would show a queue

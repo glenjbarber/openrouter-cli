@@ -64,7 +64,7 @@ func TestDelegateSaysWhenNothingCameBack(t *testing.T) {
 	}
 
 	s.mu.Lock()
-	lines := append([]string{}, s.frame.Reply...)
+	lines := append([]string{}, s.dpane.lines...)
 	s.mu.Unlock()
 
 	found := false
