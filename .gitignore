@@ -43,3 +43,4 @@ go.work.sum
 
 # Working notes, not part of the project.
 /todo.txt
+.OPENROUTER.md
