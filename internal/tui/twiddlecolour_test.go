@@ -1,0 +1,284 @@
+package tui
+
+import (
+	"os"
+	"strings"
+	"testing"
+)
+
+// The ramp was written before anything called it, so it carried no test of its
+// own. These cover the maths and the wiring together: that a step produces a
+// sequence, that the frame carries one, and that the screen writes it around
+// the twiddle and no further.
+
+// screenCapture returns a screen writing into a file, so a test can read the
+// bytes without a terminal.
+func screenCapture(t *testing.T) (*Screen, func() string) {
+	t.Helper()
+	out, err := os.CreateTemp(t.TempDir(), "screen")
+	if err != nil {
+		t.Fatalf("creating the capture: %v", err)
+	}
+	sc := &Screen{out: out, in: out, height: 24, width: 80}
+	return sc, func() string {
+		data, err := os.ReadFile(out.Name())
+		if err != nil {
+			t.Fatalf("reading the capture: %v", err)
+		}
+		return string(data)
+	}
+}
+
+func TestATwiddleStepProducesASequence(t *testing.T) {
+	seq := twiddleTint(0)
+	if !strings.HasPrefix(seq, "\x1b[38;5;") {
+		t.Errorf("step 0 produced %q, want a cube foreground", seq)
+	}
+	if !strings.HasSuffix(seq, "m") {
+		t.Errorf("step 0 produced %q, want it terminated", seq)
+	}
+}
+
+func TestTheRampIsNotOneColour(t *testing.T) {
+	// Every step must not draw the same colour, or the ramp is a shade rather
+	// than a scroll and the figure is not worth colouring.
+	seen := map[string]bool{}
+	for step := 0; step < twiddleSteps; step++ {
+		seen[twiddleTint(step)] = true
+	}
+	if len(seen) < len(primaryColours) {
+		t.Errorf("the ramp produced %d distinct colours over %d steps, want at least one per primary",
+			len(seen), twiddleSteps)
+	}
+}
+
+func TestTheRampRepeatsExactly(t *testing.T) {
+	// A turn long enough to go round the circuit many times must repeat it
+	// rather than run off the end of the table.
+	for step := 0; step < twiddleSteps; step++ {
+		if got, want := twiddleTint(step+twiddleSteps), twiddleTint(step); got != want {
+			t.Errorf("step %d gave %q and step %d gave %q, want the same",
+				step, want, step+twiddleSteps, got)
+		}
+	}
+}
+
+func TestTheRampIsDefinedBeforeItsStart(t *testing.T) {
+	// A step indexes a table, and a table read out of range would panic rather
+	// than draw. The step before the first is the last.
+	if twiddleTint(-1) != twiddleTint(twiddleSteps-1) {
+		t.Error("a negative step did not wrap onto the end of the ramp")
+	}
+}
+
+func TestTheRampTurnsAtTheRateTheTwiddleDoes(t *testing.T) {
+	// The ramp is divided by the repaint interval, so a circuit is a circuit
+	// rather than however long the division happens to make it.
+	if want := int(twiddleCircuit / spinnerInterval); twiddleSteps != want {
+		t.Errorf("the ramp is %d steps for a %s circuit at a %s interval, want %d",
+			twiddleSteps, twiddleCircuit, spinnerInterval, want)
+	}
+	if twiddleSteps < 2 {
+		t.Errorf("the ramp has %d steps, which is not a scroll", twiddleSteps)
+	}
+}
+
+func TestTheRampIsNeverTheBlackOfTheCube(t *testing.T) {
+	// A component reaching zero is floored, so a primary on its way down does
+	// not become the black that reads as nothing on a dark terminal.
+	for step := 0; step < twiddleSteps; step++ {
+		if twiddleTint(step) == "\x1b[38;5;0m" {
+			t.Fatalf("step %d drew the black of the cube", step)
+		}
+	}
+}
+
+// The frame leaves the renderer as plain text, so a copy out of the pane cannot
+// carry a sequence. This is what makes the colour a screen concern.
+func TestTheTwiddleRowCarriesNoSequenceOutOfTheRenderer(t *testing.T) {
+	rows := Render(Frame{Spinner: spinnerFrames[0], Partial: "a"}, 24, 80)
+
+	found := false
+	for _, row := range rows {
+		if strings.Contains(row, "thinking") {
+			found = true
+			if strings.Contains(row, "\x1b") {
+				t.Errorf("the twiddle row carries an escape: %q", row)
+			}
+		}
+	}
+	if !found {
+		t.Error("no row held the twiddle, so nothing was tested")
+	}
+}
+
+func TestTheRendererReportsTheTwiddleRow(t *testing.T) {
+	frame := Frame{Spinner: spinnerFrames[0], Partial: "a"}
+	rows, _, row := render(frame, 24, 80)
+
+	if row < 0 || row >= len(rows) {
+		t.Fatalf("the reported row is %d, outside a frame of %d rows", row, len(rows))
+	}
+	if !strings.Contains(rows[row], "thinking") {
+		t.Errorf("row %d is %q, which is not the twiddle", row, rows[row])
+	}
+}
+
+func TestAFrameWithNoTwiddleReportsNoRow(t *testing.T) {
+	rows, _, row := render(Frame{Partial: "a"}, 24, 80)
+
+	if row != -1 {
+		t.Errorf("a frame with no twiddle reported row %d of %d", row, len(rows))
+	}
+}
+
+// The pane is trimmed to what fits, so the row the twiddle is appended at is
+// not the row it is finally drawn on. The reported row is the final one.
+func TestTheReportedRowFollowsThePane(t *testing.T) {
+	var reply []string
+	for i := 0; i < 300; i++ {
+		reply = append(reply, "a line of history")
+	}
+	frame := Frame{Reply: reply, Spinner: spinnerFrames[0], Partial: "working"}
+	rows, _, row := render(frame, 24, 80)
+
+	if row < 0 || row >= len(rows) {
+		t.Fatalf("the reported row is %d, outside a frame of %d rows", row, len(rows))
+	}
+	if !strings.Contains(rows[row], "thinking") {
+		t.Errorf("row %d is %q, which is not the twiddle", row, rows[row])
+	}
+}
+
+// A scrolled pane has no twiddle on it. The figure is the newest line of the
+// pane, so any offset takes it off the screen, and no row may be reported. A
+// tint naming a row that has taken its place would colour a line of history a
+// reader is reading.
+func TestAScrolledPaneReportsNoRow(t *testing.T) {
+	var reply []string
+	for i := 0; i < 40; i++ {
+		reply = append(reply, "a line of history")
+	}
+	for _, scroll := range []int{1, 5, 20} {
+		frame := Frame{Reply: reply, Spinner: spinnerFrames[0], Scroll: scroll}
+		rows, _, row := render(frame, 24, 80)
+
+		if strings.Contains(strings.Join(rows, "\n"), "thinking") {
+			t.Errorf("at scroll %d the twiddle is drawn, so a row was expected", scroll)
+		}
+		if row != -1 {
+			t.Errorf("at scroll %d a frame with no twiddle reported row %d", scroll, row)
+		}
+	}
+}
+
+// A short conversation cannot be scrolled far enough to lose the twiddle, so
+// the figure is still on it and the row is still reported. The offset is
+// clamped against the pane height, which is what makes this the case.
+func TestAShortPaneKeepsTheTwiddleThroughAnyScroll(t *testing.T) {
+	frame := Frame{
+		Reply:   []string{"one", "two"},
+		Spinner: spinnerFrames[0],
+		Scroll:  100,
+	}
+	rows, _, row := render(frame, 24, 80)
+
+	if row < 0 || row >= len(rows) {
+		t.Fatalf("the reported row is %d, outside a frame of %d rows", row, len(rows))
+	}
+	if !strings.Contains(rows[row], "thinking") {
+		t.Errorf("row %d is %q, which is not the twiddle", row, rows[row])
+	}
+}
+
+// The colour reaches the twiddle and stops, so the word beside it and anything
+// a reader selects is not carrying a sequence out of the terminal.
+func TestTheSequenceIsWrittenAroundTheFigureOnly(t *testing.T) {
+	sc, read := screenCapture(t)
+
+	rows := []string{"before", "⠋ thinking", "after"}
+	sc.DrawTinted(rows, tint{row: 1, sequence: twiddleTint(0), figure: "⠋"})
+	got := read()
+
+	marker := strings.Index(got, "\x1b[38;5;")
+	if marker < 0 {
+		t.Fatalf("no colour was written at all: %q", got)
+	}
+	rest := got[marker:]
+	figureAt := strings.Index(rest, "⠋")
+	resetAt := strings.Index(rest, seqResetAttr)
+	if figureAt < 0 {
+		t.Fatalf("the figure is missing: %q", got)
+	}
+	if resetAt < 0 {
+		t.Fatalf("the colour was never reset: %q", got)
+	}
+	if resetAt < figureAt {
+		t.Errorf("the colour was reset before the figure: %q", got)
+	}
+	if !strings.Contains(rest[resetAt:], "thinking") {
+		t.Error("the word beside the twiddle is missing, so it was not drawn")
+	}
+}
+
+// The braille figures are several bytes each, so a count of columns rather than
+// of bytes would cut one in half and the terminal would draw the tail of it as
+// text. The figure travels as text for that reason.
+func TestTheFigureIsNotCutInHalf(t *testing.T) {
+	sc, read := screenCapture(t)
+
+	rows := []string{"⠋ thinking"}
+	sc.DrawTinted(rows, tint{row: 0, sequence: "\x1b[38;5;1m", figure: spinnerFrames[0]})
+	got := read()
+
+	marker := strings.Index(got, "\x1b[38;5;1m")
+	if marker < 0 {
+		t.Fatalf("no colour was written: %q", got)
+	}
+	after := got[marker+len("\x1b[38;5;1m"):]
+	if !strings.HasPrefix(after, spinnerFrames[0]) {
+		t.Errorf("the figure was cut: it begins %q", after)
+	}
+}
+
+func TestAFrameWithNoTintIsDrawnAsItAlwaysWas(t *testing.T) {
+	rows := []string{"one", "two"}
+
+	plain, readPlain := screenCapture(t)
+	plain.Draw(rows)
+	before := readPlain()
+
+	tinted, readTinted := screenCapture(t)
+	tinted.DrawTinted(rows, tint{})
+	after := readTinted()
+
+	if before != after {
+		t.Errorf("an empty tint changed the output:\n%q\n%q", before, after)
+	}
+}
+
+func TestATintNamingNoRowIsNotApplied(t *testing.T) {
+	sc, read := screenCapture(t)
+
+	sc.DrawTinted([]string{"one", "two"}, tint{
+		row: 9, sequence: "\x1b[38;5;1m", figure: "one",
+	})
+
+	if strings.Contains(read(), "\x1b[38;5;1m") {
+		t.Error("a tint naming no row was applied")
+	}
+}
+
+// A row whose text is not the twiddle is left alone, since the figure is what
+// decides whether the colour applies and not the index alone.
+func TestATintNotMatchingTheRowIsNotApplied(t *testing.T) {
+	sc, read := screenCapture(t)
+
+	sc.DrawTinted([]string{"one", "two"}, tint{
+		row: 1, sequence: "\x1b[38;5;1m", figure: "⠋",
+	})
+
+	if strings.Contains(read(), "\x1b[38;5;1m") {
+		t.Error("a tint whose figure is not on the row was applied")
+	}
+}
