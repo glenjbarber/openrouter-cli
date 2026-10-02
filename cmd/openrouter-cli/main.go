@@ -74,6 +74,7 @@ func run(args []string) error {
 		// file even though the key is not, so that a file carrying a preference
 		// is not treated as unread.
 		cfg = config.EmptyMouse(keyErr.Model, keyErr.Mouse, keyErr.Bell)
+		cfg.SetColor(keyErr.Color, keyErr.ColorTheme, keyErr.ColorNote)
 		if keyErr.URLBase != "" {
 			cfg.URLBase = keyErr.URLBase
 		}
@@ -114,6 +115,14 @@ func interface_(out, in *os.File, cfg *config.Config, opts options, doc *bootstr
 	// absence as an ordinary message rather than refusing to open.
 	session.Configure(cfg)
 	session.SetBell(cfg.Bell)
+	// Colour is handed over but nothing is drawn from it yet. A theme value
+	// that was not valid has already been dropped by the loader, and the one
+	// line note is shown once so that the fallback is not silent.
+	session.SetColor(cfg.Color)
+	session.SetColorTheme(cfg.ColorTheme)
+	if cfg.ColorNote != "" {
+		session.Note("%s", cfg.ColorNote)
+	}
 
 	// A marker left by an earlier session is adopted before anything is sent,
 	// so that a session started while the mode is in force records nothing.

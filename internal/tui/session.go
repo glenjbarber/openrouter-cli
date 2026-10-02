@@ -200,6 +200,9 @@ type Session struct {
 	// colorOn reports that colour is drawn on the screen. It is off unless the
 	// configuration asked for it, and /color changes it for the session only.
 	colorOn bool
+	// colorTheme is the base colours the configuration asks for, empty on a
+	// side that follows the terminal theme.
+	colorTheme config.Theme
 	// out is where the bell is written, which is the interface output.
 	out *os.File
 	// cognito reports that this session records nothing. The mode is in force

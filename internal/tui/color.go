@@ -1,6 +1,10 @@
 package tui
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/glenjbarber/openrouter-cli/internal/config"
+)
 
 // cmdColor turns colour on or off for the session.
 //
@@ -33,3 +37,9 @@ func (s *Session) cmdColor(args []string) bool {
 // The value comes from the configuration file, so a user who wants colour
 // writes it once rather than typing a command at every session.
 func (s *Session) SetColor(on bool) { s.colorOn = on }
+
+// SetColorTheme sets the base colours the file asks for.
+//
+// An empty side follows the terminal theme. The values were checked when the
+// file was read, so a value that is set is one the palette can resolve.
+func (s *Session) SetColorTheme(theme config.Theme) { s.colorTheme = theme }

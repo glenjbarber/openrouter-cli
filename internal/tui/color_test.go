@@ -3,6 +3,8 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	"github.com/glenjbarber/openrouter-cli/internal/config"
 )
 
 // Colour must not be on unless asked for.
@@ -94,5 +96,17 @@ func TestColourRunsTheCommand(t *testing.T) {
 	s.command("/color off")
 	if s.colorOn {
 		t.Error("/color off did not turn colour off")
+	}
+}
+
+func TestSetColorTheme(t *testing.T) {
+	s := &Session{}
+	if s.colorTheme != (config.Theme{}) {
+		t.Errorf("a fresh session has a theme: %+v", s.colorTheme)
+	}
+	want := config.Theme{Foreground: "red", Background: "#101010"}
+	s.SetColorTheme(want)
+	if s.colorTheme != want {
+		t.Errorf("colorTheme = %+v, want %+v", s.colorTheme, want)
 	}
 }
