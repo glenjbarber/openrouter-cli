@@ -98,7 +98,7 @@ func (st hintState) hints() []string {
 	// otherwise. The shifted arrows are named for the same reason: a reader
 	// holding a long conversation back and looking for a way to move through
 	// it has no way to find them either.
-	return []string{"Send [enter]", "[ctrl]+j newline", "[shift]+arrows page", "[ctrl]+b n/p window"}
+	return []string{"Send [enter]", "[ctrl]+j newline", "[shift]+arrows page", "[ctrl]+b j/; window"}
 }
 
 // hintLine renders the keys that act onto one row.

@@ -515,15 +515,18 @@ func (le *LineEditor) ReadLine() (string, error) {
 			continue
 		}
 
-		// The key after the prefix is consumed whatever it is: n and p move
-		// between windows and any other key does nothing, so it is neither
-		// typed nor allowed to end the line.
+		// The key after the prefix is consumed whatever it is: a semicolon
+		// moves to the next window, j moves to the previous one, and any other
+		// key does nothing, so it is neither typed nor allowed to end the line.
+		//
+		// Ctrl with shift cannot be the binding, since a terminal sends the same
+		// byte for ctrl+shift+h as for ctrl+h, which is the backspace key.
 		if le.prefix {
 			le.prefix = false
 			switch b {
-			case 'n':
+			case ';':
 				le.key(keyWindowNext, &out)
-			case 'p':
+			case 'j':
 				le.key(keyWindowPrev, &out)
 			}
 			continue

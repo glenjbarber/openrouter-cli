@@ -73,7 +73,7 @@ const (
 )
 
 // keyWindowNext and keyWindowPrev are the queued values for the window prefix
-// followed by n and by p. They sit below the range of sequence final bytes, as
+// followed by a semicolon and by j. They sit below the range of sequence final bytes, as
 // the page keys do, so a queued key cannot collide with an arrow.
 const (
 	keyWindowNext = 0x03

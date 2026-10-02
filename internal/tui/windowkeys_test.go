@@ -26,8 +26,8 @@ func TestWindowPrefixThenKeyActsAcrossBlocks(t *testing.T) {
 		key  string
 		want byte
 	}{
-		{"n", keyWindowNext},
-		{"p", keyWindowPrev},
+		{";", keyWindowNext},
+		{"j", keyWindowPrev},
 	} {
 		pr, pw := io.Pipe()
 		le := NewLineEditor(pr)
@@ -61,7 +61,7 @@ func TestWindowPrefixThenKeyInOneBlock(t *testing.T) {
 	keys := make(chan byte, 4)
 	le.OnKey = func(k byte) { keys <- k }
 	go le.ReadLine()
-	feed(t, pw, "\x02n")
+	feed(t, pw, "\x02;")
 	select {
 	case got := <-keys:
 		if got != keyWindowNext {
@@ -76,7 +76,7 @@ func TestWindowPrefixThenKeyInOneBlock(t *testing.T) {
 // An unknown key after the prefix, including enter, is consumed: nothing is
 // typed, no line ends, and OnKey is not called. The line goes on afterwards.
 func TestWindowPrefixThenUnknownKeyIsConsumed(t *testing.T) {
-	for _, k := range []string{"x", "\r", "\x1b[A", "\x02"} {
+	for _, k := range []string{"x", "n", "p", "\r", "\x1b[A", "\x02"} {
 		pr, pw := io.Pipe()
 		le := NewLineEditor(pr)
 		le.remember("old")
@@ -113,7 +113,7 @@ func TestWindowPrefixThenUnknownKeyIsConsumed(t *testing.T) {
 	}
 }
 
-// Without a prefix, n and p are text.
+// Without a prefix, a semicolon and j are text.
 func TestWindowKeysWithoutPrefixAreText(t *testing.T) {
 	pr, pw := io.Pipe()
 	le := NewLineEditor(pr)
@@ -124,11 +124,11 @@ func TestWindowKeysWithoutPrefixAreText(t *testing.T) {
 		line, _ := le.ReadLine()
 		result <- line
 	}()
-	feed(t, pw, "n", "p", "\r")
+	feed(t, pw, ";", "j", "\r")
 	select {
 	case line := <-result:
-		if line != "np" {
-			t.Errorf("line was %q, want np", line)
+		if line != ";j" {
+			t.Errorf("line was %q, want ;j", line)
 		}
 	case <-time.After(strandedWait):
 		t.Error("the line was not submitted")
