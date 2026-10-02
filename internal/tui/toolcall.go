@@ -21,7 +21,20 @@ import (
 // in every round spends the allowance and returns for ever, which reads as a
 // hang rather than as a fault. The figure is a number of requests rather than
 // a time, since what a loop costs is requests.
-const maxToolRounds = 8
+//
+// The figure is set by what a turn has to be able to do rather than by what a
+// loop is likely to do. Eight was enough to read a file and answer, and was
+// not enough for the work the tools were added for: a turn that checks a
+// build, reads the error, edits the file and builds again spends a round on
+// each step, and one that fixes two errors in the same file runs out mid task
+// and reports a limit rather than an answer. A model that converges does so in
+// far fewer rounds than this, so the cap is not what stops a working turn; it
+// is what stops one that never does, and a higher cap makes that rarer without
+// making it slower, since a reader can stop a turn at any time.
+//
+// It is a cap on requests rather than on tool calls, since a round may carry
+// several calls, and the requests are what the allowance is spent on.
+const maxToolRounds = 32
 
 // The labels the pane draws a call under.
 //
@@ -30,8 +43,14 @@ const maxToolRounds = 8
 // what the tools were built from, which is also what /tools reports, so the two
 // cannot name the same tool differently.
 const (
-	fsToolLabel  = "fs"
-	gitToolLabel = "git"
+	fsToolLabel    = "fs"
+	gitToolLabel   = "git"
+	shellToolLabel = "shell"
+	// shellToolName is the name the shell tool is offered under, which the
+	// tools package owns. It is spelled here so that the label and the name
+	// can be told apart: one is what the pane draws, the other is what a
+	// model calls.
+	shellToolName = "shell"
 )
 
 // toolSet is the tools a session offers, and what the pane needs to say about
@@ -84,7 +103,13 @@ func workingDir() string {
 // symlink inside the tree pointing out of it. The root is the open descriptor,
 // and the directory is opened once so that nothing after it can be swapped for
 // something else.
-func toolsAt(dir string) *toolSet {
+// toolsAt returns the tools contained to dir, asking the session about each
+// program the shell tool is about to run.
+//
+// The approver is passed rather than reached for, since the tool has no way to
+// ask a reader by itself and a nil approver would mean a shell that runs
+// anything at all.
+func toolsAt(dir string, approver tools.Approver) *toolSet {
 	t := &toolSet{
 		set:    tools.New(),
 		labels: map[string]string{},
@@ -100,14 +125,21 @@ func toolsAt(dir string) *toolSet {
 
 	// A directory that is not a repository is ordinary rather than a fault,
 	// and it costs one tool rather than the session, so it is reported and the
-	// filesystem tools are kept.
+	// other tools are kept. Returning here rather than continuing would cost
+	// the shell as well, which is a tool that does not care whether the tree
+	// is a repository at all, and a reader outside one would find the model
+	// unable to build anything.
 	git, err := tools.NewGit(dir)
 	if err != nil {
 		t.problem = fmt.Sprintf("no git tool: %v, so the model cannot read the "+
 			"repository", err)
-		return t
+	} else {
+		t.merge(gitToolLabel, git)
 	}
-	t.merge(gitToolLabel, git)
+	// The shell is offered last, since it is the tool that runs a program on
+	// the host rather than reading the tree, and a reader scanning the
+	// catalogue should meet the contained tools first.
+	t.merge(shellToolLabel, tools.NewShell(dir, approver))
 	return t
 }
 
@@ -162,6 +194,18 @@ func (t *toolSet) label(name string) string {
 		return ""
 	}
 	return t.labels[name]
+}
+
+// offersShell reports whether the shell was built for this session.
+//
+// It is asked rather than inferred from a label, since a session that could not
+// ask about a program must offer no shell at all, and /tools has to be able to
+// say that rather than listing a tool that cannot run.
+func (t *toolSet) offersShell() bool {
+	if t == nil || t.set == nil {
+		return false
+	}
+	return t.label(shellToolName) != ""
 }
 
 // names returns the tools offered, in the order a request offers them.

@@ -108,9 +108,12 @@ coming. The two are separate measures: one is money, the other is window. The
 token counters accumulate across the session.
 
 A field with no value yet is shown as a dash. Fields with no source in the
-client are not shown at all: `Branch`, `Reasoning`, and `Approval` were removed,
-since the client has no branching, no reasoning parameter, and no tool execution
-to approve.
+client are not shown at all: `Branch` and `Reasoning` were removed, since the
+client has no branching and no reasoning parameter. `Approval` was removed with
+them and came back when the model was given a shell, since a field reporting what
+would run without a question has something to say. It reads `ask` when every
+program is put to you, `allow` when the configuration file settles them all, and
+`partial` when some were granted at the keyboard on top of that.
 
 When the terminal is too narrow, fields are dropped rather than allowed to wrap.
 The order is by how much is lost: the token counters go first, then the
@@ -602,10 +605,12 @@ The field set and the order are fixed rather than configurable. A bar that
 reorders itself between runs cannot be read at a glance. A field with no value
 yet is shown as a dash, so the layout does not shift as values arrive.
 
-`Reasoning`, `Branch`, and `Approval Method` were removed rather than shown as a
-permanent dash. The client has no reasoning parameter, no branching, and no tool
-execution, so there would be nothing for any of them to report. A dash that can
-never be filled is noise.
+`Reasoning` and `Branch` were removed rather than shown as a permanent dash. The
+client has no reasoning parameter and no branching, so there would be nothing for
+either of them to report. `Approval Method` was removed on the same grounds and
+returned as `Approval` when the shell tool arrived, since a program about to run
+is something a reader watching the bar wants to know about. A dash that can never
+be filled is noise.
 
 ### Usage and quota meter
 

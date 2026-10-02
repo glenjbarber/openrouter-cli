@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/glenjbarber/openrouter-cli/internal/openrouter"
+	"github.com/glenjbarber/openrouter-cli/internal/tools"
 )
 
 // A turn where the model calls a tool makes more than one request, and the
@@ -430,6 +431,15 @@ func toolCallStream(name string, args map[string]any) string {
 // reaches the terminal, which is the idiom the rest of this package uses.
 func toolSession(t *testing.T, baseURL, dir string) *Session {
 	t.Helper()
+	return newToolSession(t, baseURL, dir, tools.AlwaysAllow())
+}
+
+// newToolSession is toolSession with the approver the shell tool asks, since
+// the tool being tested is one that asks. The default approves everything,
+// which is right for the tests about the tool loop and wrong for the tests
+// about what happens when a reader says no.
+func newToolSession(t *testing.T, baseURL, dir string, approver tools.Approver) *Session {
+	t.Helper()
 	out, err := os.CreateTemp(t.TempDir(), "frames")
 	if err != nil {
 		t.Fatalf("creating the capture file: %v", err)
@@ -440,15 +450,16 @@ func toolSession(t *testing.T, baseURL, dir string) *Session {
 	t.Cleanup(cancel)
 
 	s := &Session{
-		conv:     conv,
-		mainConv: conv,
-		screen:   &Screen{out: out, in: out, height: 24, width: 80},
-		spinner:  NewSpinner(),
-		windows:  newContextLength(),
-		client:   openrouter.New(baseURL, "k"),
-		tools:    toolsAt(dir),
-		ctx:      ctx,
-		cancel:   cancel,
+		conv:      conv,
+		mainConv:  conv,
+		screen:    &Screen{out: out, in: out, height: 24, width: 80},
+		spinner:   NewSpinner(),
+		windows:   newContextLength(),
+		client:    openrouter.New(baseURL, "k"),
+		approvals: newApprovalState(),
+		tools:     toolsAt(dir, approver),
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 	t.Cleanup(s.Close)
 	return s

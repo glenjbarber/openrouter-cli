@@ -105,7 +105,7 @@ func interface_(out, in *os.File, cfg *config.Config, opts options, doc *bootstr
 	// The credential is installed on the session rather than used here, so
 	// that the interface opens even when the key is absent and reports the
 	// absence as an ordinary message rather than refusing to open.
-	session.Configure(cfg.URLBase, cfg.APIKey, cfg.Model)
+	session.Configure(cfg)
 	session.SetBell(cfg.Bell)
 
 	// A marker left by an earlier session is adopted before anything is sent,

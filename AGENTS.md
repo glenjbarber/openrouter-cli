@@ -210,9 +210,10 @@ so that a later change does not silently reverse it.
   visible rather than ambiguous.
 - A field that has no source in this client is removed rather than shown as a
   permanent dash. `Branch` and `Reasoning` were removed on the maintainer's
-  instruction. `Approval` was removed because it implies a permission system
-  for tool calls, and the client has no tools and executes nothing, so there
-  would be nothing to approve. A dash that can never be filled is noise.
+  instruction, and `Approval` was removed with them because it implies a
+  permission system for tool calls and the client had no tools and executed
+  nothing. `Approval` came back with the shell tool, which is what gave it
+  something to report. A dash that can never be filled is noise.
 - The provider is a constant rather than a derived value, since the endpoint is
   the only one the client speaks to.
 - The state reads `Working` while a request is in flight and `idle` otherwise,
@@ -242,8 +243,9 @@ so that a later change does not silently reverse it.
   and the host goes before either, since it does not change while the session
   runs. Dropping by position removed whichever field was last, which was the
   token count.
-- The status bar shows Provider, Model, Reasoning, Branch, Status, Approval
-  Method, Context used, Tokens used in and out, and hostname.
+- The status bar shows Provider, Model, Status, Approval method, Context used,
+  Tokens used in and out, and hostname. `Reasoning` and `Branch` were removed
+  along with `Approval`, and `Approval` has since come back with the shell.
 - Commands and configuration options are completed with the Tab key.
 - The interface behaves correctly with a terminal and mouse combination, and
   within tmux.
@@ -688,9 +690,15 @@ so that a later change does not silently reverse it.
 - The model is told so when it has no tools. `/cognito` and `/btw` each say so in
   the notice they already print, since a reader who asks a model in such a mode
   to read a file and is told it cannot would conclude the client is broken.
-- A turn is a loop of rounds, at most eight. A model with tools can ask for the
+- A turn is a loop of rounds, at most 32. A model with tools can ask for the
   same file for ever; the cap is what stops a loop that does not converge, and
   reaching it is reported in the pane rather than truncating the turn silently.
+- The cap is set by what a turn has to be able to do rather than by what a loop
+  is likely to do. Eight was enough to read a file and answer, and was not
+  enough for the work the tools were added for, since a turn that builds, reads
+  the error, edits and builds again spends a round on each step. A converging
+  model does so in far fewer rounds, so the cap is not what stops a working
+  turn; a reader can stop one at any time regardless.
 - The turns a turn builds are committed to the conversation once, at the end,
   and only when the turn ended cleanly. Buffering them is what keeps a turn the
   reader stopped from leaving a tool result behind for the model to be told
@@ -722,6 +730,66 @@ so that a later change does not silently reverse it.
   the tree to learn that a value is optional, which is the worse trade.
 - `/tools` reports the tools, their argument schemas and the root. It is the
   only place a reader can find out what the client is willing to do.
+- The model is given a shell, which runs a program in the working directory,
+  such as `go build ./...`. It is the first tool that runs something on the
+  host rather than reading the tree, and it is what made asking about a call
+  necessary rather than optional.
+- The shell runs a program from an allowlist. A program outside it is refused
+  by name before anything is looked up, on the same reasoning as the git
+  subcommands: a blocklist is defeated by every program nobody thought of. The
+  list is a bound on what may be proposed rather than on what may happen,
+  since a program on it is still asked about.
+- Arguments go to the program as an array and never through a shell. A pipe, a
+  redirect and a chain are features of a shell rather than of a program, so
+  offering them would mean running one, and a shell reads an argument as a
+  command. The schema says so, since a model that asks for a pipeline should
+  learn it is not available rather than have it silently split into arguments.
+- A command is contained to the working directory as the filesystem tools are,
+  by the same cleaned path and resolved path comparison the git tool makes.
+- A call is put to the reader before the program runs. The question is drawn in
+  the pane rather than on the prompt line, since the prompt line belongs to the
+  message being composed and overwriting it would lose a half typed line.
+- The question names the resolved directory rather than the one that was asked
+  for. A reader approving a command in a directory they were not shown would be
+  approving something other than what runs.
+- Three answers are offered: once, for the session, and no. Anything else is a
+  refusal, including escape, since a reader who did not mean to answer must not
+  approve a program by pressing a key they pressed for another reason.
+- An answer is remembered for the session, and a refusal is remembered on the
+  same terms. A model retrying a denied program would otherwise be able to wear
+  the reader down by asking again, and the record is what the reader answered
+  rather than what the model asked.
+- A later grant overrides an earlier refusal. A reader who changed their mind
+  has changed it, and the question must not be answered from the older answer.
+- An answer given at the keyboard is held for the session and is not written to
+  the configuration file. A grant given in passing is a statement about this
+  session, and a file is somewhere it would outlive it.
+- The configuration file carries the rules a reader wants to settle in advance,
+  under `OPENROUTER_TOOLS`, each rule naming a directory and the programs
+  permitted there. A rule covers the directories beneath it, so a rule written
+  for a project settles a session running anywhere inside it rather than needing
+  one entry per repository.
+- The nearest enclosing rule decides rather than the union of all of them. A
+  union would make a rule unable to say anything, since every rule beneath the
+  working directory would grant everything any other grants and no rule could
+  narrow what was granted above it. The cost is that a child directory cannot
+  revoke what a parent granted, which is left rather than answered with a deny
+  the file has no way to express.
+- The rules travel with a missing credential. A file that cannot be read for its
+  key has still been read, and a rule dropped with the key would make it look
+  as though it had not been.
+- A session with nothing to ask through is offered no shell at all, rather than
+  one that runs without asking. The approver is passed in rather than reached
+  for, since the tools package keeps execution away from the interface that drew
+  it.
+- A directory that is not a repository keeps the shell. It costs the git tool
+  alone, and a reader outside a repository would otherwise find the model unable
+  to build anything.
+- The `Approval` status field is in the bar again. It was removed on the
+  grounds that the client had no tools and executed nothing, and the shell is
+  what makes it mean something. It names the mode, `ask`, `allow`, or `partial`,
+  rather than the programs, since a bar is too narrow to carry a list and
+  `/tools` reports what the bar cannot.
 
 ### Delegates
 
@@ -1188,14 +1256,6 @@ A port also expects `distinfo` and `pkg-descr`. The `pkg-descr` is held under
 
 These are unsettled. Each is listed so that it is not mistaken for a decision.
 
-- Whether a tool call needs asking about first. Nothing is asked in this pass,
-  and the reason is recorded rather than left implicit: what is on offer is
-  contained to the working directory and the git tool is read-only, so the
-  worst a mistaken call does is write a file inside the project the reader is
-  already editing. A tool that reaches outside that needs the question answered
-  first. The `Approval` status field was removed from the bar on the grounds
-  that the client had no tools and executed nothing, so this is also the moment
-  that field would come back.
 - Whether the git tool should write. `add` and `commit` are the obvious next
   step and are deliberately absent. A write to a repository is a different order
   of risk from a write to a file, and it deserves its own answer rather than
