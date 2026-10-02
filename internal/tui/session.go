@@ -349,14 +349,7 @@ func Start(out, in *os.File, title string) (*Session, error) {
 	// Without this the keys are queued and nothing acts on them: the editor
 	// hands a key it has no use for to OnKey, and a nil OnKey is a key that
 	// does nothing at all.
-	s.editor.OnKey = func(final byte) {
-		switch final {
-		case keyPageUp:
-			s.page(-1)
-		case keyPageDown:
-			s.page(1)
-		}
-	}
+	s.editor.OnKey = s.handleKey
 	// The wheel is read on the same goroutine as the keys, since a report
 	// arrives in the same stream. The callback moves the view and repaints,
 	// which is what makes the scroll happen while the line is still being
@@ -365,6 +358,21 @@ func Start(out, in *os.File, title string) (*Session, error) {
 		s.scrollBy(direction)
 	}
 	return s, nil
+}
+
+// handleKey acts on a special key the line editor handed on: a page, or a move
+// to the next or previous window.
+func (s *Session) handleKey(final byte) {
+	switch final {
+	case keyPageUp:
+		s.page(-1)
+	case keyPageDown:
+		s.page(1)
+	case keyWindowNext:
+		s.stepPane(1)
+	case keyWindowPrev:
+		s.stepPane(-1)
+	}
 }
 
 // scrollBy moves the view one wheel notch in the given direction.

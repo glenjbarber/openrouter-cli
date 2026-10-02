@@ -17,8 +17,6 @@ type delegatePane struct {
 	lines []string
 	// partial is the answer still arriving, shown below the lines.
 	partial string
-	// shown reports that the pane is on screen in place of the conversation.
-	shown bool
 }
 
 // delegateHint is shown while the pane is empty.
@@ -42,11 +40,44 @@ func (s *Session) setDelegatePartial(text string) {
 	s.mu.Unlock()
 }
 
-// showDelegatePane chooses which pane is drawn. It is a method rather than a
-// key binding so that whatever later switches panes can call it.
+// delegatePaneIndex is the index the delegate pane has in the pane set. It is
+// pane 1, directly after the main conversation.
+const delegatePaneIndex = 1
+
+// delegatePaneName is the name the delegate pane carries in the pane set.
+const delegatePaneName = "delegate"
+
+// registerPanes puts the delegate pane in the pane set when it is not there
+// yet. The caller holds mu. It is done on first use rather than at
+// construction, so that a Session built without a constructor still has both
+// panes to move between.
+func (s *Session) registerPanes() {
+	for s.panes.Len() <= delegatePaneIndex {
+		s.panes.Add(delegatePaneName)
+	}
+}
+
+// showDelegatePane chooses which pane is drawn: the delegate pane when on is
+// true and the main conversation otherwise. The pane set holds the choice, so
+// this and the next and previous keys cannot disagree about which pane is shown.
 func (s *Session) showDelegatePane(on bool) {
 	s.mu.Lock()
-	s.dpane.shown = on
+	s.registerPanes()
+	if on {
+		s.panes.Select(delegatePaneIndex)
+	} else {
+		s.panes.Select(mainPane)
+	}
+	s.mu.Unlock()
+	s.draw()
+}
+
+// stepPane shows the next pane for a delta of one and the previous for minus
+// one, wrapping around, as tmux does for its next and previous window keys.
+func (s *Session) stepPane(delta int) {
+	s.mu.Lock()
+	s.registerPanes()
+	s.panes.Step(delta)
 	s.mu.Unlock()
 	s.draw()
 }
@@ -58,7 +89,7 @@ func (s *Session) showDelegatePane(on bool) {
 // never reads a slice a delegate goroutine is appending to. The spinner and
 // the partial main reply are cleared, since they describe the main conversation.
 func (s *Session) applyDelegatePane(f *Frame) {
-	if !s.dpane.shown {
+	if s.panes.Current() != delegatePaneIndex {
 		return
 	}
 	f.Title = delegateTitle

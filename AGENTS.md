@@ -543,6 +543,17 @@ so that a later change does not silently reverse it.
 - The left and right arrows are consumed and reserved for input toggles. They do
   nothing yet, and are held so that the keys they will take are already spoken
   for rather than being taken by something else later.
+- Ctrl-B is a prefix, as in tmux, and the key after it moves between panes: n
+  to the next and p to the previous, wrapping at both ends. The main
+  conversation and the delegate pane are the two panes, and the pane set holds
+  which is shown, so that the keys and `/pane` cannot disagree.
+- Any other key after the prefix is consumed and does nothing. It is not typed
+  and does not end the line, since a mistyped binding that sent the message
+  would be worse than one that did nothing.
+- The prefix is held on the line editor rather than in the read loop, since the
+  prefix and the key after it arrive in separate reads. The prefix is a plain
+  control byte rather than an escape sequence, so it is read as a key and not
+  queued with the sequences.
 
 ### Repainting
 

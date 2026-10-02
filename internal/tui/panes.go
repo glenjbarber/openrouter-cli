@@ -65,6 +65,16 @@ func (p *paneSet) Add(name string) int {
 	return len(p.names) - 1
 }
 
+// Step shows the pane that many places on from the one shown, wrapping at both
+// ends, and returns its index. A step of one is next and minus one is previous.
+// With a single pane the set stays where it is.
+func (p *paneSet) Step(delta int) int {
+	p.ensure()
+	n := len(p.names)
+	p.current = ((p.current+delta)%n + n) % n
+	return p.current
+}
+
 // Select shows the pane at the index, and reports whether there is one. An
 // index that is not a pane leaves the pane shown as it was.
 func (p *paneSet) Select(i int) bool {

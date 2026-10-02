@@ -55,8 +55,9 @@ func TestDelegatePaneShownReplacesTheFrame(t *testing.T) {
 	s.dpane = delegatePane{
 		lines:   []string{"/delegate q", "the answer"},
 		partial: "still arriving",
-		shown:   true,
 	}
+	s.registerPanes()
+	s.panes.Select(delegatePaneIndex)
 	f := Frame{Title: "main", Reply: []string{"main line"}, Partial: "p",
 		Spinner: "x", Elapsed: "1s"}
 	s.applyDelegatePane(&f)
@@ -78,7 +79,8 @@ func TestDelegatePaneShownReplacesTheFrame(t *testing.T) {
 // An empty delegate pane says what it is for.
 func TestDelegatePaneEmptyShowsHint(t *testing.T) {
 	s := &Session{}
-	s.dpane.shown = true
+	s.registerPanes()
+	s.panes.Select(delegatePaneIndex)
 	f := Frame{Reply: []string{"main line"}}
 	s.applyDelegatePane(&f)
 	if f.Hint != delegateHint || len(f.Reply) != 0 {
@@ -90,11 +92,11 @@ func TestDelegatePaneEmptyShowsHint(t *testing.T) {
 func TestPaneCommandChoosesThePane(t *testing.T) {
 	s := delegateSession(t, "http://127.0.0.1:1")
 	s.cmdPane([]string{"delegate"})
-	if !s.dpane.shown {
+	if s.panes.Current() != delegatePaneIndex {
 		t.Error("/pane delegate did not show the delegate pane")
 	}
 	s.cmdPane([]string{"main"})
-	if s.dpane.shown {
+	if s.panes.Current() == delegatePaneIndex {
 		t.Error("/pane main did not return to the conversation")
 	}
 	s.cmdPane([]string{"nonsense"})

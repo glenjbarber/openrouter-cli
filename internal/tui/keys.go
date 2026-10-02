@@ -72,6 +72,17 @@ const (
 	keyPageDown = 0x02
 )
 
+// keyWindowNext and keyWindowPrev are the queued values for the window prefix
+// followed by n and by p. They sit below the range of sequence final bytes, as
+// the page keys do, so a queued key cannot collide with an arrow.
+const (
+	keyWindowNext = 0x03
+	keyWindowPrev = 0x04
+)
+
+// keyPrefix is the byte Ctrl-B sends, the prefix tmux uses for its bindings.
+const keyPrefix = 0x02
+
 // Only the shift is read out of the modifier. The others are passed through as
 // the plain arrow they are, since an alt up arrow is a key this reader has no
 // use for and treating it as a page would be a guess. The value itself is
@@ -174,7 +185,7 @@ func (le *LineEditor) key(final byte, out *strings.Builder) {
 		le.applyRecall(true, out)
 	case keyDown:
 		le.applyRecall(false, out)
-	case keyPageUp, keyPageDown:
+	case keyPageUp, keyPageDown, keyWindowNext, keyWindowPrev:
 		// A shifted arrow pages rather than recalling, and is handed on rather
 		// than acted on here: what it does is the session decision, since only
 		// the session knows how tall the pane is.

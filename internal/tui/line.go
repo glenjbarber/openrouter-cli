@@ -106,6 +106,10 @@ type LineEditor struct {
 	// A queue rather than a single slot, since one read block can hold several
 	// sequences and a second would overwrite the first.
 	pendingKeys []byte
+	// prefix reports that the window prefix was read and the key after it has
+	// not arrived. It is held on the editor, not in the read loop, since the
+	// prefix and the key after it arrive in different blocks.
+	prefix bool
 	// composing is the line being composed, kept so that walking into the
 	// history can restore it when the user walks back out.
 	composing string
@@ -453,6 +457,7 @@ func (le *LineEditor) ReadLine() (string, error) {
 		if !submitted && !le.multiline {
 			le.pasted = nil
 		}
+		le.prefix = false
 	}()
 
 	for {
@@ -477,6 +482,12 @@ func (le *LineEditor) ReadLine() (string, error) {
 			if key == keyShiftEnter {
 				pending = pending[:0]
 				le.breakLine(&out)
+			}
+			// A key sequence after the prefix is not one the prefix names, so
+			// it is consumed with the prefix and does nothing.
+			if le.prefix {
+				le.prefix = false
+				continue
 			}
 			le.key(key, &out)
 		}
@@ -504,7 +515,26 @@ func (le *LineEditor) ReadLine() (string, error) {
 			continue
 		}
 
+		// The key after the prefix is consumed whatever it is: n and p move
+		// between windows and any other key does nothing, so it is neither
+		// typed nor allowed to end the line.
+		if le.prefix {
+			le.prefix = false
+			switch b {
+			case 'n':
+				le.key(keyWindowNext, &out)
+			case 'p':
+				le.key(keyWindowPrev, &out)
+			}
+			continue
+		}
+
 		switch b {
+		case keyPrefix:
+			// A rune that has not arrived whole is abandoned, as for any
+			// other control key.
+			pending = pending[:0]
+			le.prefix = true
 		case keyCtrlC:
 			return "", ErrInterrupt
 		case keyCtrlD:
