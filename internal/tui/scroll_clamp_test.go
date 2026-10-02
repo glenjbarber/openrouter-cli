@@ -9,7 +9,7 @@ func TestRenderReportsTheOffsetItDrewAt(t *testing.T) {
 	for i := range reply {
 		reply[i] = "line"
 	}
-	rows, drawn := render(Frame{Reply: reply, Scroll: 1000}, 24, 80)
+	rows, drawn, _ := render(Frame{Reply: reply, Scroll: 1000}, 24, 80)
 	if drawn >= 1000 {
 		t.Errorf("offset reported as %d, want it clamped below what was asked for", drawn)
 	}

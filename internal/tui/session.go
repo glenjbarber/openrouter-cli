@@ -56,6 +56,10 @@ type Session struct {
 	conv   *Conversation
 	// spinner turns the twiddle while work is in progress.
 	spinner *Spinner
+	// step is how many twiddle frames have been drawn, and is where the colour
+	// ramp is taken from. It is guarded by mu with the rest of the frame, since
+	// it is written by the spinner goroutine and read by the paint path.
+	step int
 	// scroll is how many lines the pane is scrolled up from the newest
 	// output. Zero means the view is following the bottom. It is guarded by
 	// mu rather than by a lock of its own, since it is read by the renderer
@@ -1880,8 +1884,15 @@ func (s *Session) beginWork() {
 	s.frame.Status.State = stateWorking
 	s.mu.Unlock()
 	s.spinner.Start(func(frame string) {
+		// The step advances once per frame, which is what makes the colour
+		// move at the rate the twiddle does rather than at a rate of its own.
+		// The figure and the step are written under one lock, so a repaint
+		// can never draw a colour belonging to a different frame than the one
+		// it is drawing.
 		s.mu.Lock()
 		s.frame.Spinner = frame
+		s.frame.Tint = twiddleTint(s.step)
+		s.step++
 		s.mu.Unlock()
 		s.draw()
 	})
@@ -1897,6 +1908,9 @@ func (s *Session) endWork() {
 	s.spinner.Stop()
 	s.mu.Lock()
 	s.frame.Spinner = ""
+	// The tint is cleared with the twiddle rather than left behind, since a
+	// tint with no twiddle would colour whichever row it was pointed at.
+	s.frame.Tint = ""
 	s.frame.Busy = false
 	s.frame.Status.State = stateIdle
 	s.mu.Unlock()
@@ -2057,7 +2071,7 @@ func (s *Session) paintNow() {
 	s.mu.Unlock()
 
 	height, width := s.screen.Size()
-	rows, drawn := render(frame, height, width)
+	rows, drawn, twiddle := render(frame, height, width)
 	// The offset the renderer drew at is adopted back into the session, so
 	// that scrolling up further than there is history does not leave the
 	// session holding an offset the pane cannot show. The change is made
@@ -2070,7 +2084,13 @@ func (s *Session) paintNow() {
 		}
 		s.mu.Unlock()
 	}
-	s.screen.Draw(rows)
+	// The colour is pointed at the row the renderer reported. A frame with no
+	// twiddle reports none, and the screen draws it exactly as it always has.
+	s.screen.DrawTinted(rows, tint{
+		row:      twiddle,
+		sequence: frame.Tint,
+		figure:   frame.Spinner,
+	})
 }
 
 // hint reports what to do next, which differs depending on what is missing.
