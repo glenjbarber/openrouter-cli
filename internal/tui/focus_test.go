@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"os"
-	"strings"
 	"testing"
 	"time"
 )
@@ -21,6 +20,10 @@ import (
 func TestTheFirstKeyReachesTheQuestion(t *testing.T) {
 	s, in := focusSession(t)
 
+	// The editor reads, as the input loop does while a turn works. Without a
+	// reader on the pipe the key sits in it and the hook is never called.
+	go s.editor.ReadLine()
+
 	// The question is opened from another goroutine, as a turn opens it.
 	go s.Approve("go", []string{"build"}, s.tools.dir)
 	waitFor(t, func() bool { return s.asking() }, "the question was never opened")
@@ -36,36 +39,40 @@ func TestTheFirstKeyReachesTheQuestion(t *testing.T) {
 func TestTheAnsweringKeyIsNotTypedIntoTheLine(t *testing.T) {
 	s, in := focusSession(t)
 
+	// One reader for the whole test. A second call to ReadLine would be a
+	// second reader on one pipe, and the two would race for every key.
+	done := make(chan string, 1)
+	go func() {
+		line, _ := s.editor.ReadLine()
+		done <- line
+	}()
+
 	go s.Approve("go", []string{"build"}, s.tools.dir)
 	waitFor(t, func() bool { return s.asking() }, "the question was never opened")
 
 	in.Write([]byte("y"))
 	waitFor(t, func() bool { return !s.asking() }, "the key did not answer the question")
 
-	// The editor is left holding nothing. A line carrying the answer would be
-	// sent to the model on the next enter.
-	done := make(chan string, 1)
-	go func() {
-		line, _ := s.editor.ReadLine()
-		done <- line
-	}()
 	// A key after the question has closed is ordinary input, so it goes into
-	// the line and shows the editor is composing rather than refusing keys.
-	in.Write([]byte("z"))
+	// the line and the Enter ends it. A line carrying the answer would be sent
+	// to the model, which is what the reader would be shown as having typed.
+	in.Write([]byte("z\r"))
 
 	select {
 	case line := <-done:
-		if strings.Contains(line, "y") {
-			t.Errorf("the answer was typed into the line: %q", line)
+		if line != "z" {
+			t.Errorf("the line came back as %q, want \"z\"", line)
 		}
 	case <-time.After(3 * time.Second):
-		t.Error("the editor stopped reading after the question")
+		t.Fatal("the editor stopped reading after the question")
 	}
 }
 
 // A key that is not an answer refuses the question rather than being typed.
 func TestAnyOtherKeyRefuses(t *testing.T) {
 	s, in := focusSession(t)
+
+	go s.editor.ReadLine()
 
 	go s.Approve("go", []string{"build"}, s.tools.dir)
 	waitFor(t, func() bool { return s.asking() }, "the question was never opened")
@@ -86,7 +93,9 @@ func TestAKeyIsUntouchedWithNoQuestionOpen(t *testing.T) {
 		done <- line
 	}()
 
-	in.Write([]byte("hello"))
+	// The Enter ends the line. ReadLine returns on a submit rather than at the
+	// end of the text, so a write without one would leave it reading.
+	in.Write([]byte("hello\r"))
 
 	select {
 	case line := <-done:
