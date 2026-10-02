@@ -49,6 +49,7 @@ BUILD_DIR?=	build
 BIN=		${BUILD_DIR}/${PORTNAME}
 
 GO_FILES=	cmd/openrouter-cli/main.go
+SRC?=cmd internal
 
 .PHONY: all build install clean test check lint fmt vet tidy crossbuild help
 
@@ -80,11 +81,11 @@ check:
 ## lint: run static analysis and the vet pass.
 lint:
 	${GO} vet ./...
-	@test -z "$$(gofmt -l .)" || { echo "gofmt reports unformatted files:"; gofmt -l .; exit 1; }
+	@test -z "$$(gofmt -l ${SRC})" || { echo "gofmt reports unformatted files:"; gofmt -l ${SRC}; exit 1; }
 
 ## fmt: rewrite the source in the canonical format.
 fmt:
-	gofmt -w .
+	gofmt -w ${SRC}
 
 ## tidy: reconcile go.mod and go.sum with the imports.
 tidy:
