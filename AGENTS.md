@@ -896,10 +896,13 @@ so that a later change does not silently reverse it.
   lines of prose is read as part of the conversation. A reader who has just been
   asked whether a program may run must not be able to mistake the question for
   output.
-- The box is drawn in red, since it is the one thing on the screen asking the
-  reader to decide something. The colour is on the corner and stops there, so
-  the text inside the box is the colour of the rest of the frame: a border
-  entirely in one colour reads as a line of text that happens to be long.
+- The box corners are drawn in red when the `color` setting is on, since the
+  box is the one thing on the screen asking the reader to decide something.
+  The corners were red unconditionally until the colour setting was decided, and
+  the change is deliberate: with colour off the box is drawn in plain text, as
+  every other row is. The colour is on the corner and stops there, so the text
+  inside the box is the colour of the rest of the frame: a border entirely in
+  one colour reads as a line of text that happens to be long. See Colour.
 - A corner is taken whole rather than by its first byte. The box-drawing runes
   are several bytes each, and cutting one in half draws half a glyph followed by
   the rest of it as text.
@@ -1355,11 +1358,12 @@ so that a later change does not silently reverse it.
   frame paint over the interface after the work had ended.
 - Starting an already-running twiddle does nothing, so a caller need not track
   whether one is running.
-- The twiddle row is the one part of the frame drawn in colour, and the colour
-  scrolls through the six primaries while work is in progress. Every other row
-  is prose: a reply is written by a model and copied out by a reader, and a
-  sequence written into prose is copied out with it. The primaries are used
-  since they are the colours every terminal can be relied on to show.
+- The twiddle row is drawn in colour whether or not the colour setting is on,
+  and the colour scrolls through the six primaries while work is in progress.
+  It is the one row coloured without being asked for. Every other colour in the
+  frame is governed by the `color` setting and is described under Colour. The
+  primaries are used since they are the colours every terminal can be relied on
+  to show.
 - The colour is interpolated between the primaries rather than stepped between
   them. Six colours turning is not a scroll, and a hard change is the thing a
   scroll is wanted in place of.
@@ -1403,6 +1407,47 @@ so that a later change does not silently reverse it.
   that cannot have happened.
 - The twiddle leads the line rather than trailing it, since a trailing one
   would shift the text sideways on every step.
+
+### Colour
+
+- Colour is added only when the screen is drawn. The pane, `/copy`, saved
+  conversations, the history, and the context sent to the model carry text and
+  nothing else. An escape sequence written into any of them is copied out with
+  the text and acts on whatever receives it, so stored text never contains one.
+  The twiddle follows the same rule, as the Progress section records.
+- Colour is off by default. A user who did not ask for colour would find it
+  startling, and a terminal that cannot show it would show the bytes instead.
+- `/color` turns it on and off, taking an optional `on` or `off` and otherwise
+  toggling. `/colour` is accepted when typed and is a hidden alias: it is never
+  listed in `/help` and never offered by Tab completion. The toggle lasts for the
+  session, on the same terms as `/bell` and `/mouse`, since the configuration
+  file is written only when it is absent or during setup.
+- The scope is the frame chrome, tool call lines, approval lines, notice lines,
+  and reply text. The line the user types is never coloured, since it is the
+  user's own text and nothing is gained by marking it.
+- The default palette is the sixteen ANSI colours, so that the terminal theme
+  decides what they look like. No colour is chosen on the terminal's behalf.
+- A theme may set a foreground and a background. Terminal.app supports 256
+  colours and does not support 24-bit colour, so no 24-bit sequence is ever
+  written: a `#rrggbb` value is mapped to the nearest of the 256 colours. With no
+  theme set, no base colour is written and the terminal theme shows through.
+- The keys are `color`, a boolean, and `color_theme`, an object with the string
+  fields `foreground` and `background`. They are lowercase and carry no
+  `OPENROUTER_` prefix, like `setup_complete`, since they are not
+  transferable to the environment. A value is one of the sixteen names (`black`,
+  `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, and the `bright_`
+  forms of each), an index from 0 to 255, or `#rrggbb`.
+- An invalid theme value falls back to the terminal theme and produces a one line
+  note at startup. It is never fatal, since a theme is a preference and a
+  preference is not worth refusing to start over.
+- The environment is deliberately excluded. `NO_COLOR` and every other variable
+  are not read, and the key has no environment twin. Colour is decided by the
+  file and by `/color` alone, on the same terms as the API key.
+- The approval box corner is red only when colour is on. It was red
+  unconditionally, and the change is deliberate.
+- A routine successful tool line is dimmed, and dim wins over the colour of the
+  tool. A failure and an approval prompt keep full strength, since they are the
+  lines a reader must not skim past.
 
 ### Echo
 
