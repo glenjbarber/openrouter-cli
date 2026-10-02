@@ -30,12 +30,12 @@ func TestHintRowNamesOnlyKeysThatAct(t *testing.T) {
 		{
 			name: "an idle prompt names the key that sends and the key that breaks",
 			st:   hintState{},
-			want: []string{"Send [enter]", "[ctrl]+j newline"},
+			want: []string{"Send [enter]", "[ctrl]+j newline", "[shift]+arrows page"},
 		},
 		{
 			name: "history alone adds nothing, since it is no longer named",
 			st:   hintState{history: true},
-			want: []string{"Send [enter]", "[ctrl]+j newline"},
+			want: []string{"Send [enter]", "[ctrl]+j newline", "[shift]+arrows page"},
 		},
 		{
 			// Enter queues rather than sends while a model is working, and
@@ -49,7 +49,7 @@ func TestHintRowNamesOnlyKeysThatAct(t *testing.T) {
 		{
 			name: "the wheel alone adds nothing, since it is no longer named",
 			st:   hintState{mouse: true},
-			want: []string{"Send [enter]", "[ctrl]+j newline"},
+			want: []string{"Send [enter]", "[ctrl]+j newline", "[shift]+arrows page"},
 		},
 		{
 			name: "the filter names completion, choosing and closing",

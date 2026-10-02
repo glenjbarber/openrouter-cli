@@ -327,12 +327,20 @@ func (s *Session) page(direction int) {
 		rows = 1
 	}
 
+	// The offset is moved by the figure rather than a notch at a time, since a
+	// notch is a scroll of the mouse and a page is a scroll of the keyboard and
+	// neither is the other. Going down stops at the bottom rather than
+	// clamping short of it, which is what a page down from part way through the
+	// history is meant to do.
 	s.mu.Lock()
 	switch {
 	case direction < 0:
-		s.scroll = scrolledBy(s.scroll, -rows)
+		s.scroll += rows
 	case s.scroll > rows:
-		s.scroll = scrolledBy(s.scroll, rows)
+		s.scroll -= rows
+		if s.scroll < 0 {
+			s.scroll = 0
+		}
 	default:
 		s.scroll = 0
 	}
