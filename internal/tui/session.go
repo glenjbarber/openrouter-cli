@@ -53,7 +53,9 @@ type Session struct {
 	// approval rules rather than for the credential. The credential was
 	// copied into the client at startup and is not kept here, since a field
 	// that held it would be a field a diagnostic could reach.
-	cfg *config.Config
+	cfg          *config.Config
+	chosen       config.Chosen
+	providerName string
 
 	// hints is the state the hint row describes. It is guarded by mu and
 	// written by the input goroutine at the points where the keys that do
@@ -276,6 +278,9 @@ func Start(out, in *os.File, title string) (*Session, error) {
 	// rather than about the client. A session with no file, or one naming a
 	// level that is not one, starts at the default.
 	s.verbosity = clampVerbosity(cfgVerbosity(s.cfg))
+	if chosen, err := config.LoadChosen(); err == nil {
+		s.chosen = chosen
+	}
 	// The rules are read at startup rather than on each call, since they change
 	// only through /permission and a call asking the filesystem what is
 	// permitted is a call on the path of every program run.
@@ -323,6 +328,13 @@ func Start(out, in *os.File, title string) (*Session, error) {
 	// candidates is settled here and the editor is handed back the line to
 	// compose.
 	s.editor.OnTab = func(line string) string { return s.completeLine(line) }
+	// A key arriving while a question is open is offered to the question
+	// before the editor acts on it. The editor owns the terminal while a line
+	// is being composed, so the loop below does not regain control until a key
+	// arrives, and without this the key is taken as part of a message the
+	// reader was not writing. It is the whole of the focus: the question is
+	// drawn at once, and the key that answers it is routed here.
+	s.editor.OnAsk = s.takeAsk
 	// A shifted arrow pages the pane. It is handled here rather than in the
 	// editor because a page is a screenful and only the session knows how tall
 	// the pane is; the editor knows the composed line and nothing of the frame.
@@ -551,15 +563,15 @@ func (s *Session) Note(format string, args ...any) {
 // session assembled without one should do.
 func (s *Session) Configure(cfg *config.Config) {
 	s.cfg = cfg
+	if cfg != nil {
+		s.adoptConfiguredModel(cfg.Model)
+	}
 	if cfg == nil {
 		s.updateStatus()
 		return
 	}
 	// The model is adopted whether or not a credential is present, so that
 	// the status bar reflects the file from the first repaint.
-	if cfg.Model != "" && s.conv.Model() == "" {
-		s.conv.SetModel(cfg.Model)
-	}
 	if cfg.APIKey != "" {
 		s.client = openrouter.New(cfg.URLBase, cfg.APIKey)
 	}
@@ -1494,7 +1506,7 @@ func (s *Session) chooseModel(args []string) {
 	name := strings.Join(args, " ")
 	// The identifier is everything before the first slash, so that a full
 	// slug may be given without the vendor prefix being required.
-	s.conv.SetModel(name)
+	s.setModel(name)
 	s.updateStatus()
 	s.addReply("model: " + s.conv.Model())
 }
@@ -1646,7 +1658,7 @@ func (s *Session) settleTurn(t *turnState) {
 		// The turn that was ahead of it has been answered, so the line that
 		// was queued behind it is a question of its own rather than an update
 		// to a request nobody is making any more.
-		s.startTurn(next, t.conv)
+		s.startTurn(asQueued(next), t.conv)
 	}
 }
 
@@ -1683,7 +1695,7 @@ func (s *Session) stopTurn(update string) {
 	t.stopped = true
 	// The queue goes ahead of the line being composed, since it is what was
 	// committed first.
-	parts := append([]string(nil), s.queued...)
+	parts := queuedTexts(s.queued)
 	s.queued = nil
 	s.mu.Unlock()
 
@@ -1899,7 +1911,7 @@ func (s *Session) send(ctx context.Context, conv *Conversation, line string) {
 			// since that line is the question. Overwriting it loses the
 			// exchange and makes the pane show a reply with nothing that
 			// prompted it.
-			s.appendLines(text)
+			s.appendLines(withResponseRule(text))
 			// The bell rings once the reply has finished arriving rather
 			// than when the request was sent, since the point of it is to say
 			// the answer is ready.
@@ -2010,7 +2022,7 @@ func (s *Session) updateStatus() {
 	// whole frame under it and a status field written while that copy is being
 	// taken is a field read halfway written.
 	s.mu.Lock()
-	s.frame.Status.Provider = providerName
+	s.frame.Status.Provider = s.providerLabel()
 	s.frame.Status.Model = orDash(model)
 	// The state is read from the frame rather than set to idle. The
 	// accounting arrives on the last chunk of a turn, so writing idle here

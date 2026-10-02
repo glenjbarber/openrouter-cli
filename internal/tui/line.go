@@ -135,6 +135,18 @@ type LineEditor struct {
 	// Reusing it is what keeps the frame from having to learn a second kind of
 	// block above the prompt.
 	multiline bool
+	// OnAsk is called with each key before it is acted on, and reports whether
+	// it took the key.
+	//
+	// It exists because the editor owns the terminal while a line is being
+	// composed. An approval question is asked from another goroutine while the
+	// editor is blocked reading, so the loop above never regains control and a
+	// key pressed in answer to the question is taken as part of the message
+	// being composed. A hook is what lets the editor hand the key over rather
+	// than read it, and it is a hook rather than a poll because the editor only
+	// regains control when a key arrives, which is too late to ask who wants it.
+	OnAsk func(b byte) bool
+
 	// OnKey is called with the final byte of each special key sequence, such as
 	// an arrow. It is nil when the caller does not act on them.
 	OnKey func(final byte)
@@ -246,6 +258,19 @@ func (le *LineEditor) chunkFor() []byte {
 // escape on its own, which is exactly the failure this avoids.
 func (le *LineEditor) readKey() (byte, error) {
 	for {
+		// A key already queued from a sequence is returned before anything
+		// else is read.
+		//
+		// The queue is drained in the line loop, after this returns, so
+		// returning a byte here while a sequence is queued would leave the
+		// sequence waiting for the next byte to arrive. A reader pressing a
+		// shifted arrow and getting nothing until they also pressed enter
+		// had exactly that: the arrow was read, queued, and left there.
+		if len(le.pendingKeys) > 0 {
+			key := le.pendingKeys[0]
+			le.pendingKeys = le.pendingKeys[1:]
+			return key, nil
+		}
 		if len(le.buf) == 0 {
 			if err := le.fill(); err != nil {
 				return 0, err
@@ -457,6 +482,15 @@ func (le *LineEditor) ReadLine() (string, error) {
 				return "", ErrEndOfInput
 			}
 			return out.String(), err
+		}
+
+		// A key is offered to whatever is waiting for one before it is acted
+		// on here. An approval question is open while the reader is composing
+		// nothing in particular, and its answer has to reach the question
+		// rather than the line. The key is not put back: a question answers
+		// one key and is closed by it, and a key handed to it has been used.
+		if le.OnAsk != nil && le.OnAsk(b) {
+			continue
 		}
 
 		switch b {
