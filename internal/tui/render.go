@@ -402,6 +402,25 @@ type Frame struct {
 	// string so that entries can be dropped whole when the row is too narrow,
 	// which a single string could not be without being cut.
 	Hints []string
+	// Confirm is a question put to the reader, drawn in the input block above
+	// the prompt rather than written into the pane.
+	//
+	// The input block is where it belongs. A question is about what the reader
+	// is about to do, and a question written into the pane scrolls back into
+	// the history the moment a reply arrives, which is about the moment a
+	// reader answering it would need to read it again. The pane is the
+	// conversation; the input block is the reader's own side of the screen.
+	//
+	// It is one row, budgeted with the rest of the block, so that a question
+	// cannot push the prompt off the bottom of the screen.
+	Confirm string
+	// ConfirmChoice is the option the reader has moved to with Tab, shown on
+	// the input line in place of what is being composed, so that the choice
+	// being given is in the same place as the question asking for it. It is
+	// empty until Tab has chosen one, which is what makes the default no:
+	// nothing is preselected, so a reader who answers without reaching for
+	// Tab has approved nothing.
+	ConfirmChoice string
 	// Scroll is how many lines the pane is scrolled up from the newest
 	// output. Zero means the view is following the bottom, which is the only
 	// behaviour the pane had before scrolling existed.
@@ -471,6 +490,10 @@ func render(f Frame, height, width int) ([]string, int, int) {
 	// budget reserves a row only when a row will actually be drawn.
 	hints := hintLine(f.Hints, width)
 
+	// The question is rendered once, on the same terms as the hint row, so
+	// that the budget reserves a row for it only when one will be drawn.
+	confirm := confirmLine(f, width)
+
 	// The rows below the pane are the status bar, a blank, the rule, the
 	// pasted rows, the prompt, and a blank. The pane is given what remains, so
 	// that adding the division does not make the frame taller than the
@@ -501,6 +524,11 @@ func render(f Frame, height, width int) ([]string, int, int) {
 	// landed is still reported. A paste the reader cannot see reads as a lost
 	// paste, while a missing hint costs nothing beyond the row it was on.
 	inputRows += hintRows(hints, height-inputRows)
+	// The question is budgeted after the hint row. A hint that gives way to a
+	// question is a caption lost for a moment, while a question that gives way
+	// to a hint is a decision the reader cannot see being asked of them,
+	// which is the one failure here worth costing a row for.
+	inputRows += confirmRows(confirm, height-inputRows)
 
 	// The header is the model name, a rule, and the status bar. It is drawn
 	// above the conversation and outside the scrolled slice, so it stays put
@@ -697,7 +725,7 @@ func render(f Frame, height, width int) ([]string, int, int) {
 	if hints != "" && len(body)+2 <= height {
 		body = append(body, hints)
 	}
-	body = append(body, indent("> ", "", f.Input, width))
+	body = append(body, indent("> ", "", confirmInput(f), width))
 
 	// The row below the prompt is added only when the frame has not already
 	// filled the height, so a short terminal is not pushed one row over.
@@ -737,6 +765,53 @@ func render(f Frame, height, width int) ([]string, int, int) {
 		}
 	}
 	return rows, f.Scroll, tinted
+}
+
+// confirmLine renders the question onto one row above the prompt.
+//
+// The caller spells the question with its options, since what the options are
+// and what they mean differs between the questions being asked, and a helper
+// that hardcoded them would be wrong for at least one of them.
+func confirmLine(f Frame, width int) string {
+	if f.Confirm == "" {
+		return ""
+	}
+	return truncate(f.Confirm, width)
+}
+
+// confirmRows is the single row a question takes, or none when there is no room.
+//
+// The row is budgeted with the rest of the input block rather than taken from
+// the pane afterwards, on the same terms as the hint row. The prompt is what a
+// reader needs in order to answer, so a row that only names a question yields
+// to it rather than the other way round.
+func confirmRows(line string, room int) int {
+	if line == "" || room < 1 {
+		return 0
+	}
+	return 1
+}
+
+// confirmInput returns what the input line shows while a question is open.
+//
+// The line carries the option the reader has moved to with Tab, in place of
+// the line being composed, since nothing is being composed while a question is
+// open. The choice is shown where the reader is already looking rather than
+// on the question row alone, so that the answer being given is beside the
+// question asking for it.
+//
+// Nothing is shown until Tab has chosen one, which is what makes the default
+// no: a reader who answers without reaching for Tab has chosen nothing, and a
+// reader who answered with the choice showing would know what they were
+// giving.
+func confirmInput(f Frame) string {
+	if f.Confirm == "" {
+		return f.Input
+	}
+	if f.ConfirmChoice == "" {
+		return ""
+	}
+	return f.ConfirmChoice
 }
 
 // plainRow removes the bytes a terminal would act on from a row.
