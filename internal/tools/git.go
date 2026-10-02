@@ -23,6 +23,12 @@ const gitTool = "git"
 // gitProgram is the program run, taken from the PATH.
 const gitProgram = "git"
 
+// ErrNotRepository is what NewGit reports for a directory that is in no
+// repository. It is a sentinel so that a caller can tell the ordinary case of
+// a directory with nothing to read from a fault, and can leave the tool out
+// without showing a reader the text git printed.
+var ErrNotRepository = errors.New("no git repository")
+
 // GitTimeout bounds a single git command.
 //
 // A timeout is required rather than trusted to git finishing, since the process
@@ -508,6 +514,8 @@ func gitTop(dir string, timeout time.Duration) (string, error) {
 
 	cmd := exec.CommandContext(ctx, gitProgram, "rev-parse", "--show-toplevel")
 	cmd.Dir = dir
+	// The message is matched below, so it is asked for in the C locale.
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
@@ -518,14 +526,19 @@ func gitTop(dir string, timeout time.Duration) (string, error) {
 	}
 	if err != nil {
 		detail := strings.TrimSpace(stderr.String())
+		if strings.Contains(detail, "not a git repository") {
+			// The raw text is dropped: it is git's own fatal line, and it
+			// says nothing a reader can act on.
+			return "", ErrNotRepository
+		}
 		if detail == "" {
 			detail = err.Error()
 		}
-		return "", fmt.Errorf("no git repository: %s", detail)
+		return "", fmt.Errorf("git could not resolve the repository: %s", detail)
 	}
 	top := strings.TrimSpace(string(out))
 	if top == "" {
-		return "", fmt.Errorf("no git repository: %s reported no root", gitProgram)
+		return "", fmt.Errorf("git could not resolve the repository: %s reported no root", gitProgram)
 	}
 	return top, nil
 }
