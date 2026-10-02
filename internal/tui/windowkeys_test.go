@@ -160,8 +160,10 @@ func TestPaneStepWraps(t *testing.T) {
 	}
 }
 
-// The session moves between main and delegate with the keys, and /pane and
-// the keys share one state.
+// The session moves between the main conversation, the delegate pane and the
+// spawn pane with the keys, and /pane and the keys share one state. The next
+// key walks the panes in order and wraps at the end, and the previous key walks
+// them the other way and wraps at the start.
 func TestSessionWindowKeysSwitchPanes(t *testing.T) {
 	s := delegateSession(t, "http://127.0.0.1:1")
 	s.editor = NewLineEditor(s.screen.in)
@@ -173,16 +175,29 @@ func TestSessionWindowKeysSwitchPanes(t *testing.T) {
 	}
 	s.editor.OnKey(keyWindowNext)
 	if cur() != delegatePaneIndex {
-		t.Errorf("next from main: pane %d", cur())
+		t.Errorf("next from main: pane %d, want delegate", cur())
+	}
+	s.editor.OnKey(keyWindowNext)
+	if cur() != workerPaneIndex {
+		t.Errorf("next from delegate: pane %d, want spawn", cur())
 	}
 	s.editor.OnKey(keyWindowNext)
 	if cur() != mainPane {
 		t.Errorf("next wraps to main: pane %d", cur())
 	}
 	s.editor.OnKey(keyWindowPrev)
-	if cur() != delegatePaneIndex {
-		t.Errorf("previous wraps to delegate: pane %d", cur())
+	if cur() != workerPaneIndex {
+		t.Errorf("previous from main wraps to spawn: pane %d", cur())
 	}
+	s.editor.OnKey(keyWindowPrev)
+	if cur() != delegatePaneIndex {
+		t.Errorf("previous from spawn: pane %d, want delegate", cur())
+	}
+	s.editor.OnKey(keyWindowPrev)
+	if cur() != mainPane {
+		t.Errorf("previous from delegate: pane %d, want main", cur())
+	}
+	s.editor.OnKey(keyWindowNext)
 	s.cmdPane([]string{"main"})
 	if cur() != mainPane {
 		t.Errorf("/pane main after the keys: pane %d", cur())
