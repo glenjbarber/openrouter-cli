@@ -378,6 +378,13 @@ type Frame struct {
 	// idle. It is drawn beside the partial reply rather than in the status
 	// bar, so that it moves where the eye already is.
 	Spinner string
+	// Tint is the sequence that colours the twiddle, empty when there is none.
+	//
+	// It is carried on the frame rather than written into Spinner, since a
+	// frame is also rendered into plain text and a sequence inside the figure
+	// would have to be stripped again before the row could be measured,
+	// searched or copied. The screen applies it, having written the bytes.
+	Tint string
 	// Pasted holds the lines of a paste that has landed but not yet been
 	// submitted. They occupy their own rows above the prompt, since a paste
 	// cannot be shown on one row and a prompt that silently swallowed it
@@ -439,7 +446,7 @@ func titleLine(title string, width int, scrolled bool) string {
 // pane is too short, since the newest exchange is the one being read.
 // Render draws a frame at a size and returns the rows to write.
 func Render(f Frame, height, width int) []string {
-	rows, _ := render(f, height, width)
+	rows, _, _ := render(f, height, width)
 	return rows
 }
 
@@ -448,7 +455,14 @@ func Render(f Frame, height, width int) []string {
 // it: an offset the renderer silently reduced would leave the session holding
 // a position the reader cannot see, and coming back down from it would take a
 // notch per line rather than per screen.
-func render(f Frame, height, width int) ([]string, int) {
+// render draws a frame, reports the offset it drew it at, and reports the row
+// carrying the twiddle.
+//
+// The twiddle row is reported rather than coloured here. Every row leaves this
+// function as plain text with the bytes a terminal would act on removed, and a
+// sequence inserted before that would be stripped along with the ones a model
+// sent. The screen applies it, having written the bytes.
+func render(f Frame, height, width int) ([]string, int, int) {
 	if width < 1 {
 		width = 1
 	}
@@ -544,11 +558,22 @@ func render(f Frame, height, width int) ([]string, int) {
 		// pane is not mistaken for the answer to what was just asked.
 		reply = append(reply, strings.TrimRight(f.Delegate, "\n"))
 	}
+	// twiddleLine is the row the twiddle is added as, empty where there is no
+	// twiddle. It is the text rather than an index for the reason given below
+	// where it is set.
+	twiddleLine := ""
 	if f.Spinner != "" {
 		// The twiddle leads the line it belongs to. It is placed before the
 		// text so that the text does not shift sideways as the twiddle turns,
 		// which a trailing one would cause.
-		reply = append(append([]string{}, reply...), f.Spinner+" thinking")
+		//
+		// The line is named rather than numbered. The pane is trimmed and
+		// padded below, so the index it is appended at is not the one it is
+		// finally drawn on, and an index carried through those two operations
+		// is a second thing to keep correct. The text is found instead, once,
+		// after the pane is settled.
+		twiddleLine = f.Spinner + " thinking"
+		reply = append(append([]string{}, reply...), twiddleLine)
 	}
 	if len(reply) == 0 && f.Hint != "" {
 		// The hint is drawn as written rather than folded. Folding pads a
@@ -692,7 +717,26 @@ func render(f Frame, height, width int) ([]string, int) {
 	for i, row := range rows {
 		rows[i] = plainRow(row)
 	}
-	return rows, f.Scroll
+
+	// The twiddle row is found in the finished frame rather than tracked
+	// through the trims above. The pane drops lines from the front and adds
+	// blanks at the back, and an index moved by hand through both is a second
+	// thing to keep right; matching the line here is one comparison against a
+	// frame that has already stopped moving.
+	//
+	// The pane occupies the rows after the header, so the offset is where the
+	// pane begins. A frame too short to hold it reports no row, since a tint
+	// naming a row that does not exist would colour whatever took its place.
+	tinted := -1
+	if twiddleLine != "" && headerRows+paneHeight <= len(rows) {
+		for i := headerRows; i < headerRows+paneHeight; i++ {
+			if rows[i] == twiddleLine {
+				tinted = i
+				break
+			}
+		}
+	}
+	return rows, f.Scroll, tinted
 }
 
 // plainRow removes the bytes a terminal would act on from a row.
@@ -850,6 +894,38 @@ func blockLayout(n, budget int) (shown int, notice bool) {
 // Each line is truncated to the width so that a line cannot wrap onto the next
 // row and push the layout out of alignment.
 func (s *Screen) Draw(lines []string) {
+	s.DrawTinted(lines, tint{})
+}
+
+// tint names the row carrying colour, the sequence that colours it, and the
+// figure the colour covers.
+//
+// It is handed to the screen rather than applied by the renderer, since the
+// renderer builds rows as text and every row leaves it with the bytes a
+// terminal would act on removed. The screen is the one place that writes bytes
+// rather than text, so it is the one place a sequence belongs.
+type tint struct {
+	// row is the index of the row the sequence applies to, or negative where
+	// there is none to apply it to.
+	row int
+	// sequence is written before the figure and reset immediately after it,
+	// so the colour reaches the twiddle alone.
+	sequence string
+	// figure is the leading text of the row in colour, which is the twiddle.
+	//
+	// It is the text rather than a count of columns, because the twiddle is
+	// drawn from braille figures and those are several bytes each. A count of
+	// bytes would cut one in half, and the terminal would draw half a glyph
+	// and the rest of it as text.
+	figure string
+}
+
+// DrawTinted draws the rows, colouring one figure in part.
+//
+// A tint naming no row, no sequence, or no figure draws exactly what Draw
+// would. That is the ordinary case: most frames carry no twiddle, and every
+// frame outside a turn carries none.
+func (s *Screen) DrawTinted(lines []string, t tint) {
 	s.write(seqHome)
 	// Each row is cleared before it is written. Without that, a repaint that
 	// is shorter than the frame before it leaves the tail of the longer one
@@ -860,6 +936,18 @@ func (s *Screen) Draw(lines []string) {
 		}
 		s.write(seqResetAttr)
 		s.write(seqClearLine)
+		if t.sequence != "" && t.figure != "" && i == t.row &&
+			strings.HasPrefix(line, t.figure) {
+			// The colour is written around the figure rather than around the
+			// row. The row holds the twiddle and the word beside it, and the
+			// word is prose a reader copies out, so colouring it would put a
+			// sequence into a selection.
+			s.write(t.sequence)
+			s.write(t.figure)
+			s.write(seqResetAttr)
+			s.write(line[len(t.figure):])
+			continue
+		}
 		s.write(line)
 	}
 	// The remainder of the screen below the frame is cleared, since a shorter
