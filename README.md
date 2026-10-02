@@ -439,7 +439,8 @@ under [Symlinks](#symlinks).
 ## Configuration
 
 Configuration is read from a JSON file. The file is treated as read-only input
-except during first-time setup, which is described below.
+except during first-time setup, which is described below, when a directory is
+trusted, and when `/color` saves its setting.
 
 ### Location
 

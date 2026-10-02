@@ -119,8 +119,17 @@ so that a later change does not silently reverse it.
   prompts for the API key and offers a skip, which records that setup was done
   and suppresses the prompt without storing a credential.
 - The configuration file is written at startup when no file exists, and again
-  during first-time setup. These are the only two circumstances in which it is
-  written. The rest of the time the file is treated as read-only.
+  during first-time setup. Apart from those, two runtime writers exist and no
+  others: `config.Trust`, which adds a directory to the trusted list, and the
+  `/color` command, which sets the `color` key. Each reads the existing file,
+  carries every other key over as the raw bytes it was read as, writes a
+  temporary file beside it at `0600` and renames it over the original. The
+  rewrite is atomic so that an interrupted write leaves the previous file and
+  never a half-written credential. Neither writer ever creates the file: a file
+  made by a command would hold no key and would suppress first-time setup. Each
+  refuses, and leaves the file as it is, when the mode is not `0600` or the
+  content is not a JSON object. The rest of the time the file is treated as
+  read-only.
 - The default written at startup sets `OPENROUTER_URL_BASE` only. No key is
   written, because a placeholder key would be indistinguishable from a real one
   and would be sent to the backend.
@@ -830,8 +839,8 @@ so that a later change does not silently reverse it.
   directory without being asked. The rules are the same ones a reader can write
   by hand under `OPENROUTER_TOOLS`, and the two are read as one set.
 - The rules are kept in a file beside the configuration rather than in it, since
-  the configuration holds the credential and is treated as read-only outside
-  setup. A reader editing rules should not have to open a file whose mode they
+  the configuration holds the credential and is rewritten only by the two
+  writers named under Configuration. A reader editing rules should not have to open a file whose mode they
   have to get right, and a command rewriting one could damage the key in it. The
   file is written at 0600, since it names the directories a model may run
   programs in.
@@ -1149,7 +1158,8 @@ so that a later change does not silently reverse it.
 
 - The mode is recorded by a marker file in the home directory rather than by a
   key in the configuration file, since the configuration file holds the
-  credential and is treated as read-only outside setup.
+  credential and is rewritten only by the two writers named under
+  Configuration.
 - The marker records the process that wrote it, so a marker left behind by a
   crash is distinguishable from one held by a running session.
 - A marker left by a crash is reported at startup rather than honoured
@@ -1427,9 +1437,14 @@ so that a later change does not silently reverse it.
   startling, and a terminal that cannot show it would show the bytes instead.
 - `/color` turns it on and off, taking an optional `on` or `off` and otherwise
   toggling. `/colour` is accepted when typed and is a hidden alias: it is never
-  listed in `/help` and never offered by Tab completion. The toggle lasts for the
-  session, on the same terms as `/bell` and `/mouse`, since the configuration
-  file is written only when it is absent or during setup.
+  listed in `/help` and never offered by Tab completion. The new state is also
+  recorded in the `color` key of the configuration file, whichever of the two
+  spellings was typed, and the writer is one of the two runtime writers
+  described under Configuration. The session changes first and whatever happens
+  to the file does not undo it. When the file cannot take the change, the status
+  line reads `color on (not saved: <reason>)`, and the reason never carries file
+  content. With no configuration file the reason is `no configuration file`,
+  and the file is not created. `color_theme` is never written by the command.
 - The scope is the frame chrome, tool call lines, approval lines, notice lines,
   and reply text. The line the user types is never colored, since it is the
   user's own text and nothing is gained by marking it.

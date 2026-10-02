@@ -6,16 +6,20 @@ import (
 	"github.com/glenjbarber/openrouter-cli/internal/config"
 )
 
-// cmdColor turns color on or off for the session.
+// cmdColor turns color on or off, and records the new state in the
+// configuration file.
 //
 // An argument of on or off sets the flag, and no argument toggles it. The
-// change lasts for the session only, on the same terms as /bell and /mouse,
-// since the configuration file is written only when it is absent or during
-// setup. The next paint reads the flag, and the input loop repaints after every
-// command, so the screen changes as soon as the command has run.
+// session changes first and whatever happens to the file does not undo it: a
+// reader who asked for color gets color, and is told in one line when the file
+// could not take the change. The next paint reads the flag, and the input loop
+// repaints after every command, so the screen changes as soon as the command
+// has run.
 //
 // The flag is written under the session lock, since the paint path reads it
-// from the spinner goroutine as well as from the input one.
+// from the spinner goroutine as well as from the input one. The file is written
+// after the lock is released, since it is slow and the paint path waits on the
+// lock.
 func (s *Session) cmdColor(args []string) bool {
 	s.mu.Lock()
 	switch {
@@ -30,13 +34,32 @@ func (s *Session) cmdColor(args []string) bool {
 		s.addReply("usage: /color [on|off]")
 		return false
 	}
+	on := s.colorOn
+	save := s.colorSaver
+	s.mu.Unlock()
 	state := "off"
-	if s.colorOn {
+	if on {
 		state = "on"
 	}
-	s.mu.Unlock()
+	err := config.ErrNoConfigFile
+	if save != nil {
+		err = save(on)
+	}
+	if err != nil {
+		// The reason is one line and is made by the writer without any file
+		// content in it.
+		state += " (not saved: " + strings.Join(strings.Fields(err.Error()), " ") + ")"
+	}
 	s.appendLines("color " + state)
 	return false
+}
+
+// SetColorSaver installs the function /color calls to record the new state. A
+// session with none changes for the session only and says so.
+func (s *Session) SetColorSaver(save func(on bool) error) {
+	s.mu.Lock()
+	s.colorSaver = save
+	s.mu.Unlock()
 }
 
 // framePalette resolves the palette a frame is drawn in, or none when color is

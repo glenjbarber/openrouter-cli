@@ -201,8 +201,11 @@ type Session struct {
 	// so that a user who did not ask for it never hears one.
 	bellWanted bool
 	// colorOn reports that color is drawn on the screen. It is off unless the
-	// configuration asked for it, and /color changes it for the session only.
+	// configuration asked for it, and /color changes it and records the change.
 	colorOn bool
+	// colorSaver records the color state in the configuration file, or is nil
+	// when there is no file to record it in.
+	colorSaver func(on bool) error
 	// colorTheme is the base colors the configuration asks for, empty on a
 	// side that follows the terminal theme.
 	colorTheme config.Theme
@@ -801,7 +804,7 @@ func init() {
 		{names: []string{"/model"}, usage: "/model [NAME]", description: "show or choose the model, without an argument to list", run: (*Session).cmdModel},
 		{names: []string{"/new"}, description: "clear the conversation", run: (*Session).cmdNew, idleOnly: true},
 		{names: []string{"/bell"}, description: "ring the terminal bell on reply, on or off", run: (*Session).cmdBell},
-		{names: []string{"/color"}, hidden: []string{"/colour"}, usage: "/color [on|off]", description: "turn color on or off, for this session", run: (*Session).cmdColor},
+		{names: []string{"/color"}, hidden: []string{"/colour"}, usage: "/color [on|off]", description: "turn color on or off, and save the choice", run: (*Session).cmdColor},
 		{names: []string{"/cognito"}, description: "record nothing, on or off", run: (*Session).cmdCognito},
 		{names: []string{"/verbosity"}, usage: "/verbosity [0-6]", description: "how much the model is asked to answer with", run: (*Session).cmdVerbosity},
 		{names: []string{"/verbose"}, description: "report the shape of each streamed turn, on or off", run: (*Session).cmdVerbose},

@@ -120,6 +120,15 @@ func interface_(out, in *os.File, cfg *config.Config, opts options, doc *bootstr
 	// note is shown once so that the fallback is not silent.
 	session.SetColor(cfg.Color)
 	session.SetColorTheme(cfg.ColorTheme)
+	// /color records its choice in the file the loader read, found again at the
+	// time of the command so that a file made during setup is seen.
+	session.SetColorSaver(func(on bool) error {
+		path, ok := config.ConfigPath()
+		if !ok {
+			return config.ErrNoConfigFile
+		}
+		return config.WriteColor(path, on)
+	})
 	if cfg.ColorNote != "" {
 		session.Note("%s", cfg.ColorNote)
 	}
