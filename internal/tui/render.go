@@ -378,6 +378,14 @@ type Frame struct {
 	// idle. It is drawn beside the partial reply rather than in the status
 	// bar, so that it moves where the eye already is.
 	Spinner string
+	// Elapsed is how long the work in progress has been running, shown beside
+	// the word thinking. It is empty when there is no work, since a figure
+	// with no work behind it would be counting from nothing.
+	//
+	// It is text rather than a duration so that the renderer does no
+	// formatting, and rather than a number so that a frame assembled by a
+	// test is not carrying a clock that would make it differ between runs.
+	Elapsed string
 	// Tint is the sequence that colours the twiddle, empty when there is none.
 	//
 	// It is carried on the frame rather than written into Spinner, since a
@@ -601,6 +609,13 @@ func render(f Frame, height, width int) ([]string, int, int) {
 		// is a second thing to keep correct. The text is found instead, once,
 		// after the pane is settled.
 		twiddleLine = f.Spinner + " thinking"
+		// The figure follows the word rather than leading it, since the
+		// twiddle and the word are what say that work is happening and the
+		// figure only measures it. A reader watching for the reply reads the
+		// left of the row first.
+		if f.Elapsed != "" {
+			twiddleLine += " " + f.Elapsed
+		}
 		reply = append(append([]string{}, reply...), twiddleLine)
 	}
 	if len(reply) == 0 && f.Hint != "" {
