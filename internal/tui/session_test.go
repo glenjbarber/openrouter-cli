@@ -143,7 +143,7 @@ func TestSlashListsEveryCommand(t *testing.T) {
 }
 
 // completionSession is a session with nothing but a completer, which is all the
-// completion needs: the reports are written to the reply pane.
+// completion needs: the notice is written to the frame beside the prompt.
 func completionSession() *Session {
 	return &Session{completer: complete.New(candidates())}
 }
@@ -183,8 +183,43 @@ func TestCompleteLineReportsNoMatch(t *testing.T) {
 	if got := s.completeLine("/zzz"); got != "" {
 		t.Errorf("completing /zzz gave %q, want the line unchanged", got)
 	}
-	if body := strings.Join(s.frame.Reply, "\n"); !strings.Contains(body, "/zzz") {
-		t.Errorf("the pane does not say what was looked for:\n%s", body)
+	// The notice is beside the prompt rather than in the pane, since it is
+	// about what the reader is typing rather than about the conversation.
+	if !strings.Contains(s.frame.Notice, "/zzz") {
+		t.Errorf("the notice does not say what was looked for: %q", s.frame.Notice)
+	}
+	if len(s.frame.Reply) != 0 {
+		t.Errorf("the notice was written to the pane as well: %q", s.frame.Reply)
+	}
+}
+
+// A notice must not survive a keystroke. A reader who has typed past the
+// complaint should not have to dismiss it, and one who has not will see it again
+// on the next completion.
+func TestTypingClearsTheNotice(t *testing.T) {
+	s := completionSession()
+	s.completeLine("/zzz")
+	if s.frame.Notice == "" {
+		t.Fatal("nothing was noticed")
+	}
+
+	s.clearNotice()
+
+	if s.frame.Notice != "" {
+		t.Errorf("the notice survived a keystroke: %q", s.frame.Notice)
+	}
+}
+
+// A completion that chose a word has answered the question, so nothing is left
+// complaining above the line.
+func TestASuccessfulCompletionClearsTheNotice(t *testing.T) {
+	s := completionSession()
+
+	s.completeLine("/zzz")
+	s.completeLine("/comp")
+
+	if s.frame.Notice != "" {
+		t.Errorf("a successful completion left a notice: %q", s.frame.Notice)
 	}
 }
 
@@ -196,8 +231,11 @@ func TestCompleteLineIsNeverSilent(t *testing.T) {
 		if got := s.completeLine(line); got != "" {
 			t.Errorf("%q: completing gave %q, want the line unchanged", line, got)
 		}
-		if len(s.frame.Reply) == 0 {
-			t.Errorf("%q: a Tab that completed nothing wrote nothing to the pane", line)
+		// Either a notice or the candidates. What must not happen is silence:
+		// a reader pressing Tab and nothing appearing is a client that has
+		// stopped answering.
+		if s.frame.Notice == "" && len(s.frame.Reply) == 0 {
+			t.Errorf("%q: a Tab that completed nothing said nothing at all", line)
 		}
 	}
 }

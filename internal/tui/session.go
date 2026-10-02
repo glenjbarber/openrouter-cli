@@ -287,6 +287,11 @@ func Start(out, in *os.File, title string) (*Session, error) {
 	s.editor.OnChange = func(line string) {
 		s.mu.Lock()
 		s.frame.Input = line
+		// A notice is about a keystroke, so typing past it clears it. A
+		// reader who has moved on from what the notice said should not have
+		// to dismiss it, and one who has not will see it again on the next
+		// completion.
+		s.frame.Notice = ""
 		s.mu.Unlock()
 		s.draw()
 	}
@@ -974,13 +979,15 @@ func (s *Session) completeLine(line string) string {
 	res := s.completer.Complete(line, len(line))
 	switch res.Kind {
 	case complete.Unique:
+		s.notice("")
 		return res.Line
 	case complete.Ambiguous:
+		s.notice("")
 		s.showCandidates(res)
 	case complete.NoMatch:
-		s.appendLines("nothing matches " + res.Prefix)
+		s.notice("nothing matches " + res.Prefix)
 	case complete.NotApplicable:
-		s.appendLines("nothing to complete here")
+		s.notice("nothing to complete here")
 	}
 	return ""
 }
@@ -2224,4 +2231,34 @@ func (s *Session) hint() string {
 		return "Type a message and press Enter to send it to " + s.conv.Model() + ".\n" +
 			"/help lists the commands."
 	}
+}
+
+// clearNotice drops what is said about the line being composed.
+//
+// It is separate from the draw so that a keystroke can clear the notice without
+// a repaint of its own, which would be a frame per character for no reason.
+func (s *Session) clearNotice() {
+	s.mu.Lock()
+	s.frame.Notice = ""
+	s.mu.Unlock()
+}
+
+// notice says something about the line being composed, on the input block.
+//
+// The notice is cleared when the reader types, so it does not sit above the
+// prompt saying something that is no longer true. It is cleared on a successful
+// completion for the same reason: the reader asked and was answered, and a
+// complaint left above the line would read as a complaint about the answer.
+func (s *Session) notice(text string) {
+	s.mu.Lock()
+	s.frame.Notice = text
+	screen := s.screen
+	s.mu.Unlock()
+	// A session with no screen is one assembled by a test with nothing but a
+	// completer. There is nothing to draw on, and asking for it would panic
+	// rather than report the notice.
+	if screen == nil {
+		return
+	}
+	s.draw()
 }

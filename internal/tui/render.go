@@ -454,6 +454,19 @@ type Frame struct {
 	// nothing is preselected, so a reader who answers without reaching for
 	// Tab has approved nothing.
 	ConfirmChoice string
+	// Notice is something said about the line being composed, shown on the
+	// input block rather than in the pane.
+	//
+	// It is on the input block because it is about what the reader is typing
+	// rather than about the conversation. A completion that matched nothing
+	// written into the pane becomes a line of output among the replies, and a
+	// reader pressing Tab expects to see what happened where they pressed it.
+	//
+	// It is a separate field rather than a replacement for Input, since a
+	// reader who pressed Tab has not asked to lose what they typed. Overwriting
+	// the line would lose a half composed command over a keystroke that was
+	// only meant to help with one.
+	Notice string
 	// Scroll is how many lines the pane is scrolled up from the newest
 	// output. Zero means the view is following the bottom, which is the only
 	// behaviour the pane had before scrolling existed.
@@ -522,6 +535,9 @@ func render(f Frame, height, width int) ([]string, int, int) {
 	// The hint row is rendered once, before the budget is made, so that the
 	// budget reserves a row only when a row will actually be drawn.
 	hints := hintLine(f.Hints, width)
+	// The notice is rendered once, before the budget is made, so that the
+	// budget reserves a row for it only when one will be drawn.
+	notice := noticeLine(f.Notice, width)
 
 	// The question is built as a box on the same terms as the hint row is
 	// built, so that the budget reserves its rows only when one will be drawn.
@@ -570,6 +586,10 @@ func render(f Frame, height, width int) ([]string, int, int) {
 	// landed is still reported. A paste the reader cannot see reads as a lost
 	// paste, while a missing hint costs nothing beyond the row it was on.
 	inputRows += hintRows(hints, height-inputRows)
+	// The notice is budgeted after the hint. A notice is a reaction to
+	// something the reader has just done, where a hint is standing advice, so
+	// the advice yields first: it is there again the moment the notice clears.
+	inputRows += noticeRows(noticeLine(f.Notice, width), height-inputRows)
 	// The question is budgeted after the hint row. A hint that gives way to a
 	// question is a caption lost for a moment, while a question that gives way
 	// to a hint is a decision the reader cannot see being asked of them,
@@ -789,6 +809,12 @@ func render(f Frame, height, width int) ([]string, int, int) {
 	// hint here costs the reader a row of names, where letting the trim below
 	// take the last row would cost them the prompt and with it any way to
 	// type a next message.
+	//
+	// The notice is drawn before the hint, since it is about the keystroke the
+	// reader has just made where the hint is about the state they are in.
+	if notice != "" && len(body)+2 <= height {
+		body = append(body, notice)
+	}
 	if hints != "" && len(body)+2 <= height {
 		body = append(body, hints)
 	}
@@ -1320,4 +1346,25 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// noticeLine renders what is said about the line being composed, or nothing
+// where there is nothing to say.
+func noticeLine(notice string, width int) string {
+	if notice == "" {
+		return ""
+	}
+	return truncate(notice, width)
+}
+
+// noticeRows is the single row a notice takes, or none when there is no room.
+//
+// It is budgeted on the same terms as the hint row and yields to it, since a
+// notice is a reaction to what the reader has just done and a hint is standing
+// advice that is there again the moment the notice clears.
+func noticeRows(line string, room int) int {
+	if line == "" || room < 1 {
+		return 0
+	}
+	return 1
 }

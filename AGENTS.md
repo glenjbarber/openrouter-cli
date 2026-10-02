@@ -247,6 +247,17 @@ so that a later change does not silently reverse it.
   Tokens used in and out, and hostname. `Reasoning` and `Branch` were removed
   along with `Approval`, and `Approval` has since come back with the shell.
 - Commands and configuration options are completed with the Tab key.
+- A completion that matched nothing is reported on the input block, beside the
+  prompt, and not in the pane. It is about what the reader is typing rather than
+  about the conversation, and a notice written among the replies becomes a line
+  of output they have to read back through the history to find.
+- A notice is a separate field rather than a replacement for the composed line,
+  since a reader who pressed Tab has not asked to lose what they typed.
+  Overwriting the line would lose a half composed command over a keystroke that
+  was only meant to help with one.
+- A notice is cleared by the next keystroke and by a completion that succeeded.
+  A reader who has moved on from what it said should not have to dismiss it, and
+  one who has not sees it again on the next completion.
 - The interface behaves correctly with a terminal and mouse combination, and
   within tmux.
 - Text is always copyable with the ordinary terminal selection gesture, and a
@@ -809,6 +820,11 @@ so that a later change does not silently reverse it.
   permits three programs and refuses one has no way to say so.
 - The rules are held by the session and replaced in place, so a permission
   granted now takes effect rather than at the next run.
+- A rule named by `/permission add` covers the working directory unless a
+  directory is named, and a directory is told apart from a program by being a
+  path rather than by being the first argument. The first argument is usually a
+  program, and reading it as a directory wrote a rule for a path that was never
+  there and granted nothing.
 - A rule is read against the directory a command would run in, not the one the
   session was opened in, so a rule written for a project covers a build run in
   a subdirectory of it. The listing is read against the same directory rather
