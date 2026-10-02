@@ -1358,12 +1358,14 @@ so that a later change does not silently reverse it.
   frame paint over the interface after the work had ended.
 - Starting an already-running twiddle does nothing, so a caller need not track
   whether one is running.
-- The twiddle row is drawn in colour whether or not the colour setting is on,
-  and the colour scrolls through the six primaries while work is in progress.
-  It is the one row coloured without being asked for. Every other colour in the
-  frame is governed by the `color` setting and is described under Colour. The
-  primaries are used since they are the colours every terminal can be relied on
-  to show.
+- The twiddle row is drawn in colour only when the colour setting is on, like
+  everything else in the frame, and the colour scrolls through the six primaries
+  while work is in progress. Colour is off by default, so by default the twiddle
+  row is plain text. `/color`, `/colour` and the `color` key govern it alike, as
+  described under Colour. The twiddle was once exempt from the setting and drew
+  in colour regardless; the maintainer reversed that, so no part of the frame is
+  coloured without being asked for. The primaries are used since they are the
+  colours every terminal can be relied on to show.
 - The colour is interpolated between the primaries rather than stepped between
   them. Six colours turning is not a scroll, and a hard change is the thing a
   scroll is wanted in place of.
@@ -1415,6 +1417,12 @@ so that a later change does not silently reverse it.
   nothing else. An escape sequence written into any of them is copied out with
   the text and acts on whatever receives it, so stored text never contains one.
   The twiddle follows the same rule, as the Progress section records.
+- The twiddle colour is governed by the colour setting like every other colour.
+  The tint is still recorded with the twiddle, but the screen ignores it when
+  the frame has no palette, so with colour off the bytes are those of a frame
+  with no tint at all: no sequence, no reset written for it, and the same row
+  text. The twiddle row still wins its own row over the chrome spans when colour
+  is on.
 - Colour is off by default. A user who did not ask for colour would find it
   startling, and a terminal that cannot show it would show the bytes instead.
 - `/color` turns it on and off, taking an optional `on` or `off` and otherwise

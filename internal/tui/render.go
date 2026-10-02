@@ -1424,7 +1424,8 @@ type framePaint struct {
 // span end writes the palette reset, which also sets the base colours again, so
 // the rest of the row and the clear that follows take the background of the
 // theme. The twiddle row is coloured by its own path and that path wins on its
-// row.
+// row, but only with a palette: with none the tint is ignored, so the twiddle
+// is governed by the colour setting like everything else.
 func (s *Screen) DrawFrame(lines []string, p framePaint) {
 	pal := p.pal
 	// reset is what begins a row and what ends a coloured stretch. With no
@@ -1444,7 +1445,7 @@ func (s *Screen) DrawFrame(lines []string, p framePaint) {
 		s.write(reset)
 		s.write(seqClearLine)
 		switch {
-		case p.sequence != "" && p.figure != "" && i == p.twiddle &&
+		case pal != nil && p.sequence != "" && p.figure != "" && i == p.twiddle &&
 			strings.HasPrefix(line, p.figure):
 			s.write(p.sequence)
 			s.write(line)

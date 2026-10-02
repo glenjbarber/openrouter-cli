@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/glenjbarber/openrouter-cli/internal/config"
 )
 
 // The ramp was written before anything called it, so it carried no test of its
@@ -312,5 +314,79 @@ func TestATintNotMatchingTheRowIsNotApplied(t *testing.T) {
 
 	if strings.Contains(read(), "\x1b[38;5;1m") {
 		t.Error("a tint whose figure is not on the row was applied")
+	}
+}
+
+// The twiddle colour is governed by the colour setting like every other colour.
+// These cover the gate in DrawFrame and the same gate reached through the
+// session, so that /color and the key cannot disagree about it.
+
+// twiddleFrame is a frame with a twiddle on it, and the rows it draws as.
+func twiddleFrame(t *testing.T) ([]string, [][]span, int) {
+	t.Helper()
+	f := Frame{Title: "t", Partial: "a", Spinner: spinnerFrames[0], Elapsed: "1s", Input: "x"}
+	rows, spans, _, twiddle := renderStyled(f, 24, 60)
+	if twiddle < 0 {
+		t.Fatal("no twiddle row")
+	}
+	return rows, spans, twiddle
+}
+
+// With colour off a frame carrying a tint is the frame with no tint at all.
+func TestATintIsIgnoredWithColourOff(t *testing.T) {
+	rows, spans, twiddle := twiddleFrame(t)
+	tintSeq := twiddleTint(2)
+
+	tinted, readTinted := screenCapture(t)
+	tinted.height, tinted.width = 24, 60
+	tinted.DrawFrame(rows, framePaint{spans: spans, twiddle: twiddle, sequence: tintSeq, figure: spinnerFrames[0]})
+
+	bare, readBare := screenCapture(t)
+	bare.height, bare.width = 24, 60
+	bare.DrawFrame(rows, framePaint{spans: spans, twiddle: -1})
+
+	if readTinted() != readBare() {
+		t.Errorf("a tint changed a colour-off frame:\n%q\n%q", readTinted(), readBare())
+	}
+	if strings.Contains(readTinted(), tintSeq) {
+		t.Error("the twiddle sequence was written with colour off")
+	}
+}
+
+// With colour on the sequence is written and reset around the row, as before.
+func TestATintIsAppliedWithColourOn(t *testing.T) {
+	rows, spans, twiddle := twiddleFrame(t)
+	pal := newPalette(config.Theme{})
+	tintSeq := twiddleTint(2)
+	sc, read := screenCapture(t)
+	sc.height, sc.width = 24, 60
+	sc.DrawFrame(rows, framePaint{spans: spans, pal: &pal, twiddle: twiddle, sequence: tintSeq, figure: spinnerFrames[0]})
+	if !strings.Contains(read(), tintSeq+rows[twiddle]+seqResetAttr) {
+		t.Errorf("the twiddle row is not coloured with colour on:\n%q", read())
+	}
+}
+
+// /color on and off toggle the twiddle colour on the next paint, through the
+// real command path.
+func TestColorCommandTogglesTheTwiddleColour(t *testing.T) {
+	s, capture := auditSession(t, "")
+	tintSeq := twiddleTint(2)
+	s.mu.Lock()
+	s.frame.Busy = true
+	s.frame.Spinner = spinnerFrames[0]
+	s.frame.Elapsed = "1s"
+	s.frame.Tint = tintSeq
+	s.mu.Unlock()
+
+	if got := paintedFrame(t, s, capture); strings.Contains(got, tintSeq) {
+		t.Errorf("a fresh session paints the twiddle colour:\n%q", got)
+	}
+	s.command("/color on")
+	if got := paintedFrame(t, s, capture); !strings.Contains(got, tintSeq+spinnerFrames[0]) {
+		t.Errorf("the paint after /color on has no twiddle colour:\n%q", got)
+	}
+	s.command("/color off")
+	if got := paintedFrame(t, s, capture); strings.Contains(got, tintSeq) {
+		t.Errorf("the paint after /color off still has the twiddle colour:\n%q", got)
 	}
 }
