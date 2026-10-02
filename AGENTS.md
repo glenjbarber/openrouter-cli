@@ -1154,6 +1154,16 @@ so that a later change does not silently reverse it.
   half and the terminal draws half a glyph followed by the rest of it as text.
 - The tint is cleared with the twiddle. A tint left behind with no twiddle would
   colour whichever row it was pointed at.
+- The row carries how long the work has been running, since that is the question
+  a reader watching a slow turn is asking. The figure follows the word rather than
+  leading it, so the left of the row still reads as the twiddle and the word.
+- The figure is seconds until a minute and minutes and seconds after. It is not
+  padded, so it does change width as it grows, which is safe only because it is
+  appended to the row rather than leading it: the twiddle and the word sit at
+  the same column whatever the figure says.
+- The figure is cleared with the twiddle, and a clock that has been set back
+  reads zero rather than counting backwards, since a negative figure is a thing
+  that cannot have happened.
 - The twiddle leads the line rather than trailing it, since a trailing one
   would shift the text sideways on every step.
 
