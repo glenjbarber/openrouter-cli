@@ -282,14 +282,14 @@ func TestALineSentWhileAModelWorksIsQueued(t *testing.T) {
 	q.release()
 	waitFor(t, func() bool { return q.count() == 2 },
 		"the first queued line was not sent once the request ahead of it was answered")
-	if turns := q.userTurns(); turns[1] != "an update" {
+	if turns := q.userTurns(); turns[1] != "[QUEUED] an update" {
 		t.Errorf("the second request carried %q, want the first queued line alone", turns[1])
 	}
 
 	q.release()
 	waitFor(t, func() bool { return q.count() == 3 },
 		"the second queued line was not sent after the first was answered")
-	if turns := q.userTurns(); turns[2] != "another one" {
+	if turns := q.userTurns(); turns[2] != "[QUEUED] another one" {
 		t.Errorf("the third request carried %q, want the second queued line alone", turns[2])
 	}
 
@@ -377,7 +377,7 @@ func TestEscapeSendsAQueuedLineWhenTheInputIsEmpty(t *testing.T) {
 	waitFor(t, func() bool { return q.count() == 2 },
 		"the queued line was never sent: %d requests were made", q.count())
 	turns := q.userTurns()
-	if turns[1] != "the question\n\nan update" {
+	if turns[1] != "the question\n\n[QUEUED] an update" {
 		t.Errorf("the update was sent as %q, want the queued line as an update", turns[1])
 	}
 
@@ -432,7 +432,7 @@ func TestAQueuedLineIsNotSentTwiceWhenTheModelIsStopped(t *testing.T) {
 	if n := q.count(); n != 2 {
 		t.Fatalf("%d requests were made, want the question and the update", n)
 	}
-	if turns := q.userTurns(); turns[1] != "the question\n\nan update" {
+	if turns := q.userTurns(); turns[1] != "the question\n\n[QUEUED] an update" {
 		t.Errorf("the update was sent as %q, want the queued line", turns[1])
 	}
 
