@@ -40,3 +40,6 @@ go.work.sum
 # go.sum is absent only while the module has no external dependencies. It is
 # deliberately not ignored, so that a dependency added later produces a
 # committed checksum file rather than a silently unpinned build.
+
+# Working notes, not part of the project.
+/todo.txt
