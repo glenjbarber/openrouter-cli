@@ -24,7 +24,10 @@ func saveSessionIn(t *testing.T, home string) *Session {
 	t.Helper()
 	t.Setenv("HOME", home)
 	s, _ := auditSession(t, "")
-	s.editor = NewLineEditor(strings.NewReader("\n"))
+	// A carriage return submits the prompt rather than a bare newline, since
+	// Ctrl-J inserts a newline into the line being composed and submits
+	// nothing. The prompt is answered by the reader pressing Enter.
+	s.editor = NewLineEditor(strings.NewReader("\r"))
 	return s
 }
 
@@ -107,8 +110,9 @@ func TestSaveUnderATakenNameAsksBeforeReplacing(t *testing.T) {
 	s.command("/save work")
 
 	// The answer to the prompt is a line from the editor, so a decline is
-	// answered with something that is not yes.
-	s.editor = NewLineEditor(strings.NewReader("n\n"))
+	// answered with something that is not yes. A carriage return submits it,
+	// since Ctrl-J inserts a newline and submits nothing.
+	s.editor = NewLineEditor(strings.NewReader("n\r"))
 	s.conv.Record("the second", "the second answer")
 	s.command("/save work")
 
@@ -122,7 +126,7 @@ func TestSaveUnderATakenNameAsksBeforeReplacing(t *testing.T) {
 
 	// The declined save is filed beside it under a name carrying the epoch,
 	// since an answer of no should not throw the conversation away.
-	entries, err := os.ReadDir(filepath.Join(filepath.Dir(pathUnder(t, "work"))))
+	entries, err := os.ReadDir(filepath.Dir(pathUnder(t, "work")))
 	if err != nil {
 		t.Fatalf("ReadDir: %v", err)
 	}
@@ -143,7 +147,7 @@ func TestSaveUnderATakenNameOverwritesWhenSaid(t *testing.T) {
 	s.conv.Record("the first", "the first answer")
 	s.command("/save work")
 
-	s.editor = NewLineEditor(strings.NewReader("y\n"))
+	s.editor = NewLineEditor(strings.NewReader("y\r"))
 	s.conv.Record("the second", "the second answer")
 	s.command("/save work")
 

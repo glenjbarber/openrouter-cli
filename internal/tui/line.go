@@ -46,8 +46,8 @@ func (e errorString) Error() string { return string(e) }
 // that a report typed alongside a keystroke is still read whole.
 const readChunk = 64
 
-// prefixTimeout is how long a possible report prefix is waited for before it
-// is assumed not to be one.
+// prefixTimeout is how long a possible report prefix is waited for before it is
+// assumed not to be one.
 //
 // The figure is short enough that a lone escape feels immediate and long enough
 // that a report split across a slow link arrives whole. A terminal writes a
@@ -58,15 +58,15 @@ const prefixTimeout = 60 * time.Millisecond
 // errPrefixUnfinished reports that a held prefix was not completed in the time
 // the wait allowed.
 //
-// The caller hands the bytes back as keys rather than treating this as the end
-// of the input, since the prefix was never shown not to be a report.
+// The caller hands the bytes back as keys rather than treating this as the end of
+// the input, since the prefix was never shown not to be a report.
 var errPrefixUnfinished = errorString("the held prefix never arrived")
 
 // LineEditor reads a single line of text.
 type LineEditor struct {
 	r io.Reader
-	// src is the underlying file when there is one. A read deadline can only
-	// be set on a file, and the deadline is what keeps a held report prefix
+	// src is the underlying file when there is one. A read deadline can only be
+	// set on a file, and the deadline is what keeps a held report prefix
 	// from waiting on input that never arrives.
 	src *os.File
 	// held is true while the buffer holds a possible report prefix that is
@@ -91,6 +91,14 @@ type LineEditor struct {
 	// A nil callback inserts a literal tab, which is the only thing a reader
 	// without completion can expect the key to do.
 	OnTab func(line string) string
+	// OnMode is called when the multi-line mode is turned on or off, so that
+	// the interface can say so on the hint row. The row names keys that act,
+	// and Enter means something different inside the mode, so it has to be
+	// told rather than left naming the key the reader has to stop using.
+	//
+	// A nil callback draws nothing, which is the correct behaviour for a
+	// non-interactive reader.
+	OnMode func(on bool)
 	// pendingKeys holds the final bytes of the special key sequences read since
 	// the last keypress, oldest first. They are acted on by the read loop, which
 	// holds the line being composed, rather than by the reader, which does not.
@@ -117,6 +125,16 @@ type LineEditor struct {
 	// typed line so that a multi-line paste is one input rather than one
 	// message per line.
 	pasted []string
+	// multiline reports that the reader has asked for a multi-line message, in
+	// which Enter ends a line rather than sending and Ctrl-J sends the block
+	// rather than opening the mode.
+	//
+	// The lines are held in the same list as a landed paste, since a block
+	// typed over several lines is the same thing as a block pasted in one go
+	// as far as the message that goes out and the rows the interface shows.
+	// Reusing it is what keeps the frame from having to learn a second kind of
+	// block above the prompt.
+	multiline bool
 	// OnKey is called with the final byte of each special key sequence, such as
 	// an arrow. It is nil when the caller does not act on them.
 	OnKey func(final byte)
@@ -148,6 +166,23 @@ func NewLineEditor(r io.Reader) *LineEditor {
 	return le
 }
 
+// multilineMode returns whether the multi-line mode is on.
+func (le *LineEditor) multilineMode() bool { return le.multiline }
+
+// setMultiline turns the multi-line mode on or off and reports it.
+//
+// The callback is called on the change rather than on every read, so that the
+// interface draws the notice once rather than on each keystroke.
+func (le *LineEditor) setMultiline(on bool) {
+	if le.multiline == on {
+		return
+	}
+	le.multiline = on
+	if le.OnMode != nil {
+		le.OnMode(on)
+	}
+}
+
 // holdable reports whether a report prefix may be held across a read.
 //
 // Every reader may be held for. A reader that is a file is given a deadline so
@@ -173,8 +208,8 @@ func (le *LineEditor) holdable() bool { return true }
 // was split, since a read of sixty-four bytes does not divide the twelve-byte
 // report, and scrolling fast is what filled the queue that splits one.
 //
-// The wait is per read rather than for the whole hold, so a report arriving over
-// several reads is assembled rather than cut short after the first gap.
+// The wait is per read rather than for the whole hold, so that a report arriving
+// over several reads is assembled rather than cut short after the first gap.
 func (le *LineEditor) fillHeld() error {
 	if !le.held {
 		le.held = true
@@ -242,8 +277,8 @@ func (le *LineEditor) readKey() (byte, error) {
 			//
 			// A prefix too short to tell from anything else is still held,
 			// since the rest of it may be in the next read. A lone escape
-			// is held on the same terms and is handed back as a key once
-			// the hold times out, which is what lets it interrupt.
+			// is held on the same terms and is handed back as a key once the
+			// hold times out, which is what lets it interrupt.
 			if le.holdable() && (mousePrefix(le.buf) || pastePrefix(le.buf)) {
 				if err := le.fillHeld(); err != nil {
 					// Nothing more arrived before the deadline, so the
@@ -258,6 +293,16 @@ func (le *LineEditor) readKey() (byte, error) {
 			if seq, rest, ok := takeMouseSequence(le.buf); ok {
 				le.buf = rest
 				le.mouse(seq)
+				continue
+			}
+			// A shifted enter is queued rather than acted on here, since the
+			// line being composed is held by the read loop and not by this
+			// function. It is taken before the ordinary sequence so that the
+			// report is not read as an unknown key and its bytes put into the
+			// message.
+			if rest, ok := takeShiftedEnter(le.buf); ok {
+				le.buf = rest
+				le.pendingKeys = append(le.pendingKeys, keyShiftEnter)
 				continue
 			}
 			// A key sequence is consumed whole. Left to be read as keys, its
@@ -323,24 +368,48 @@ func (le *LineEditor) notify(out *strings.Builder) {
 	}
 }
 
+// reportBlock tells the interface what the block above the prompt holds.
+//
+// It is called whenever the block changes, so that the rows the reader can see
+// are the lines that are actually there. The block is reported whether it came
+// from a paste or from the reader typing into the multi-line mode, since the
+// interface draws one above the other.
+func (le *LineEditor) reportBlock() {
+	if le.OnPaste == nil || len(le.pasted) == 0 {
+		return
+	}
+	le.OnPaste(le.pasted)
+}
+
 // ReadLine reads one line.
 //
 // Raw mode means no line discipline, so keys are assembled here. Backspace and
 // Ctrl-U clear text, Ctrl-W clears the last word, and Ctrl-C abandons the line.
 // A multi-byte rune arriving one byte at a time is held until the sequence is
 // complete, so a character is not cut in half by a keystroke boundary.
+//
+// Enter submits the message. Ctrl-J opens the multi-line mode instead, in which
+// Enter ends a line, Ctrl-J sends the block, and Escape abandons it. The mode
+// exists because a newline typed into a line is held but not shown: the prompt
+// draws one row, so a message being composed over several lines would be
+// invisible to the reader writing it. The mode holds the lines where the
+// interface already draws a landed paste, so a block typed is shown the way a
+// block pasted is.
+//
+// Shift with Enter ends a line in either state, since it means a break and a
+// break is what it means on an idle prompt too.
 func (le *LineEditor) ReadLine() (string, error) {
 	var out strings.Builder
 	var pending []byte
 
-	// A paste that has landed belongs to the line it landed in. Every path
-	// out of this loop other than a submit abandons it, so that text the
-	// reader discarded with a control character is not prepended to whatever
-	// they type next. The submit path takes the paste out of the editor
-	// itself and sets the flag, so the two cannot disagree.
+	// A block that has landed belongs to the line it landed in. Every path out
+	// of this loop other than a submit abandons it, so that text the reader
+	// discarded with a control character is not prepended to whatever they type
+	// next. The submit path takes the block out of the editor itself and sets
+	// the flag, so the two cannot disagree.
 	submitted := false
 	defer func() {
-		if !submitted {
+		if !submitted && !le.multiline {
 			le.pasted = nil
 		}
 	}()
@@ -360,6 +429,14 @@ func (le *LineEditor) ReadLine() (string, error) {
 		for len(le.pendingKeys) > 0 {
 			key := le.pendingKeys[0]
 			le.pendingKeys = le.pendingKeys[1:]
+			// A shifted enter breaks the line where it was pressed, so a rune
+			// that has not arrived whole is abandoned rather than committed
+			// after the break. The decision is taken here rather than in the
+			// key handler, since the held bytes belong to this loop.
+			if key == keyShiftEnter {
+				pending = pending[:0]
+				le.breakLine(&out)
+			}
 			le.key(key, &out)
 		}
 
@@ -394,12 +471,20 @@ func (le *LineEditor) ReadLine() (string, error) {
 				pending = pending[:0]
 			}
 			le.notify(&out)
-		case keyEnter, keyNewline:
+		case keyEnter:
 			if len(pending) > 0 {
 				out.Write(pending)
 				pending = pending[:0]
 			}
-			// A paste that has landed is returned as part of the message, so
+			// Inside the multi-line mode Enter ends a line rather than sending
+			// the message. The line is held where a landed paste is held, so
+			// that it is drawn above the prompt, and the line being composed
+			// starts again empty.
+			if le.multiline {
+				le.breakLine(&out)
+				continue
+			}
+			// A block that has landed is returned as part of the message, so
 			// that a multi-line paste reaches the model whole. It is joined
 			// with newlines rather than sent as several messages, since the
 			// user pasted one thing.
@@ -422,6 +507,28 @@ func (le *LineEditor) ReadLine() (string, error) {
 			}
 			submitted = true
 			return out.String(), nil
+		case keyNewline:
+			// Ctrl-J opens the multi-line mode, and sends the block where the
+			// mode is on. A terminal in raw mode sends it as the same byte as a
+			// newline, so a line carrying one arrived as text as well, and the
+			// two are not told apart.
+			//
+			// A rune that has not arrived whole is abandoned rather than
+			// committed, so that a break typed part way through one does not
+			// leave a broken sequence behind to be written later.
+			pending = pending[:0]
+			if le.multiline {
+				le.breakLine(&out)
+				le.setMultiline(false)
+				le.settleSubmitted(&out)
+				return le.sendBlock(), nil
+			}
+			// The key ends the line being composed as well as opening the
+			// mode. A block is a block however it was started, and a break
+			// held only once the mode was on would join the first line to
+			// the second.
+			le.breakLine(&out)
+			le.setMultiline(true)
 		case keyTab:
 			// A control key abandons a rune that has not arrived whole, so
 			// that a Tab pressed part way through one does not leave a broken
@@ -455,6 +562,14 @@ func (le *LineEditor) ReadLine() (string, error) {
 			// so. What the session does with the interrupt is decided there,
 			// since escape abandons a line on an idle prompt and stops a
 			// model with it while one is working.
+			//
+			// Inside the multi-line mode it abandons the block rather than the
+			// line, since a reader pressing it there means to discard what they
+			// have written rather than to leave the session.
+			if le.multiline {
+				le.setMultiline(false)
+				le.pasted = nil
+			}
 			return "", ErrInterrupt
 		default:
 			// Another control key, ignored rather than inserted. Tab is not
@@ -476,6 +591,53 @@ func (le *LineEditor) ReadLine() (string, error) {
 			le.notify(&out)
 		}
 	}
+}
+
+// breakLine ends the line being composed and holds it, so that the next line
+// starts empty and the one before it is drawn above the prompt.
+//
+// The line is held in the same list as a landed paste, which is what keeps the
+// interface from having to learn a second kind of block above the prompt. An
+// empty line is not held, since a reader pressing Enter twice has typed
+// nothing rather than a blank line, and a block carrying an empty row reads as
+// one carrying a gap in it.
+func (le *LineEditor) breakLine(out *strings.Builder) {
+	if out.Len() > 0 {
+		le.pasted = append(le.pasted, out.String())
+	}
+	out.Reset()
+	le.composing = ""
+	le.reportBlock()
+}
+
+// settleSubmitted marks the block as being sent, so that the deferred clearing
+// of an abandoned block does not take it on the way out.
+//
+// The submit path takes the block out of the editor itself and sets the flag, so
+// the two cannot disagree. Without the flag here, the deferred clearing above
+// would empty a block that had already been handed to the caller.
+func (le *LineEditor) settleSubmitted(out *strings.Builder) {
+	if out.Len() > 0 {
+		le.pasted = append(le.pasted, out.String())
+		out.Reset()
+	}
+	le.composing = ""
+}
+
+// sendBlock returns the block as one message and clears it.
+//
+// The block is joined with newlines, since a message typed over several lines
+// is one message and sending it as several would ask them as several questions.
+func (le *LineEditor) sendBlock() string {
+	lines := le.pasted
+	le.pasted = nil
+	if len(lines) == 0 {
+		return ""
+	}
+	line := strings.Join(lines, "\n")
+	le.remember(line)
+	le.composing = ""
+	return line
 }
 
 // utf8Start is the first byte of a multi-byte UTF-8 sequence. A byte below it

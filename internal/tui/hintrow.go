@@ -74,19 +74,19 @@ func (st hintState) hints() []string {
 	// Enter is named for what it does in this state rather than for what it
 	// does on an idle prompt, since a line sent while a model is working is
 	// held rather than refused, and escape stops the model with it.
-	h := []string{"Enter send"}
+	//
+	// Nothing else is named. The completion and history keys act as well, but
+	// naming them made the row wider than a reader reads at a glance, and the
+	// row exists to name what a reader needs rather than to list every key the
+	// client reads.
 	if st.busy {
-		h[0] = "Enter queue"
-		h = append(h, "Esc stop and send")
+		return []string{"Enter queue", "Esc stop and send"}
 	}
-	h = append(h, "Tab complete")
-	if st.history {
-		h = append(h, "Up/Down history")
-	}
-	if st.mouse {
-		h = append(h, "wheel scroll")
-	}
-	return h
+	// The compose state names what sends and what breaks the line. Ctrl-J is
+	// named rather than left out, since it is the only key that breaks a line
+	// on a terminal that sends nothing for shift with enter, and a reader
+	// holding a multi-line message has no way to find it otherwise.
+	return []string{"Send [enter]", "[ctrl]+j newline"}
 }
 
 // hintLine renders the keys that act onto one row.

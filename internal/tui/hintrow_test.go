@@ -28,14 +28,14 @@ func TestHintRowNamesOnlyKeysThatAct(t *testing.T) {
 		want []string
 	}{
 		{
-			name: "a fresh session has only the keys that always act",
+			name: "an idle prompt names the key that sends and the key that breaks",
 			st:   hintState{},
-			want: []string{"Enter send", "Tab complete"},
+			want: []string{"Send [enter]", "[ctrl]+j newline"},
 		},
 		{
-			name: "history is named only once there is some",
+			name: "history alone adds nothing, since it is no longer named",
 			st:   hintState{history: true},
-			want: []string{"Enter send", "Tab complete", "Up/Down history"},
+			want: []string{"Send [enter]", "[ctrl]+j newline"},
 		},
 		{
 			// Enter queues rather than sends while a model is working, and
@@ -44,12 +44,12 @@ func TestHintRowNamesOnlyKeysThatAct(t *testing.T) {
 			// on an idle prompt.
 			name: "a model working renames enter and names escape",
 			st:   hintState{busy: true},
-			want: []string{"Enter queue", "Esc stop and send", "Tab complete"},
+			want: []string{"Enter queue", "Esc stop and send"},
 		},
 		{
-			name: "the wheel is named only while reporting is on",
+			name: "the wheel alone adds nothing, since it is no longer named",
 			st:   hintState{mouse: true},
-			want: []string{"Enter send", "Tab complete", "wheel scroll"},
+			want: []string{"Send [enter]", "[ctrl]+j newline"},
 		},
 		{
 			name: "the filter names completion, choosing and closing",
@@ -111,7 +111,7 @@ func TestHintLineIsEmptyWhenNothingFits(t *testing.T) {
 	if got := hintLine(hints, -3); got != "" {
 		t.Errorf("width=-3: row = %q, want empty", got)
 	}
-	if got := hintLine(hints, len("Enter send")-1); got != "" {
+	if got := hintLine(hints, len(hints[0])-1); got != "" {
 		t.Errorf("row = %q, want empty when the first entry does not fit", got)
 	}
 	if got := hintLine(nil, 40); got != "" {
@@ -119,8 +119,8 @@ func TestHintLineIsEmptyWhenNothingFits(t *testing.T) {
 	}
 }
 
-// The row sits directly above the prompt, so that it reads as a caption for
-// the input line and the prompt stays the last row of the block. The caret is
+// The row sits directly above the prompt, so that it reads as a caption for the
+// input line and the prompt stays the last row of the block. The caret is
 // placed on the last row, so a row below the prompt would move it.
 func TestHintRowSitsAboveThePrompt(t *testing.T) {
 	f := Frame{Input: "a message", Hints: hintState{history: true}.hints()}
@@ -130,7 +130,7 @@ func TestHintRowSitsAboveThePrompt(t *testing.T) {
 	if row < 1 {
 		t.Fatalf("no prompt row, or none with a row above it:\n%q", lines)
 	}
-	if above := lines[row-1]; !strings.Contains(above, "Enter send") {
+	if above := lines[row-1]; !strings.Contains(above, "Send [enter]") {
 		t.Errorf("row above the prompt = %q, want the hint row", above)
 	}
 	if lines[row] != "> a message" {
@@ -200,7 +200,7 @@ func TestHintRowYieldsToALandedPaste(t *testing.T) {
 	if !strings.Contains(joined, "more pasted lines") {
 		t.Errorf("the cut paste is not reported:\n%q", lines)
 	}
-	if !strings.Contains(joined, "Enter send") {
+	if !strings.Contains(joined, "Send [enter]") {
 		t.Errorf("the hint row is missing where there was room for it:\n%q", lines)
 	}
 	if promptRow(lines) < 0 {

@@ -23,6 +23,18 @@ const (
 	keyLeft  = 'D'
 )
 
+// keyShiftEnter is the queued marker for a shift with enter.
+//
+// It is not a byte a terminal sends, since a terminal reports the key as a
+// sequence rather than as a byte. It is the value that sequence is queued as,
+// so that the read loop and the key handler agree on what the key is called.
+//
+// The value is chosen to be one no sequence final can take. Every final byte
+// this reader recognises sits in the range from 0x40 up, and the queued keys are
+// held as bytes, so a value below that range cannot collide with an arrow, a
+// CSI u report, or anything else the reader queues.
+const keyShiftEnter = 0x00
+
 // csiParamLo and csiParamHi bound the parameter bytes of a control sequence,
 // which are the digits and the separators between them.
 const (
@@ -81,24 +93,28 @@ func takeSequence(buf []byte) (final byte, rest []byte, ok bool) {
 	return 0, buf, false
 }
 
-// key reports a special key to the caller.
-//
-// The line editor keeps no history and does not move the cursor within the
-// line, so there is nothing for most of these to do. They are consumed rather
-// than passed on for that reason: a sequence reaching the line editor as bytes
-// would put an escape and a bracket into the message being composed.
-//
-// Left and right are recorded so that the composed line can be moved through// key acts on a special key.
+// key acts on a special key.
 //
 // The up and down arrows walk the input history. The left and right arrows are
 // consumed and reserved for input toggles, so that they do not end the line and
 // so that the keys they will take are already spoken for.
+//
+// A shifted enter does nothing here. The read loop has already ended the line
+// on the key, since ending a line needs the builder to append the text being
+// composed and this function is given the builder to write into but not the
+// ability to hold a line. A case here as well would break the line twice, which
+// put a blank row between every line of a block.
+//
+// Anything else the reader queues is passed on, so that a caller may act on a
+// key the editor has no use for.
 func (le *LineEditor) key(final byte, out *strings.Builder) {
 	switch final {
 	case keyUp:
 		le.applyRecall(true, out)
 	case keyDown:
 		le.applyRecall(false, out)
+	case keyShiftEnter:
+		return
 	case keyLeft, keyRight:
 		return
 	default:

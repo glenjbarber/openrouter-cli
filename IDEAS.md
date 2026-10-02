@@ -1218,3 +1218,33 @@ reverse:
    did not do before. The feature needs escape to act with a line in hand, and
    the question of what it means when no model is working is not the same
    question.
+### Ctrl-C cancels a queued message
+
+Raised by the maintainer. An intent rather than a decision.
+
+Enter queues a line while a model is working, and escape stops the model and
+sends the queued line and the composed line as an update to the request it was
+answering. A third key is wanted: one that removes a queued line without sending
+it.
+
+The key collides with what it already does. Ctrl-C abandons a line being
+composed, and on an idle prompt with nothing in hand it ends the session. A
+queued message with an idle prompt and nothing in hand is that state, so Ctrl-C
+there currently quits. A cancel that leaves the session is not a cancel, so the
+key has to be told apart from the quit and the record does not say how.
+
+What the decision needs:
+
+1. Whether Ctrl-C with a queue and nothing in hand cancels rather than quits, and
+   what is left that quits.
+2. Which message a cancel takes: the newest, the oldest, or one named.
+3. Whether an emptied queue is drawn as nothing, or as a row saying it is empty.
+4. Whether a cancel says so in the pane. A queue that shrinks silently is a line
+   the reader cannot account for.
+5. Whether a cancel is refused while the request ahead is in flight, since the
+   stop already claims the queue under the lock that registers a turn.
+
+The stop settles who acts on the queue: `stopTurn` claims it under the session
+lock so that a turn ending at the same moment cannot drain it as well. A cancel
+reaching the queue has to take the same lock, or the two compete for the same
+lines.
