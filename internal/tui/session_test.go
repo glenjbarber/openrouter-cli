@@ -21,7 +21,7 @@ var requiredNames = []string{
 	"/help", "/clear", "/quit", "/exit", "/connect", "/key", "/search",
 	"/models", "/freemodels", "/model", "/new", "/bell", "/cognito",
 	"/verbose", "/delegate", "/btw", "/main", "/compact", "/mouse", "/info",
-	"/save", "/load", "/tools", "/approve", "/autosave", "/permission",
+	"/save", "/load", "/tools", "/approve", "/autosave", "/permission", "/copy",
 }
 
 // Every name the interface is expected to answer to is declared in the table

@@ -198,6 +198,15 @@ path is doubled first so it cannot be read as a replacement. `/autosave now`
 writes one at once. It is refused in cognito and in a thread, since both
 promise nothing is recorded.
 
+`/copy` writes the conversation to the clipboard through the terminal, whole and
+as plain text rather than as the pane has folded it for display. If nothing
+pastes afterwards, the terminal does not take a copy from the application;
+selecting the text and copying it with the terminal works regardless.
+
+The shifted arrows page the pane. `[shift]+up` goes back a screenful and
+`[shift]+down` goes forward one, by the height of the pane rather than a fixed
+count. `[ctrl]+j` breaks a line, and `Esc` abandons one or stops a model.
+
 `/permission` grants, removes and reports what a model may run in a directory
 without being asked: `/permission add go, or go make`, naming a directory to
 cover one other than the one you are in. A rule covers the directories beneath

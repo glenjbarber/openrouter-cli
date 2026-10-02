@@ -704,6 +704,7 @@ func init() {
 		{names: []string{"/mouse"}, description: "turn mouse reporting on or off, for wheel scrolling", run: (*Session).cmdMouse},
 		{names: []string{"/clear"}, description: "clear the pane", run: (*Session).cmdClear, idleOnly: true},
 		{names: []string{"/info"}, description: "report the session settings", run: (*Session).cmdInfo},
+		{names: []string{"/copy"}, description: "copy the conversation to the clipboard", run: (*Session).cmdCopy},
 		{names: []string{"/permission"}, usage: "/permission [add|remove] [DIR] PROG...", description: "grant or refuse programs in a directory", run: (*Session).cmdPermission},
 		{names: []string{"/autosave"}, usage: "/autosave [on|off|now]", description: "write the conversation without being asked", run: (*Session).cmdAutosave},
 		{names: []string{"/approve"}, usage: "/approve [ask|allow|refuse]", description: "report or set whether programs run without asking", run: (*Session).cmdApprove, idleOnly: true},
