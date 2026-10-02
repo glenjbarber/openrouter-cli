@@ -121,10 +121,16 @@ so that a later change does not silently reverse it.
 - The configuration file is written at startup when no file exists, and again
   during first-time setup. Apart from those, two runtime writers exist and no
   others: `config.Trust`, which adds a directory to the trusted list, and the
-  `/color` command, which sets the `color` key. Each reads the existing file,
-  carries every other key over as the raw bytes it was read as, writes a
-  temporary file beside it at `0600` and renames it over the original. The
-  rewrite is atomic so that an interrupted write leaves the previous file and
+  `/color` command, which sets the `color` key. Each reads the existing file and
+  writes a temporary file beside it at `0600`, which it renames over the
+  original. Trust carries every other key over as the raw bytes it was read as.
+  The color writer copies the file exactly, as bytes: only the value of a
+  top-level `color` key is changed, or, when there is none, one member is added
+  in the file's own style, with its indentation, line separator and colon
+  spacing, and a comma after the member before it. Key order, whitespace, line
+  endings, escapes and a missing final newline are kept, and the edit is checked
+  to parse as a JSON object holding the new value before anything is written.
+  The rename is atomic so that an interrupted write leaves the previous file and
   never a half-written credential. Neither writer ever creates the file: a file
   made by a command would hold no key and would suppress first-time setup. Each
   refuses, and leaves the file as it is, when the mode is not `0600` or the
