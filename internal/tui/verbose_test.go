@@ -200,13 +200,16 @@ func TestSendUnchangedWhenVerboseOff(t *testing.T) {
 	// The reply itself must be identical either way, since the mode is a
 	// display preference and not a change to what was asked for.
 	var replyOn, replyOff []string
+	// The reply row opens with the rule above it, so it is matched as it is
+	// drawn rather than as it was said.
+	reply := withResponseRule("Hello")
 	for _, l := range withVerbose {
-		if l == "Hello" {
+		if l == reply {
 			replyOn = append(replyOn, l)
 		}
 	}
 	for _, l := range withoutVerbose {
-		if l == "Hello" {
+		if l == reply {
 			replyOff = append(replyOff, l)
 		}
 	}

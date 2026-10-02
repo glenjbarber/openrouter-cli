@@ -41,28 +41,37 @@ var worktreeRefused = map[string]string{
 //     whose whole purpose is to name a directory.
 //   - The options above, which discard rather than refuse.
 //
-// The wildcard is checked before the options, since an argument can carry both
-// and the pattern is the more useful of the two reasons to report. `worktree
-// remove --force *` would take every checkout in the repository whether or not
-// the force mattered, so the pattern is what the reader needs told.
+// The wildcard is checked before the options, in a pass of its own over every
+// argument rather than argument by argument. A command can carry both, and the
+// pattern is the more useful of the two reasons to report. `worktree remove
+// --force *` would take every checkout in the repository whether or not the
+// force mattered, so the pattern is what the reader needs told, and the option
+// reaching the check first must not hide it.
 //
 // The reading forms pass untouched. `list` reads, and `add`, `move`, `lock`,
 // `prune`, and `remove` are the workflow the set was widened for, so the cost
 // of refusing a wildcard is one retry rather than the checkout it protected.
 func worktreeSafe(args []string, repo string) error {
+	// The wildcard is looked for in every argument before any other check is
+	// made, since the arguments are otherwise tested in order and an option
+	// ahead of the pattern would be reported first. `remove --force *` has to
+	// say wildcard, whatever order the arguments came in.
+	//
+	// A glob character is refused wherever it appears rather than only at the
+	// head of an argument, since a path such as build/*/x names every worktree
+	// beneath it, and an argument that looks like an option can be named with a
+	// separator in front of it.
 	for _, arg := range args {
-		if arg == "" {
-			continue
-		}
-		// A glob character is refused wherever it appears rather than only at
-		// the head of an argument, since a path such as build/*/x names every
-		// worktree beneath it, and an argument that looks like an option can be
-		// named with a separator in front of it.
 		if strings.ContainsAny(arg, "*?[]") {
 			return fmt.Errorf("git %s will not take %q: a wildcard reaches every "+
 				"checkout it matches, and a worktree that is removed is not put "+
 				"back by the next command; name the one path meant",
 				gitWorktree, arg)
+		}
+	}
+	for _, arg := range args {
+		if arg == "" {
+			continue
 		}
 		if reason := worktreeRefused[arg]; reason != "" {
 			return fmt.Errorf("git %s will not take %s: %s", gitWorktree, arg, reason)

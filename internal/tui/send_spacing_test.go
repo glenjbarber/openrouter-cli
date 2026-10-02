@@ -24,8 +24,10 @@ func TestASentLineIsFollowedByABlankRow(t *testing.T) {
 	if got := s.frame.Reply[1]; got != "" {
 		t.Errorf("row 1 = %q, want a blank row under the line that was sent", got)
 	}
-	if got := s.frame.Reply[2]; !strings.HasPrefix(got, "Hello") {
-		t.Errorf("row 2 = %q, want the reply", got)
+	// The reply row opens with the rule that divides it from the question, so
+	// it is compared with the reply as it is drawn rather than as it is said.
+	if got := s.frame.Reply[2]; !strings.HasPrefix(got, withResponseRule("Hello")) {
+		t.Errorf("row 2 = %q, want the reply under its rule", got)
 	}
 }
 

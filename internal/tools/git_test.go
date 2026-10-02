@@ -142,6 +142,9 @@ func TestGitWorktreeRefusesAWildcard(t *testing.T) {
 	for _, args := range []string{
 		`{"args":["worktree","remove","*"]}`,
 		`{"args":["worktree","remove","--force","*"]}`,
+		`{"args":["worktree","remove","-f","*"]}`,
+		`{"args":["worktree","remove","--force","build/*"]}`,
+		`{"args":["worktree","remove","-f","sub/?"]}`,
 		`{"args":["worktree","add","build/*"]}`,
 		`{"args":["worktree","remove","sub/?"]}`,
 		`{"args":["worktree","remove","[ab]"]}`,

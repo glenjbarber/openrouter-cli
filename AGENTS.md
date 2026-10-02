@@ -403,6 +403,12 @@ so that a later change does not silently reverse it.
 - The two refusals a turn can make, a missing credential and an unselected
   model, are not followed by a blank row. The reason they give belongs with the
   line that provoked it rather than under it.
+- A reply begins with a rule on a row of its own.
+  The rule is the same box-drawing character the frame is divided with.
+  It divides one exchange from the next, so that two of them read as two rather than as one run of text.
+  The rule is above the reply rather than below it, since a rule below reads as an underline of the answer.
+  A reply holding nothing but whitespace draws no rule.
+  The rule is plain text, since a selection out of the pane is copied as whatever is on the screen.
 
 ### Getting started
 
@@ -561,9 +567,10 @@ so that a later change does not silently reverse it.
 - Ctrl-B is a prefix, as in tmux, and the key after it moves between panes: a
   semicolon to the next and j to the previous, wrapping at both ends. The keys
   are not ctrl with shift, since a terminal sends ctrl+shift+h as the same byte
-  as ctrl+h, which is backspace. The main
-  conversation and the delegate pane are the two panes, and the pane set holds
-  which is shown, so that the keys and `/pane` cannot disagree.
+  as ctrl+h, which is backspace.
+  The main conversation, the delegate pane and the spawn pane are the three
+  panes, in that order.
+  The pane set holds which is shown, so that the keys and `/pane` cannot disagree.
 - Any other key after the prefix is consumed and does nothing. It is not typed
   and does not end the line, since a mistyped binding that sent the message
   would be worse than one that did nothing.
@@ -1053,6 +1060,20 @@ so that a later change does not silently reverse it.
   frame nobody is drawing on.
 - The delegate takes the model and the instructions of the conversation it
   branched from, so that it answers about the work in hand.
+
+### Spawned workers
+
+- `/spawn QUESTION` starts a worker that answers a question from a copy of the conversation.
+- A worker is a delegate that is given the tools.
+  It is a type of its own rather than a flag on a delegate, since a delegate records nothing and a worker acts on the host.
+- A call a worker makes is run and answered, and a program is put to the reader first.
+  A refusal is the reader's answer and is not worked around.
+- A worker records into a log of its own rather than into the conversation.
+  Nothing it did is carried into the next request as though the model had been told about it, and nothing it did is lost.
+- A worker has a pane of its own, the third, which shows the questions given, one line per call and the answers.
+  A call is reported by its size rather than drawn in full.
+- `/spawn` is refused while cognito is on, since cognito promises that nothing is recorded and a worker acts on the host.
+- A running worker is tracked on the same wait group as a delegate, so that leaving does not leave one writing to a frame nobody is drawing on.
 
 ### Threads and retention
 
