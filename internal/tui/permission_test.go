@@ -223,3 +223,104 @@ func TestTheListingSaysWhatItPermitsHere(t *testing.T) {
 		t.Errorf("the listing does not say what it permits here:\n%s", joined)
 	}
 }
+
+// A directory is taken only when one is named. The first argument is usually a
+// program, and treating it as a directory wrote a rule for a path that was
+// never there and granted nothing at all.
+func TestAddWithoutADirectoryGrantsThePrograms(t *testing.T) {
+	s, _ := permissionSession(t)
+	here := s.tools.dir
+
+	s.cmdPermission([]string{"add", "go", "make"})
+
+	rules, err := config.LoadRules(nil)
+	if err != nil {
+		t.Fatalf("reading the rules: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("the rules read back as %+v, want one", rules)
+	}
+	// The rule has to cover the directory the session is in, or it settles
+	// nothing for the reader who just wrote it.
+	if permitted := config.PermittedCommands(rules, here); len(permitted) != 2 {
+		t.Errorf("the rule does not cover this directory: %v", permitted)
+	}
+	for _, want := range []string{"go", "make"} {
+		if !rules[0].Grants(want) {
+			t.Errorf("the rule does not grant %q: %+v", want, rules[0])
+		}
+	}
+}
+
+// One program with no directory is the common form, and it must not be read as
+// a directory called after the program.
+func TestOneProgramGrantsThatProgram(t *testing.T) {
+	s, _ := permissionSession(t)
+
+	s.cmdPermission([]string{"add", "go"})
+
+	rules, err := config.LoadRules(nil)
+	if err != nil {
+		t.Fatalf("reading the rules: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("the rules read back as %+v, want one", rules)
+	}
+	if !rules[0].Grants("go") {
+		t.Errorf("the rule does not grant go: %+v", rules[0])
+	}
+	// A rule written for a path called "go" beneath the working directory
+	// would grant nothing here, and would not settle a call either.
+	if permitted := config.PermittedCommands(rules, s.tools.dir); len(permitted) == 0 {
+		t.Errorf("the rule covers nothing here: %+v", rules[0])
+	}
+}
+
+// A directory named with a separator is still taken as one.
+func TestANamedDirectoryIsStillTaken(t *testing.T) {
+	s, _ := permissionSession(t)
+	other := t.TempDir()
+
+	s.cmdPermission([]string{"add", other, "go"})
+
+	rules, err := config.LoadRules(nil)
+	if err != nil {
+		t.Fatalf("reading the rules: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("the rules read back as %+v, want one", rules)
+	}
+	if permitted := config.PermittedCommands(rules, other); len(permitted) == 0 {
+		t.Errorf("the rule does not cover the directory named: %+v", rules[0])
+	}
+}
+
+// A directory named without a separator, by a relative name, is taken as one
+// when it is a directory here.
+func TestARelativeDirectoryIsTaken(t *testing.T) {
+	s, _ := permissionSession(t)
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("the working directory: %v", err)
+	}
+	if err := os.Chdir(s.tools.dir); err != nil {
+		t.Fatalf("changing to the session directory: %v", err)
+	}
+	t.Cleanup(func() { os.Chdir(wd) })
+	if err := os.Mkdir("sub", 0o755); err != nil {
+		t.Fatalf("making the subdirectory: %v", err)
+	}
+
+	s.cmdPermission([]string{"add", "sub", "go"})
+
+	rules, err := config.LoadRules(nil)
+	if err != nil {
+		t.Fatalf("reading the rules: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("the rules read back as %+v, want one", rules)
+	}
+	if permitted := config.PermittedCommands(rules, filepath.Join(s.tools.dir, "sub")); len(permitted) == 0 {
+		t.Errorf("the rule does not cover the subdirectory: %+v", rules[0])
+	}
+}

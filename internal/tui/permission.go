@@ -46,7 +46,9 @@ func (s *Session) cmdPermission(args []string) bool {
 	case "add", "grant":
 		if len(rest) == 0 {
 			s.addReply("(/permission add needs at least one program, " +
-				"such as /permission add go, or /permission add go make)")
+				"such as /permission add go, or /permission add go make; " +
+				"name a directory to cover another, as in " +
+				"/permission add ~/work go)")
 			return false
 		}
 		s.writePermission(rules, config.AddRule(rules, dir, rest), dir,
@@ -90,6 +92,16 @@ func (s *Session) permissionDir(args []string) (string, []string, error) {
 		}
 		return wd, nil, nil
 	}
+	// A directory is taken only when one is named, which is told by it being
+	// a path rather than by being the first argument. The first argument is
+	// usually a program, since the common form names none, and treating it as
+	// a directory wrote a rule for a path that was never there and granted
+	// nothing.
+	if !isDirectoryArg(args[0]) {
+		here, _, err := s.permissionDir(nil)
+		return here, args, err
+	}
+
 	dir := args[0]
 	if !filepath.IsAbs(dir) {
 		abs, err := filepath.Abs(dir)
@@ -102,6 +114,27 @@ func (s *Session) permissionDir(args []string) (string, []string, error) {
 		dir = top
 	}
 	return dir, args[1:], nil
+}
+
+// isDirectoryArg reports whether an argument names a directory rather than a
+// program.
+//
+// A path is one that carries a separator, one that exists, and one that names a
+// directory that exists. The first two catch the ordinary case of a reader
+// naming somewhere, and the third catches a relative name that is a directory
+// here without a separator in it.
+//
+// A name that is a program and also happens to be a directory in the working
+// directory is read as a program, since that is what it almost always is in this
+// command and a reader wanting the directory can name it with a separator.
+func isDirectoryArg(arg string) bool {
+	if strings.ContainsAny(arg, "/\\") {
+		return true
+	}
+	if info, err := os.Stat(arg); err == nil {
+		return info.IsDir()
+	}
+	return false
 }
 
 // permissionRules is every rule the session knows about.

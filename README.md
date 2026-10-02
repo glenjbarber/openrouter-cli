@@ -216,8 +216,9 @@ The shifted arrows page the pane. `[shift]+up` goes back a screenful and
 count. `[ctrl]+j` breaks a line, and `Esc` abandons one or stops a model.
 
 `/permission` grants, removes and reports what a model may run in a directory
-without being asked: `/permission add go, or go make`, naming a directory to
-cover one other than the one you are in. A rule covers the directories beneath
+without being asked: `/permission add go` grants one program here, and
+`/permission add go make` grants two. Name a directory to cover another, as in
+`/permission add ~/work go`. A rule covers the directories beneath
 it, so a rule written for a project covers a session running anywhere inside
 it. The rules are kept in `~/.openrouter-cli/permissions.json`, which is what
 `OPENROUTER_TOOLS` is read from as well, so a rule written by hand there is

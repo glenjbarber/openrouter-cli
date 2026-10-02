@@ -809,6 +809,11 @@ so that a later change does not silently reverse it.
   permits three programs and refuses one has no way to say so.
 - The rules are held by the session and replaced in place, so a permission
   granted now takes effect rather than at the next run.
+- A rule named by `/permission add` covers the working directory unless a
+  directory is named, and a directory is told apart from a program by being a
+  path rather than by being the first argument. The first argument is usually a
+  program, and reading it as a directory wrote a rule for a path that was never
+  there and granted nothing.
 - A rule is read against the directory a command would run in, not the one the
   session was opened in, so a rule written for a project covers a build run in
   a subdirectory of it. The listing is read against the same directory rather
