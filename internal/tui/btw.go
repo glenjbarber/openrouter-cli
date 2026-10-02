@@ -203,7 +203,7 @@ func (s *Session) endThread() {
 	s.updateStatus()
 
 	s.appendLines("thread discarded, holding " +
-		pluralExchanges(held) + ". The conversation is as it was.")
+		pluralExchanges(held) + ". The main conversation has resumed.")
 }
 
 // pluralExchanges renders a count of exchanges.
