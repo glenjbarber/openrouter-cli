@@ -109,6 +109,14 @@ func TestAReportedCostIsShownInTheTopBar(t *testing.T) {
 	if bar := topBarOf(t, s); !strings.Contains(bar, "Cost: $0.0123") {
 		t.Errorf("top bar = %q, want the reported cost", bar)
 	}
+	s.mu.Lock()
+	frame := s.frame
+	s.mu.Unlock()
+	for _, row := range Render(frame, 30, 200) {
+		if strings.Contains(row, "Provider:") && strings.Contains(row, "Cost") {
+			t.Errorf("the bar above the input box carries the cost: %q", row)
+		}
+	}
 }
 
 // A reported cost is used even when the catalogue prices the model, since the
