@@ -32,6 +32,13 @@ import (
 // is what stops one that never does, and a higher cap makes that rarer without
 // making it slower, since a reader can stop a turn at any time.
 //
+// Each error a turn has to fix costs a round to read, a round to edit, and a
+// round to build again, so the number of errors a turn can carry is what the
+// cap has to leave room for rather than a number of rounds chosen to look
+// generous. Thirty-two was short of that for a task touching more than a
+// handful of files, and the turn reported a limit rather than an answer it had
+// already nearly reached.
+//
 // It is a cap on requests rather than on tool calls, since a round may carry
 // several calls, and the requests are what the allowance is spent on.
 const maxToolRounds = 64

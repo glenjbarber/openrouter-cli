@@ -70,28 +70,28 @@ const gitParameters = `{
 // It is an allowlist rather than a list of the subcommands that write, since a
 // blocklist is defeated by every subcommand nobody thought of and by every
 // future one added to git. commit, push and worktree are on it because this
-// repository needs them. Every other subcommand that writes is still refused,
 // so the set bounds what a model may reach rather than opening the tool to
 // everything git can do.
 var gitPermitted = map[string]bool{
-	"branch":      true,
-	"cat-file":    true,
 	"commit":      true,
-	"describe":    true,
-	"diff":        true,
-	"grep":        true,
-	"log":         true,
-	"ls-files":    true,
-	"push":        true,
-	"reflog":      true,
-	"remote":      true,
-	"rev-parse":   true,
-	"shortlog":    true,
-	"show":        true,
-	"stash":       true,
 	"status":      true,
-	"tag":         true,
+	"log":         true,
+	"diff":        true,
+	"show":        true,
+	"ls-files":    true,
+	"rev-parse":   true,
+	"branch":      true,
+	"blame":       true,
+	"describe":    true,
+	"shortlog":    true,
 	"whatchanged": true,
+	"tag":         true,
+	"stash":       true,
+	"remote":      true,
+	"reflog":      true,
+	"cat-file":    true,
+	"grep":        true,
+	"push":        true,
 	"worktree":    true,
 }
 
@@ -124,16 +124,14 @@ var gitPathspec = map[string]bool{
 // gitNameOnly is the set of subcommands that create what a bare word names,
 // which is why a bare word is refused after them.
 //
-// `git branch new` creates a branch, `git tag v1` creates a tag,
-// `git reflog expire` discards entries, and `git worktree add` creates a
-// checkout. The forms of these that only read pass everything as an option, so
-// refusing a bare word costs a model one retry rather than a repository that
-// changed while it was looking.
+// `git branch new` creates a branch, `git tag v1` creates a tag and
+// `git reflog expire` discards entries. The forms of these that only read pass
+// everything as an option, so refusing a bare word costs a model one retry
+// rather than a repository that changed while it was looking.
 var gitNameOnly = map[string]bool{
-	"branch":   true,
-	"tag":      true,
-	"reflog":   true,
-	"worktree": true,
+	"branch": true,
+	"tag":    true,
+	"reflog": true,
 }
 
 // gitRefused is the set of options that write a file, run a program, or

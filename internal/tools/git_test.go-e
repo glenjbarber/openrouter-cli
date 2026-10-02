@@ -99,6 +99,8 @@ func TestGitStatusReadsTheTree(t *testing.T) {
 	}
 }
 
+}
+
 // TestGitRefusesAnOptionBeforeTheSubcommand checks that a global option is
 // refused by not being a subcommand, since one that redirected git at another
 // repository would not be the tool the session offered.

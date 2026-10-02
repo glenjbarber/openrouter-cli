@@ -683,7 +683,9 @@ so that a later change does not silently reverse it.
 
 - The model is given tools, and a turn that calls one makes as many requests as
   the calls need. `read_file`, `write_file` and `list_dir` reach the filesystem;
-  `git` runs read-only git commands in the repository at the working directory.
+  `git` runs git commands in the repository at the working directory, and the set
+  permits commit, push and worktree alongside the read-only subcommands, since
+  this repository needs them. Every other subcommand that writes is refused.
 - The filesystem is contained by `os.Root`, opened on the working directory at
   startup. The standard library refuses `..`, a cleaned `..`, and a symlink
   pointing out of the tree, and a prefix check on a cleaned path is defeated by
@@ -700,10 +702,16 @@ so that a later change does not silently reverse it.
   down with it. Streaming the file instead was considered and rejected: the
   model asked for a file, not for a pipeline, and the pane has nowhere to put a
   file arriving a gigabyte at a time.
-- The git tool is an allowlist, not a blocklist. Only the named read-only
-  subcommands run, and anything else is refused by name. A blocklist would be
-  defeated by a subcommand nobody thought of, which is the whole reason the
-  tool is read-only in this pass.
+- The git tool is an allowlist, not a blocklist. Only the named subcommands run,
+  and anything else is refused by name. A blocklist would be defeated by a
+  subcommand nobody thought of, which is the whole reason the set is an
+  allowlist.
+- The git tool permits commit, push and worktree alongside the read-only
+  subcommands, on the maintainer's instruction that this repository needs them.
+  The remaining write subcommands, add and reset among them, are still refused,
+  so the set grew rather than opening. A delegate cannot reach any of them, since
+  a delegate is sent no tools, so the review and push happen in the parent
+  conversation and a delegate never puts work on a remote.
 - Arguments are given to git as an array, never through a shell, since a shell
   reads an argument as a command and these come from a model. A `--` precedes
   any pathspec, so an argument that looks like a flag cannot become one.
@@ -715,7 +723,7 @@ so that a later change does not silently reverse it.
 - The model is told so when it has no tools. `/cognito` and `/btw` each say so in
   the notice they already print, since a reader who asks a model in such a mode
   to read a file and is told it cannot would conclude the client is broken.
-- A turn is a loop of rounds, at most 32. A model with tools can ask for the
+- A turn is a loop of rounds, at most 64. A model with tools can ask for the
   same file for ever; the cap is what stops a loop that does not converge, and
   reaching it is reported in the pane rather than truncating the turn silently.
 - The cap is set by what a turn has to be able to do rather than by what a loop
@@ -1537,10 +1545,6 @@ A port also expects `distinfo` and `pkg-descr`. The `pkg-descr` is held under
 
 These are unsettled. Each is listed so that it is not mistaken for a decision.
 
-- Whether the git tool should write. `add` and `commit` are the obvious next
-  step and are deliberately absent. A write to a repository is a different order
-  of risk from a write to a file, and it deserves its own answer rather than
-  inheriting the one given for files.
 - Which models can call tools. A model that cannot is not told, so it simply
   answers in prose and the reader concludes the client is broken. The catalogue
   is already fetched and cached per model, so a capability field fits it, and
