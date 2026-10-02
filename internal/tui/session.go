@@ -309,6 +309,37 @@ func Start(out, in *os.File, title string) (*Session, error) {
 // scrollBy moves the view one wheel notch in the given direction.
 //
 // The offset is held across a repaint deliberately: a new reply arriving while
+// page moves the view by a screenful.
+//
+// A page is the height of the pane rather than a fixed count, since a fixed
+// count is a page on one terminal and a third of one on another. It is a little
+// under the height rather than all of it, so that the row the reader was reading
+// before the page is still on screen afterwards, which is what makes a page a
+// step rather than a jump.
+//
+// The offset is clamped by the renderer to leave a full pane of history, so a
+// page past the top settles on the oldest lines rather than leaving one line at
+// the top of an otherwise empty frame.
+func (s *Session) page(direction int) {
+	height, _ := s.screen.Size()
+	rows := height - headerRowCount - inputRowsBare - 1
+	if rows < 1 {
+		rows = 1
+	}
+
+	s.mu.Lock()
+	switch {
+	case direction < 0:
+		s.scroll = scrolledBy(s.scroll, -rows)
+	case s.scroll > rows:
+		s.scroll = scrolledBy(s.scroll, rows)
+	default:
+		s.scroll = 0
+	}
+	s.mu.Unlock()
+	s.draw()
+}
+
 // the reader is scrolled back must not pull the view down, or the history
 // they are reading moves under them.
 func (s *Session) scrollBy(direction int) {

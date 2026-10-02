@@ -61,6 +61,67 @@ const (
 // up arrow, and a table of fixed lengths does not cover those. A form that is
 // not recognised is consumed just the same, since leaving its bytes to be read
 // as keys would put a bare escape and a bracket into the message.
+// keyPageUp and keyPageDown are the queued values for a shifted arrow acting as
+// a page rather than as a step.
+//
+// They sit below the range of sequence final bytes, as keyShiftEnter does, so
+// that a queued key cannot collide with an arrow or with a report the terminal
+// writes in the same range.
+const (
+	keyPageUp   = 0x01
+	keyPageDown = 0x02
+)
+
+// Only the shift is read out of the modifier. The others are passed through as
+// the plain arrow they are, since an alt up arrow is a key this reader has no
+// use for and treating it as a page would be a guess. The value itself is
+// shiftModifier, which the shifted enter reader already declares.
+
+// takeSequenceWithModifier extracts a key sequence and the modifier it carries.
+//
+// It reports the final byte as before, and whether a shift was held. The
+// modifier is read from the parameter rather than from a table of the forms a
+// terminal writes, since a terminal reports a modified arrow as ESC [ 1 ; 2 A
+// and a table of fixed lengths does not cover them.
+//
+// A sequence with no parameter, such as a plain arrow, is not shifted, whatever
+// its final byte happens to be. That matters for the final bytes which are also
+// digits, where reading the final as a parameter would turn every arrow into a
+// shifted one.
+func takeSequenceWithModifier(buf []byte) (final byte, shifted bool, rest []byte, ok bool) {
+	if len(buf) < 2 || buf[0] != keyEscape || buf[1] != '[' {
+		return 0, false, buf, false
+	}
+	if len(buf) >= 3 && (buf[2] == '<' || buf[2] == 'M') {
+		return 0, false, buf, false
+	}
+
+	for i := 2; i < len(buf); i++ {
+		c := buf[i]
+		if c >= csiFinalLo && c <= csiFinalHi {
+			return c, sequenceShifted(buf[2:i]), buf[i+1:], true
+		}
+		if c < 0x20 || c > csiParamHi {
+			return 0, false, buf, false
+		}
+	}
+	return 0, false, buf, false
+}
+
+// sequenceShifted reports whether the parameters of a sequence name a shift.
+//
+// The parameters of a modified key are the digit, a separator, and the modifier
+// as one plus itself, so a shift is the last parameter being 2. A sequence with
+// no separator, such as a plain arrow, carries no modifier and is not shifted.
+func sequenceShifted(params []byte) bool {
+	for i := len(params) - 2; i >= 0; i-- {
+		if params[i] == ';' {
+			return params[i+1] == '0'+shiftModifier
+		}
+	}
+	return false
+}
+
 func takeSequence(buf []byte) (final byte, rest []byte, ok bool) {
 	if len(buf) < 2 || buf[0] != keyEscape || buf[1] != '[' {
 		return 0, buf, false
@@ -113,6 +174,13 @@ func (le *LineEditor) key(final byte, out *strings.Builder) {
 		le.applyRecall(true, out)
 	case keyDown:
 		le.applyRecall(false, out)
+	case keyPageUp, keyPageDown:
+		// A shifted arrow pages rather than recalling, and is handed on rather
+		// than acted on here: what it does is the session decision, since only
+		// the session knows how tall the pane is.
+		if le.OnKey != nil {
+			le.OnKey(final)
+		}
 	case keyShiftEnter:
 		return
 	case keyLeft, keyRight:

@@ -308,8 +308,20 @@ func (le *LineEditor) readKey() (byte, error) {
 			// A key sequence is consumed whole. Left to be read as keys, its
 			// opening escape would end the line and leave the session, which
 			// is what pressing an arrow used to do.
-			if final, rest, ok := takeSequence(le.buf); ok {
+			if final, shifted, rest, ok := takeSequenceWithModifier(le.buf); ok {
 				le.buf = rest
+				// A shifted arrow pages rather than stepping, so it is queued
+				// as its own key. The plain arrow is queued as the arrow,
+				// since that is what every terminal sends for it and a
+				// sequence carrying no modifier is not a shifted one.
+				if shifted {
+					switch final {
+					case keyUp:
+						final = keyPageUp
+					case keyDown:
+						final = keyPageDown
+					}
+				}
 				le.pendingKeys = append(le.pendingKeys, final)
 				continue
 			}
