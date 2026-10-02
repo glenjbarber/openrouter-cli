@@ -180,6 +180,7 @@ func TestTheRulesFileHoldsReadableJSON(t *testing.T) {
 // A rule written by hand into the configuration file is still read, since the
 // two are read as one set.
 func TestARuleInTheConfigurationIsStillRead(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	dir := t.TempDir()
 	cfg := &config.Config{Tools: []config.ApprovalRule{
 		{Path: dir, Commands: []string{"go"}},
