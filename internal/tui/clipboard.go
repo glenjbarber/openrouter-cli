@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/base64"
+	"slices"
 	"strings"
 
 	"github.com/glenjbarber/openrouter-cli/internal/openrouter"
@@ -40,27 +41,32 @@ const (
 	seqCopySuffix = "\x07"
 )
 
-// cmdCopy writes the conversation to the clipboard.
+// cmdCopy writes the last reply to the clipboard.
 //
-// The conversation is copied whole rather than the visible pane. The pane is
-// folded to the width of the terminal, so what a reader selected out of it is
-// not the reply as the model wrote it, and a reader carrying a reply elsewhere
-// wants the reply rather than a rendering of it.
+// The last reply rather than the whole conversation. A reader reaching for a
+// copy is usually carrying one answer somewhere: into a report, into a commit
+// message, into a shell. The whole conversation is what they would select with
+// the mouse when they meant all of it, and a copy that brings the questions
+// along with the answer is a paste that has to be edited before it is used.
+//
+// The pane is not what is copied either. It is folded to the width of the
+// terminal, so what a reader selected out of it is not the reply as the model
+// wrote it.
 func (s *Session) cmdCopy([]string) bool {
-	text := s.copyText()
+	text := s.lastReply()
 	if strings.TrimSpace(text) == "" {
-		s.addReply("(there is nothing to copy yet)")
+		s.addReply("(there is no reply to copy yet)")
 		return false
 	}
 	if len(text) > clipboardLimit {
-		s.addReply("(the conversation is " + itoa(len(text)) + " bytes, over the " +
+		s.addReply("(the reply is " + itoa(len(text)) + " bytes, over the " +
 			"limit of " + itoa(clipboardLimit) + " for a copy)")
 		return false
 	}
 
 	s.screen.copyToClipboard(text)
-	s.appendLines("copied " + itoa(len(text)) + " bytes to the clipboard" +
-		copyCaveat())
+	s.appendLines("copied the last reply, " + itoa(len(text)) +
+		" bytes, to the clipboard" + copyCaveat())
 	// The frame is repainted after the copy rather than before it: the sequence
 	// leaves the terminal wherever the copy ended, and a frame drawn from there
 	// is a frame drawn in the wrong place. Repainting after is also what puts
@@ -81,13 +87,17 @@ func copyCaveat() string {
 		"application; select the text and copy it with the terminal instead."
 }
 
-// copyText is the conversation as plain text.
+// lastReply is the most recent thing the model said, as plain text.
 //
-// The turns are taken in the order they were had, and a turn a model made with
-// tools carries the calls and their results, since those are part of what the
-// reader asked for and what came back. Nothing is written that is not in the
-// conversation, so what arrives elsewhere is what was said here.
-func (s *Session) copyText() string {
+// A reply is a whole exchange rather than one message. A turn that called a
+// tool is several: the call, the result, and then what the model said about
+// it. Those are one answer, and a reader carrying it elsewhere wants the build
+// and the error with the answer rather than the answer with the evidence
+// missing. The walk therefore goes back to the question rather than to the
+// last assistant turn alone.
+//
+// The question itself is left out, since it is what the reader asked and has.
+func (s *Session) lastReply() string {
 	conv := s.conv
 	if conv == nil {
 		return ""
@@ -96,35 +106,46 @@ func (s *Session) copyText() string {
 	messages := conv.Messages()
 	s.mu.Unlock()
 
+	// The exchange is collected backwards and then reversed, since the
+	// conversation is in the order it was had and a reply reads forwards.
 	var b strings.Builder
-	for _, m := range messages {
-		switch m.Role {
+	for i := len(messages) - 1; i >= 0; i-- {
+		switch messages[i].Role {
 		case openrouter.RoleUser:
-			b.WriteString("> ")
-			b.WriteString(m.Content)
-			b.WriteByte('\n')
-		case openrouter.RoleAssistant:
-			// An assistant turn carrying tool calls has no content of its own,
-			// and writing a marker for it keeps the exchange readable rather
-			// than leaving a gap where a reply should be.
-			if strings.TrimSpace(m.Content) != "" {
-				b.WriteString(m.Content)
-				b.WriteByte('\n')
+			// The question marks where the reply began.
+			if b.Len() > 0 {
+				return reverseLines(b.String())
 			}
-			for _, call := range m.ToolCalls {
+			return ""
+		case openrouter.RoleTool:
+			b.WriteString("[")
+			b.WriteString(singleLine(messages[i].Content))
+			b.WriteString("]\n")
+		case openrouter.RoleAssistant:
+			for _, call := range messages[i].ToolCalls {
 				b.WriteString("[called ")
 				b.WriteString(call.Function.Name)
 				b.WriteString(" ")
 				b.WriteString(singleLine(call.Function.Arguments))
 				b.WriteString("]\n")
 			}
-		case openrouter.RoleTool:
-			b.WriteString("[")
-			b.WriteString(singleLine(m.Content))
-			b.WriteString("]\n")
+			if text := strings.TrimRight(messages[i].Content, "\n"); text != "" {
+				b.WriteString(text)
+				b.WriteByte('\n')
+			}
 		}
 	}
-	return b.String()
+	if b.Len() > 0 {
+		return reverseLines(b.String())
+	}
+	return ""
+}
+
+// reverseLines puts a reply built backwards into the order it was said in.
+func reverseLines(s string) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	slices.Reverse(lines)
+	return strings.Join(lines, "\n") + "\n"
 }
 
 // singleLine folds a value onto one line, so that a multi-line argument or a

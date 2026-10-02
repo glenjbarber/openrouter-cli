@@ -198,8 +198,11 @@ path is doubled first so it cannot be read as a replacement. `/autosave now`
 writes one at once. It is refused in cognito and in a thread, since both
 promise nothing is recorded.
 
-`/copy` writes the conversation to the clipboard through the terminal, whole and
-as plain text rather than as the pane has folded it for display. If nothing
+`/copy` writes the last reply to the clipboard through the terminal, as plain
+text rather than as the pane has folded it for display. A reply is the whole
+exchange: if the model ran a build and reported what came back, the call and its
+result are copied with the answer. The question you asked is not, since you have
+it already. If nothing
 pastes afterwards, the terminal does not take a copy from the application;
 selecting the text and copying it with the terminal works regardless.
 
