@@ -65,7 +65,13 @@ func dpaneHasLines(s *Session) bool {
 func TestASpawnIsGivenTheTools(t *testing.T) {
 	var offered atomic.Bool
 	var mu sync.Mutex
-	var calls []map[string]any
+	// requests counts every request the worker made, and answered holds the
+	// bodies of those that carry a tool message. The two are kept apart since
+	// the request that carries the answer to a call is the second one, so a
+	// slice filled only while there is no answer can never hold it.
+	var requests int
+	var answered []map[string]any
+	var seenAnswer bool
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/models" {
@@ -78,18 +84,24 @@ func TestASpawnIsGivenTheTools(t *testing.T) {
 			offered.Store(true)
 		}
 		msgs, _ := body["messages"].([]any)
-		answered := false
+		carries := false
 		for _, m := range msgs {
 			mm, _ := m.(map[string]any)
 			if mm["role"] == openrouter.RoleTool {
-				answered = true
+				carries = true
 			}
 		}
 		mu.Lock()
-		if !answered {
-			calls = append(calls, body)
+		requests++
+		if carries {
+			answered = append(answered, body)
+			seenAnswer = true
 		}
-		first := len(calls) == 1
+		// The first request is the one made before any tool message has been
+		// seen. Every later one is given the final stream, since a worker that
+		// is handed the call again would go on calling until it ran out of
+		// rounds and the test would be proving the limit instead.
+		first := !seenAnswer
 		mu.Unlock()
 		if first {
 			io.WriteString(w, toolCallStream("list_dir", map[string]any{"path": "."}))
@@ -115,14 +127,18 @@ func TestASpawnIsGivenTheTools(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	if len(calls) != 1 {
-		t.Fatalf("the worker made %d requests before calling, want 1", len(calls))
+	if requests >= maxToolRounds {
+		t.Errorf("the worker made %d requests, want it to settle in fewer than the limit of %d",
+			requests, maxToolRounds)
 	}
-	var answered bool
-	for _, m := range calls[0]["messages"].([]any) {
+	if len(answered) == 0 {
+		t.Fatalf("the worker made %d requests and none carried an answer to the call", requests)
+	}
+	var found bool
+	for _, m := range answered[0]["messages"].([]any) {
 		mm, _ := m.(map[string]any)
 		if mm["role"] == openrouter.RoleTool {
-			answered = true
+			found = true
 			if mm["tool_call_id"] != "call_1" {
 				t.Errorf("the answer carries id %v, want call_1", mm["tool_call_id"])
 			}
@@ -131,9 +147,9 @@ func TestASpawnIsGivenTheTools(t *testing.T) {
 			}
 		}
 	}
-	if !answered {
+	if !found {
 		t.Errorf("the follow-up request carries no answer to the call: %v",
-			calls[0]["messages"])
+			answered[0]["messages"])
 	}
 }
 
