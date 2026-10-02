@@ -6,9 +6,9 @@ import "strings"
 //
 // A row is plain text, and stays plain text: no escape character is ever
 // written into it, so folding, width, scrolling, search, /copy, saved files and
-// the model context all see the text and nothing else. What colour a stretch of
+// the model context all see the text and nothing else. What color a stretch of
 // a row takes is kept apart, as integers, and only Screen.DrawFrame turns it
-// into bytes at draw time, and only when colour is on.
+// into bytes at draw time, and only when color is on.
 
 // span names a stretch of one row and the role it is drawn in.
 //
@@ -24,7 +24,7 @@ type span struct {
 const noRole role = -1
 
 // wholeRow returns the one span that covers a row, or none where the row is
-// empty or has no role. An empty row has no character to colour, and writing a
+// empty or has no role. An empty row has no character to color, and writing a
 // sequence around nothing is a sequence for nothing.
 func wholeRow(row string, r role) []span {
 	if row == "" || r < 0 || r >= roleCount {
@@ -36,8 +36,8 @@ func wholeRow(row string, r role) []span {
 // boxSpans returns the spans of one row of the approval box.
 //
 // The top and bottom are borders all the way across. A side row is a border
-// only at its two edges, so the question inside it keeps the colour of the rest
-// of the frame, and a border drawn in one colour from corner to corner does not
+// only at its two edges, so the question inside it keeps the color of the rest
+// of the frame, and a border drawn in one color from corner to corner does not
 // read as a line of text that happens to be long. A bare question, which is
 // what a terminal too narrow for a box gets, is the approval itself and is
 // drawn whole.

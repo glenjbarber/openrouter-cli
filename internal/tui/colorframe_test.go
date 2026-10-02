@@ -9,7 +9,7 @@ import (
 	"github.com/glenjbarber/openrouter-cli/internal/config"
 )
 
-// csi matches the sequences colour adds, so that they can be stripped and the
+// csi matches the sequences color adds, so that they can be stripped and the
 // text compared.
 var csi = regexp.MustCompile("\x1b\\[[0-9;]*m")
 
@@ -33,8 +33,8 @@ func frameCorpus() []Frame {
 // hold the whole frame.
 var frameSizes = [][2]int{{24, 80}, {24, 40}, {12, 40}, {6, 30}, {3, 20}, {30, 8}, {1, 1}}
 
-// oldFrame is the frame as it was drawn before colour existed, written out as
-// the bytes it comes to. It is what a colour-off frame must still be.
+// oldFrame is the frame as it was drawn before color existed, written out as
+// the bytes it comes to. It is what a color-off frame must still be.
 func oldFrame(rows []string, height int) string {
 	var b strings.Builder
 	b.WriteString(seqHome)
@@ -143,9 +143,9 @@ func TestBoxSpansSurviveADroppedEscape(t *testing.T) {
 	}
 }
 
-// With colour off the bytes are the bytes of a frame with no colour in it, for
+// With color off the bytes are the bytes of a frame with no color in it, for
 // every frame of the corpus, with or without a box.
-func TestColourOffDrawsTheOldBytes(t *testing.T) {
+func TestColorOffDrawsTheOldBytes(t *testing.T) {
 	for fi, f := range frameCorpus() {
 		for _, size := range frameSizes {
 			height, width := size[0], size[1]
@@ -159,11 +159,11 @@ func TestColourOffDrawsTheOldBytes(t *testing.T) {
 			sc2.height, sc2.width = height, width
 			sc2.DrawFrame(rows, framePaint{twiddle: -1})
 			if got != read2() {
-				t.Errorf("frame %d at %v: spans changed a colour-off frame", fi, size)
+				t.Errorf("frame %d at %v: spans changed a color-off frame", fi, size)
 			}
 			for _, seq := range csi.FindAllString(got, -1) {
 				if seq != seqResetAttr {
-					t.Errorf("frame %d at %v: colour-off output carries %q", fi, size, seq)
+					t.Errorf("frame %d at %v: color-off output carries %q", fi, size, seq)
 				}
 			}
 			// The rows and the clears, with only the caret placement left out.
@@ -174,9 +174,9 @@ func TestColourOffDrawsTheOldBytes(t *testing.T) {
 	}
 }
 
-// With colour on, the sequences are around chrome rows only, and the text with
-// them stripped is the colour-off text.
-func TestColourOnColoursChromeRowsOnly(t *testing.T) {
+// With color on, the sequences are around chrome rows only, and the text with
+// them stripped is the color-off text.
+func TestColorOnColorsChromeRowsOnly(t *testing.T) {
 	pal := newPalette(config.Theme{})
 	for fi, f := range frameCorpus() {
 		// The twiddle frame is left to its own path, which has its own tests.
@@ -197,7 +197,7 @@ func TestColourOnColoursChromeRowsOnly(t *testing.T) {
 		off := read2()
 
 		if stripped := csi.ReplaceAllString(got, ""); stripped != csi.ReplaceAllString(off, "") {
-			t.Errorf("frame %d: the text with colour stripped is not the colour-off text\n got %q\nwant %q", fi, stripped, off)
+			t.Errorf("frame %d: the text with color stripped is not the color-off text\n got %q\nwant %q", fi, stripped, off)
 		}
 
 		// Each row of the output, with the row start removed, carries a role
@@ -211,19 +211,19 @@ func TestColourOnColoursChromeRowsOnly(t *testing.T) {
 			// The last row is followed by the home and the caret placement.
 			line, _, _ := strings.Cut(lines[i], seqHome)
 			rest := strings.TrimPrefix(line, pal.reset()+seqClearLine)
-			coloured := rest != row
-			if coloured != (len(spans[i]) > 0) {
-				t.Errorf("frame %d row %d: coloured = %v with %d spans: %q", fi, i, coloured, len(spans[i]), lines[i])
+			colored := rest != row
+			if colored != (len(spans[i]) > 0) {
+				t.Errorf("frame %d row %d: colored = %v with %d spans: %q", fi, i, colored, len(spans[i]), lines[i])
 			}
-			if strings.HasPrefix(row, promptMark) && coloured {
-				t.Errorf("frame %d: the prompt row is coloured: %q", fi, lines[i])
+			if strings.HasPrefix(row, promptMark) && colored {
+				t.Errorf("frame %d: the prompt row is colored: %q", fi, lines[i])
 			}
 		}
 	}
 }
 
 // The chrome rows get their roles: the rules and the status row the chrome
-// colour, the title its own, the hint dim and the notice its own.
+// color, the title its own, the hint dim and the notice its own.
 func TestChromeRowsTakeTheirRoles(t *testing.T) {
 	f := Frame{Title: "t", Hints: []string{"Esc stops"}, Notice: "nothing matches", Input: "x"}
 	rows, spans, _, _ := renderStyled(f, 24, 60)
@@ -306,8 +306,8 @@ func TestRestoreClearsTheBase(t *testing.T) {
 	}
 }
 
-// The twiddle row is drawn by its own path even when colour is on.
-func TestTheTwiddleWinsItsRowWithColourOn(t *testing.T) {
+// The twiddle row is drawn by its own path even when color is on.
+func TestTheTwiddleWinsItsRowWithColorOn(t *testing.T) {
 	pal := newPalette(config.Theme{})
 	f := Frame{Title: "t", Partial: "a", Spinner: spinnerFrames[0], Elapsed: "1s", Input: "x"}
 	rows, spans, _, twiddle := renderStyled(f, 24, 60)

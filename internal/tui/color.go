@@ -6,7 +6,7 @@ import (
 	"github.com/glenjbarber/openrouter-cli/internal/config"
 )
 
-// cmdColor turns colour on or off for the session.
+// cmdColor turns color on or off for the session.
 //
 // An argument of on or off sets the flag, and no argument toggles it. The
 // change lasts for the session only, on the same terms as /bell and /mouse,
@@ -35,11 +35,11 @@ func (s *Session) cmdColor(args []string) bool {
 		state = "on"
 	}
 	s.mu.Unlock()
-	s.appendLines("colour " + state)
+	s.appendLines("color " + state)
 	return false
 }
 
-// framePalette resolves the palette a frame is drawn in, or none when colour is
+// framePalette resolves the palette a frame is drawn in, or none when color is
 // off.
 //
 // It is resolved at paint time from the flag and the theme, so the command and
@@ -57,9 +57,9 @@ func (s *Session) framePalette() *palette {
 	return &p
 }
 
-// SetColor sets whether colour is drawn on the screen.
+// SetColor sets whether color is drawn on the screen.
 //
-// The value comes from the configuration file, so a user who wants colour
+// The value comes from the configuration file, so a user who wants color
 // writes it once rather than typing a command at every session.
 func (s *Session) SetColor(on bool) {
 	s.mu.Lock()
@@ -67,7 +67,7 @@ func (s *Session) SetColor(on bool) {
 	s.mu.Unlock()
 }
 
-// SetColorTheme sets the base colours the file asks for.
+// SetColorTheme sets the base colors the file asks for.
 //
 // An empty side follows the terminal theme. The values were checked when the
 // file was read, so a value that is set is one the palette can resolve.

@@ -7,7 +7,7 @@ import (
 	"github.com/glenjbarber/openrouter-cli/internal/config"
 )
 
-// Colour must not be on unless asked for.
+// Color must not be on unless asked for.
 func TestColorOffByDefault(t *testing.T) {
 	s := &Session{}
 	if s.colorOn {
@@ -47,16 +47,16 @@ func TestSetColor(t *testing.T) {
 	s := &Session{}
 	s.SetColor(true)
 	if !s.colorOn {
-		t.Error("SetColor(true) did not turn colour on")
+		t.Error("SetColor(true) did not turn color on")
 	}
 	s.SetColor(false)
 	if s.colorOn {
-		t.Error("SetColor(false) did not turn colour off")
+		t.Error("SetColor(false) did not turn color off")
 	}
 }
 
 // The hidden spelling resolves to the very same entry as the listed one.
-func TestColourIsAHiddenAliasOfColor(t *testing.T) {
+func TestColorIsAHiddenAliasOfColor(t *testing.T) {
 	a, b := lookupCommand("/color"), lookupCommand("/colour")
 	if a == nil || b == nil {
 		t.Fatalf("lookupCommand: /color = %v, /colour = %v", a, b)
@@ -67,7 +67,7 @@ func TestColourIsAHiddenAliasOfColor(t *testing.T) {
 }
 
 // The hidden spelling is accepted when typed and is not shown anywhere.
-func TestColourIsNeverListedOrOffered(t *testing.T) {
+func TestColorIsNeverListedOrOffered(t *testing.T) {
 	if strings.Contains(helpText(), "/colour") {
 		t.Error("the help lists /colour")
 	}
@@ -87,15 +87,15 @@ func TestColourIsNeverListedOrOffered(t *testing.T) {
 }
 
 // Typing the hidden spelling runs the command.
-func TestColourRunsTheCommand(t *testing.T) {
+func TestColorRunsTheCommand(t *testing.T) {
 	s := &Session{}
 	s.command("/colour on")
 	if !s.colorOn {
-		t.Error("/colour on did not turn colour on")
+		t.Error("/colour on did not turn color on")
 	}
 	s.command("/color off")
 	if s.colorOn {
-		t.Error("/color off did not turn colour off")
+		t.Error("/color off did not turn color off")
 	}
 }
 

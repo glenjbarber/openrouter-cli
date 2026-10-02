@@ -101,7 +101,7 @@ func WrapBlock(s string, width int) []string {
 // spans of every row beside it.
 //
 // The rows are the rows WrapBlock returns, byte for byte, since both are the one
-// function. The spans are the colour a reply takes when colour is on: code,
+// function. The spans are the color a reply takes when color is on: code,
 // headings, emphasis, quotes, list markers and links. They are offsets into the
 // row and never text in it, so nothing here puts an escape character anywhere.
 func WrapBlockStyled(s string, width int) ([]string, [][]span) {
@@ -115,7 +115,7 @@ func WrapBlockStyled(s string, width int) ([]string, [][]span) {
 // for each of those rows that exists, so entry k belongs to row lo+k. A frame is
 // repainted on every tick of the spinner and shows a screenful of a reply that
 // may be thousands of rows long, so the rows out of sight cost no more than they
-// did before colour existed. With lo and hi both zero no span is worked out at
+// did before color existed. With lo and hi both zero no span is worked out at
 // all, and the return is the fold WrapBlock always was.
 func wrapBlock(s string, width, lo, hi int) ([]string, [][]span) {
 	if width < 1 {
@@ -149,7 +149,7 @@ func wrapBlock(s string, width, lo, hi int) ([]string, [][]span) {
 	// without spans first, which is all a row out of sight needs, and folded
 	// again with them only when one of its rows is in sight. The text of the two
 	// is the same, and the first is the one kept, so that a fault in the second
-	// could cost a line its colour and nothing else.
+	// could cost a line its color and nothing else.
 	addProse := func(line string) {
 		rows, _ := renderMarkdownRows(line, width, false)
 		at := len(out)

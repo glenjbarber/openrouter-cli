@@ -235,7 +235,7 @@ func paneRows(height int) int {
 	return rows
 }
 
-// markMatch makes the matched part of a line visible without colour.
+// markMatch makes the matched part of a line visible without color.
 //
 // A selection is taken out of the pane as plain text, so an escape sequence
 // drawn around the match would be copied along with it. The match is therefore

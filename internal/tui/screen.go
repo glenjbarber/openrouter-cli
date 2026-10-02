@@ -38,7 +38,7 @@ type Screen struct {
 	// closed records that the terminal has already been put back, so that a
 	// signal arriving during the ordinary exit does not restore it twice.
 	closed bool
-	// base records that the last frame left the base colours of a theme set,
+	// base records that the last frame left the base colors of a theme set,
 	// which a reset that re-applies them does. They belong to the interface and
 	// not to the terminal, so restore clears them before the shell is returned
 	// to, or the shell would be drawn on the theme background.
@@ -191,7 +191,7 @@ func (s *Screen) restore() {
 	s.write(seqPasteOff)
 	if s.base {
 		// The bare reset, with no base re-applied, since this is the one
-		// place a theme colour must not be left set.
+		// place a theme color must not be left set.
 		s.write(seqResetAttr)
 		s.base = false
 	}

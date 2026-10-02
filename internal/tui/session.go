@@ -81,7 +81,7 @@ type Session struct {
 	completedPrefix string
 	completedNames  []string
 	completedAt     int
-	// step is how many twiddle frames have been drawn, and is where the colour
+	// step is how many twiddle frames have been drawn, and is where the color
 	// ramp is taken from. It is guarded by mu with the rest of the frame, since
 	// it is written by the spinner goroutine and read by the paint path.
 	step int
@@ -135,7 +135,7 @@ type Session struct {
 	// at render time and so cannot be turned back into lines here.
 	searchReply []string
 	// searchKinds is the record of each entry of searchReply, held aside with
-	// it so that closing the search restores the colour the entries had.
+	// it so that closing the search restores the color the entries had.
 	searchKinds []entryKind
 	// searchScroll is the offset the reader held before the search moved the
 	// view. It is restored when the search closes, since a search that leaves
@@ -200,10 +200,10 @@ type Session struct {
 	// It is a preference read from the configuration and changed at runtime,
 	// so that a user who did not ask for it never hears one.
 	bellWanted bool
-	// colorOn reports that colour is drawn on the screen. It is off unless the
+	// colorOn reports that color is drawn on the screen. It is off unless the
 	// configuration asked for it, and /color changes it for the session only.
 	colorOn bool
-	// colorTheme is the base colours the configuration asks for, empty on a
+	// colorTheme is the base colors the configuration asks for, empty on a
 	// side that follows the terminal theme.
 	colorTheme config.Theme
 	// out is where the bell is written, which is the interface output.
@@ -801,7 +801,7 @@ func init() {
 		{names: []string{"/model"}, usage: "/model [NAME]", description: "show or choose the model, without an argument to list", run: (*Session).cmdModel},
 		{names: []string{"/new"}, description: "clear the conversation", run: (*Session).cmdNew, idleOnly: true},
 		{names: []string{"/bell"}, description: "ring the terminal bell on reply, on or off", run: (*Session).cmdBell},
-		{names: []string{"/color"}, hidden: []string{"/colour"}, usage: "/color [on|off]", description: "turn colour on or off, for this session", run: (*Session).cmdColor},
+		{names: []string{"/color"}, hidden: []string{"/colour"}, usage: "/color [on|off]", description: "turn color on or off, for this session", run: (*Session).cmdColor},
 		{names: []string{"/cognito"}, description: "record nothing, on or off", run: (*Session).cmdCognito},
 		{names: []string{"/verbosity"}, usage: "/verbosity [0-6]", description: "how much the model is asked to answer with", run: (*Session).cmdVerbosity},
 		{names: []string{"/verbose"}, description: "report the shape of each streamed turn, on or off", run: (*Session).cmdVerbose},
@@ -2208,10 +2208,10 @@ func (s *Session) beginWork() {
 	s.startedAt = time.Now()
 	s.mu.Unlock()
 	s.spinner.Start(func(frame string) {
-		// The step advances once per frame, which is what makes the colour
+		// The step advances once per frame, which is what makes the color
 		// move at the rate the twiddle does rather than at a rate of its own.
 		// The figure and the step are written under one lock, so a repaint
-		// can never draw a colour belonging to a different frame than the one
+		// can never draw a color belonging to a different frame than the one
 		// it is drawing.
 		s.mu.Lock()
 		s.frame.Spinner = frame
@@ -2266,7 +2266,7 @@ func (s *Session) endWork() {
 	s.mu.Lock()
 	s.frame.Spinner = ""
 	// The tint is cleared with the twiddle rather than left behind, since a
-	// tint with no twiddle would colour whichever row it was pointed at.
+	// tint with no twiddle would color whichever row it was pointed at.
 	s.frame.Tint = ""
 	s.frame.Elapsed = ""
 	s.startedAt = time.Time{}
@@ -2437,7 +2437,7 @@ func (s *Session) paintNow() {
 	s.mu.Unlock()
 
 	height, width := s.screen.Size()
-	// The palette is resolved before the frame is folded, since whether colour
+	// The palette is resolved before the frame is folded, since whether color
 	// is on decides whether the markdown spans of a reply are worked out at all.
 	pal := s.framePalette()
 	frame.styleReplies = pal != nil
@@ -2454,7 +2454,7 @@ func (s *Session) paintNow() {
 		}
 		s.mu.Unlock()
 	}
-	// The colour is pointed at the row the renderer reported. A frame with no
+	// The color is pointed at the row the renderer reported. A frame with no
 	// twiddle reports none, and the screen draws it exactly as it always has.
 	//
 	s.screen.DrawFrame(rows, framePaint{

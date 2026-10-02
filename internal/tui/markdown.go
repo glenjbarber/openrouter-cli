@@ -92,7 +92,7 @@ func blankSpans(n int, track bool) [][]span {
 
 // isQuote reports whether a line is a block quote.
 //
-// It is recognised for colour only. The marker stays in the text, since
+// It is recognised for color only. The marker stays in the text, since
 // dropping it would edit the reply rather than show it, and the rows of a quote
 // that folds are not indented under it.
 func isQuote(line string) bool {

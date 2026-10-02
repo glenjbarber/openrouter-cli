@@ -48,8 +48,8 @@ type rawFile struct {
 	// only thing in the file that grants a capability the client would
 	// otherwise ask about on every call.
 	Tools []ApprovalRule `json:"OPENROUTER_TOOLS"`
-	// Color turns colour on at startup. The colour keys are lower case and have
-	// no OPENROUTER_ prefix, like setup_complete, since colour is not read from
+	// Color turns color on at startup. The color keys are lower case and have
+	// no OPENROUTER_ prefix, like setup_complete, since color is not read from
 	// the environment and so has no environment variable to be named after.
 	Color bool `json:"color"`
 	// ColorTheme is held raw so that a theme of the wrong shape is reported in
@@ -88,10 +88,10 @@ type Config struct {
 	// written. The order is kept rather than reduced to one resolved set,
 	// since which rule matched is what a reader needs to be able to see.
 	Tools []ApprovalRule
-	// Color reports that the file asks for colour. It is off unless the file
+	// Color reports that the file asks for color. It is off unless the file
 	// says so, and /color changes it for a session without writing the file.
 	Color bool
-	// ColorTheme is the base colours the file asks for. A side the file does
+	// ColorTheme is the base colors the file asks for. A side the file does
 	// not set, or sets to a value that is not valid, is empty and so follows
 	// the terminal theme.
 	ColorTheme Theme
@@ -152,7 +152,7 @@ type ErrNoAPIKey struct {
 	// not a credential, and dropping it would make a file that was read look
 	// as though it had not been.
 	Tools []ApprovalRule
-	// Color, ColorTheme and ColorNote are the colour preferences the file
+	// Color, ColorTheme and ColorNote are the color preferences the file
 	// carries, carried through on the same reasoning as the rest.
 	Color      bool
 	ColorTheme Theme
@@ -187,7 +187,7 @@ func EmptyMouse(model string, mouse, bell bool) *Config {
 	return cfg
 }
 
-// SetColor sets the colour preferences on a configuration and returns it.
+// SetColor sets the color preferences on a configuration and returns it.
 //
 // It is a setter rather than another parameter of EmptyMouse, which already
 // carries more than a constructor should. A caller standing in a configuration

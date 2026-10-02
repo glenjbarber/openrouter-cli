@@ -10,7 +10,7 @@ import (
 )
 
 // allowedSequence matches the only forms the palette may produce: a named
-// foreground, or a 256 colour foreground or background. Faint is checked on its
+// foreground, or a 256 color foreground or background. Faint is checked on its
 // own, since it is an opt in alternative.
 var allowedSequence = regexp.MustCompile(`^\x1b\[(3[0-7]|9[0-7]|[34]8;5;(\d{1,3}))m$`)
 
@@ -54,7 +54,7 @@ func TestColorSequenceForeground(t *testing.T) {
 	}
 }
 
-// A background is always the 256 colour form, so a named background is its
+// A background is always the 256 color form, so a named background is its
 // index from 0 to 15.
 func TestColorSequenceBackground(t *testing.T) {
 	cases := []struct {
@@ -106,7 +106,7 @@ func TestNearest256(t *testing.T) {
 		{"near black grey", rgb{18, 18, 18}, 233},
 		{"light grey on the ramp", rgb{238, 238, 238}, 255},
 		{"grey 118 on the ramp", rgb{118, 118, 118}, 243},
-		{"dark colour keeps zero components", rgb{0, 0, 95}, 17},
+		{"dark color keeps zero components", rgb{0, 0, 95}, 17},
 		{"component below the old floor stays low", rgb{0, 10, 0}, 16},
 		{"out of range is held", rgb{300, -5, 0}, 196},
 	}
@@ -130,15 +130,15 @@ func TestNearestCubeLevel(t *testing.T) {
 }
 
 // The result is checked against a search of every candidate, over a spread of
-// colours, so the shortcut through the cube levels cannot disagree with the
+// colors, so the shortcut through the cube levels cannot disagree with the
 // definition of nearest.
 func TestNearest256AgreesWithABruteForceSearch(t *testing.T) {
 	brute := func(c rgb) int {
-		best := colourDistance(c, rgb{paletteCubeLevels[0], paletteCubeLevels[0], paletteCubeLevels[0]})
+		best := colorDistance(c, rgb{paletteCubeLevels[0], paletteCubeLevels[0], paletteCubeLevels[0]})
 		for r := 0; r < 6; r++ {
 			for g := 0; g < 6; g++ {
 				for b := 0; b < 6; b++ {
-					d := colourDistance(c, rgb{paletteCubeLevels[r], paletteCubeLevels[g], paletteCubeLevels[b]})
+					d := colorDistance(c, rgb{paletteCubeLevels[r], paletteCubeLevels[g], paletteCubeLevels[b]})
 					if d < best {
 						best = d
 					}
@@ -147,15 +147,15 @@ func TestNearest256AgreesWithABruteForceSearch(t *testing.T) {
 		}
 		for i := 0; i < paletteGrayCount; i++ {
 			v := 8 + 10*i
-			if d := colourDistance(c, rgb{v, v, v}); d < best {
+			if d := colorDistance(c, rgb{v, v, v}); d < best {
 				best = d
 			}
 		}
 		return best
 	}
-	// The index is turned back into a colour so that its distance can be
+	// The index is turned back into a color so that its distance can be
 	// compared with the best one found.
-	colourOf := func(n int) rgb {
+	colorOf := func(n int) rgb {
 		if n >= paletteGrayFirst {
 			v := 8 + 10*(n-paletteGrayFirst)
 			return rgb{v, v, v}
@@ -171,7 +171,7 @@ func TestNearest256AgreesWithABruteForceSearch(t *testing.T) {
 				if n < 16 || n > 255 {
 					t.Fatalf("nearest256(%v) = %d, outside the cube and the ramp", c, n)
 				}
-				if got, want := colourDistance(c, colourOf(n)), brute(c); got != want {
+				if got, want := colorDistance(c, colorOf(n)), brute(c); got != want {
 					t.Fatalf("nearest256(%v) = %d at distance %d, best is %d", c, n, got, want)
 				}
 			}
@@ -179,7 +179,7 @@ func TestNearest256AgreesWithABruteForceSearch(t *testing.T) {
 	}
 }
 
-// No theme means no base colour at all, so the terminal theme shows through.
+// No theme means no base color at all, so the terminal theme shows through.
 func TestNoThemeWritesNoBase(t *testing.T) {
 	p := newPalette(config.Theme{})
 	if p.fg != "" || p.bg != "" || p.base() != "" {
@@ -229,7 +229,7 @@ func TestAnUnresolvableThemeValueFallsBack(t *testing.T) {
 	}
 }
 
-// Colour is never 24 bit, and every sequence is one of the allowed forms, for
+// Color is never 24 bit, and every sequence is one of the allowed forms, for
 // every role and for every theme value form.
 func TestOnlyAllowedSequencesAreProduced(t *testing.T) {
 	check := func(label, seq string) {
@@ -330,7 +330,7 @@ func TestToolIdentitiesAreDistinct(t *testing.T) {
 		}
 		for _, other := range []role{roleDim, roleFailure, roleApproval} {
 			if p.role(a) == p.role(other) {
-				t.Errorf("tool role %d shares a colour with role %d", a, other)
+				t.Errorf("tool role %d shares a color with role %d", a, other)
 			}
 		}
 	}

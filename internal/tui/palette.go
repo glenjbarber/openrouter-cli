@@ -13,12 +13,12 @@ import (
 // Only these forms are ever produced: 30 to 37 and 90 to 97 for the sixteen
 // named foregrounds, and 38;5;n and 48;5;n for everything else. A 24 bit
 // sequence (38;2 or 48;2) is never produced, since Terminal.app supports 256
-// colours and does not support 24 bit colour. A #rrggbb value is mapped to the
+// colors and does not support 24 bit color. A #rrggbb value is mapped to the
 // nearest of the 256 instead.
 //
-// The sixteen names are written as the ANSI colours, and not as fixed values,
+// The sixteen names are written as the ANSI colors, and not as fixed values,
 // so that the terminal theme decides what they look like. With no theme set, no
-// base colour is written at all and the terminal theme shows through.
+// base color is written at all and the terminal theme shows through.
 
 // sgrReset clears every attribute.
 const sgrReset = "\x1b[0m"
@@ -28,8 +28,8 @@ const sgrReset = "\x1b[0m"
 // the default dim is 90 and faint is opt in through withFaintDim.
 const sgrFaint = "\x1b[2m"
 
-// role names what a piece of text is, and so which colour it is drawn in. The
-// screen asks for a role and never for a colour, so the colours are decided in
+// role names what a piece of text is, and so which color it is drawn in. The
+// screen asks for a role and never for a color, so the colors are decided in
 // one place.
 type role int
 
@@ -47,10 +47,10 @@ const (
 	roleQuote
 	roleList
 	roleLink
-	// The three tool identities. A tool line is drawn in the colour of the
+	// The three tool identities. A tool line is drawn in the color of the
 	// kind of tool it is, so a reader can tell a file read from a command
-	// without reading the name. The colours are distinct from each other and
-	// from the failure and approval colours, which must never be mistaken for
+	// without reading the name. The colors are distinct from each other and
+	// from the failure and approval colors, which must never be mistaken for
 	// an identity.
 	roleFilesystem
 	roleGit
@@ -80,7 +80,7 @@ var roleSequences = [roleCount]string{
 	roleShell:      "\x1b[93m",
 }
 
-// palette is a resolved theme: the base colours and the sequence of each role.
+// palette is a resolved theme: the base colors and the sequence of each role.
 type palette struct {
 	// fg and bg are the base sequences, empty when the terminal theme is
 	// followed. They are written once and re-applied after every reset.
@@ -113,12 +113,12 @@ func (p palette) withFaintDim() palette {
 	return p
 }
 
-// base returns the sequences that set the base colours, empty when the
+// base returns the sequences that set the base colors, empty when the
 // terminal theme is followed on both sides.
 func (p palette) base() string { return p.fg + p.bg }
 
-// reset returns the sequence that ends a coloured run. It clears every
-// attribute and then sets the base colours again, since a bare reset would also
+// reset returns the sequence that ends a colored run. It clears every
+// attribute and then sets the base colors again, since a bare reset would also
 // clear the base and leave the rest of the row in the terminal theme.
 func (p palette) reset() string { return sgrReset + p.base() }
 
@@ -132,7 +132,7 @@ func (p palette) role(r role) string {
 }
 
 // paint wraps text in a role and a reset. Empty text stays empty, so nothing is
-// written that would colour no character.
+// written that would color no character.
 func (p palette) paint(r role, text string) string {
 	if text == "" {
 		return ""
@@ -140,16 +140,16 @@ func (p palette) paint(r role, text string) string {
 	return p.role(r) + text + p.reset()
 }
 
-// colorSequence returns the sequence that sets a colour from a theme value.
+// colorSequence returns the sequence that sets a color from a theme value.
 //
 // A name below eight is written as 30 to 37 and a bright name as 90 to 97 for a
 // foreground. A background is written as 48;5;n for every form, since the
 // background forms 40 to 47 and 100 to 107 are not used. An index is written as
-// 38;5;n or 48;5;n. A #rrggbb value is mapped to the nearest 256 colour index.
+// 38;5;n or 48;5;n. A #rrggbb value is mapped to the nearest 256 color index.
 func colorSequence(value string, background bool) (string, error) {
 	canon, ok := config.NormalizeColor(value)
 	if !ok {
-		return "", fmt.Errorf("%q is not a colour name, an index from 0 to 255 or #rrggbb", value)
+		return "", fmt.Errorf("%q is not a color name, an index from 0 to 255 or #rrggbb", value)
 	}
 
 	n := -1
@@ -185,7 +185,7 @@ func colorSequence(value string, background bool) (string, error) {
 	return "\x1b[" + lead + ";5;" + strconv.Itoa(n) + "m", nil
 }
 
-// paletteCubeLevels are the six values each component of the 256 colour cube
+// paletteCubeLevels are the six values each component of the 256 color cube
 // takes, and paletteGrayFirst and paletteGrayCount describe the grey ramp that
 // follows it. The cube is indexes 16 to 231 and the ramp is 232 to 255, at 8 +
 // 10*i. The sixteen indexes below the cube are left out of the search: what
@@ -198,7 +198,7 @@ const (
 	paletteGrayCount = 24
 )
 
-// nearest256 returns the index in the 256 colour palette closest to a colour,
+// nearest256 returns the index in the 256 color palette closest to a color,
 // searching the cube and the grey ramp by squared distance.
 //
 // It does not reuse cubeLevel from the twiddle, which floors every component at
@@ -213,11 +213,11 @@ func nearest256(c rgb) int {
 
 	ri, gi, bi := nearestCubeLevel(c.r), nearestCubeLevel(c.g), nearestCubeLevel(c.b)
 	best := 16 + 36*ri + 6*gi + bi
-	bestDist := colourDistance(c, rgb{paletteCubeLevels[ri], paletteCubeLevels[gi], paletteCubeLevels[bi]})
+	bestDist := colorDistance(c, rgb{paletteCubeLevels[ri], paletteCubeLevels[gi], paletteCubeLevels[bi]})
 
 	for i := 0; i < paletteGrayCount; i++ {
 		v := 8 + 10*i
-		if d := colourDistance(c, rgb{v, v, v}); d < bestDist {
+		if d := colorDistance(c, rgb{v, v, v}); d < bestDist {
 			best, bestDist = paletteGrayFirst+i, d
 		}
 	}
@@ -236,8 +236,8 @@ func nearestCubeLevel(v int) int {
 	return best
 }
 
-// colourDistance is the squared distance between two colours in RGB.
-func colourDistance(a, b rgb) int {
+// colorDistance is the squared distance between two colors in RGB.
+func colorDistance(a, b rgb) int {
 	dr, dg, db := a.r-b.r, a.g-b.g, a.b-b.b
 	return dr*dr + dg*dg + db*db
 }

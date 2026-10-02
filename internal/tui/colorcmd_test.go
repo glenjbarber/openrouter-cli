@@ -17,22 +17,22 @@ func paintedFrame(t *testing.T, s *Session, capture func() string) string {
 	return capture()[before:]
 }
 
-// chromeColour is the sequence the rules of the frame are drawn in.
-var chromeColour = roleSequences[roleChrome]
+// chromeColor is the sequence the rules of the frame are drawn in.
+var chromeColor = roleSequences[roleChrome]
 
-// /color on makes the next paint coloured, and /color off makes it plain again.
-func TestColorCommandColoursTheNextPaint(t *testing.T) {
+// /color on makes the next paint colored, and /color off makes it plain again.
+func TestColorCommandColorsTheNextPaint(t *testing.T) {
 	s, capture := auditSession(t, "")
 
 	plain := paintedFrame(t, s, capture)
-	if strings.Contains(plain, chromeColour) {
-		t.Fatalf("a fresh session paints colour:\n%q", plain)
+	if strings.Contains(plain, chromeColor) {
+		t.Fatalf("a fresh session paints color:\n%q", plain)
 	}
 
 	s.command("/color on")
 	on := paintedFrame(t, s, capture)
-	if !strings.Contains(on, chromeColour) {
-		t.Errorf("the paint after /color on carries no colour:\n%q", on)
+	if !strings.Contains(on, chromeColor) {
+		t.Errorf("the paint after /color on carries no color:\n%q", on)
 	}
 
 	s.command("/color off")
@@ -45,7 +45,7 @@ func TestColorCommandColoursTheNextPaint(t *testing.T) {
 }
 
 // /colour is the same command.
-func TestColourSpellingPaintsTheSame(t *testing.T) {
+func TestColorSpellingPaintsTheSame(t *testing.T) {
 	a, capA := auditSession(t, "")
 	b, capB := auditSession(t, "")
 
@@ -61,16 +61,16 @@ func TestColourSpellingPaintsTheSame(t *testing.T) {
 	}
 }
 
-// A toggle with no argument turns colour on and then off again.
+// A toggle with no argument turns color on and then off again.
 func TestColorCommandToggles(t *testing.T) {
 	s, capture := auditSession(t, "")
 	s.command("/color")
-	if !strings.Contains(paintedFrame(t, s, capture), chromeColour) {
-		t.Error("the first toggle did not turn colour on")
+	if !strings.Contains(paintedFrame(t, s, capture), chromeColor) {
+		t.Error("the first toggle did not turn color on")
 	}
 	s.command("/color")
-	if strings.Contains(paintedFrame(t, s, capture), chromeColour) {
-		t.Error("the second toggle did not turn colour off")
+	if strings.Contains(paintedFrame(t, s, capture), chromeColor) {
+		t.Error("the second toggle did not turn color off")
 	}
 }
 
@@ -111,7 +111,7 @@ func TestColorCommandPrintsItsStatus(t *testing.T) {
 	s.mu.Lock()
 	reply := strings.Join(s.frame.Reply, "\n")
 	s.mu.Unlock()
-	for _, want := range []string{"colour on", "colour off"} {
+	for _, want := range []string{"color on", "color off"} {
 		if !strings.Contains(reply, want) {
 			t.Errorf("the pane does not say %q:\n%s", want, reply)
 		}
@@ -138,7 +138,7 @@ func TestAThemeIsAppliedOnPaint(t *testing.T) {
 }
 
 // A theme the loader could not use falls back to the terminal theme: no base is
-// written, colour still works, and the one line note is shown.
+// written, color still works, and the one line note is shown.
 func TestAnInvalidThemeFallsBackAndShowsTheNote(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -168,8 +168,8 @@ func TestAnInvalidThemeFallsBackAndShowsTheNote(t *testing.T) {
 		t.Errorf("the note is not on the screen:\n%q", got)
 	}
 	frame := paintedFrame(t, s, capture)
-	if !strings.Contains(frame, chromeColour) {
-		t.Errorf("colour did not stay on with a dropped theme:\n%q", frame)
+	if !strings.Contains(frame, chromeColor) {
+		t.Errorf("color did not stay on with a dropped theme:\n%q", frame)
 	}
 	if pal := s.framePalette(); pal == nil || pal.base() != "" {
 		t.Errorf("an invalid theme left a base: %+v", pal)
@@ -179,8 +179,8 @@ func TestAnInvalidThemeFallsBackAndShowsTheNote(t *testing.T) {
 	}
 }
 
-// The text of the pane never holds a sequence, whatever colour is doing.
-func TestColourNeverEntersTheStoredText(t *testing.T) {
+// The text of the pane never holds a sequence, whatever color is doing.
+func TestColorNeverEntersTheStoredText(t *testing.T) {
 	s, capture := auditSession(t, "")
 	s.command("/color on")
 	paintedFrame(t, s, capture)

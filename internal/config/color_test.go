@@ -179,18 +179,18 @@ func TestParseColorEmptyAndNullAreAbsent(t *testing.T) {
 }
 
 // The environment style name is not a key. Only the lower case names are read,
-// so a file written with the prefixed spelling does not turn colour on.
+// so a file written with the prefixed spelling does not turn color on.
 func TestParseColorHasNoEnvironmentStyleKey(t *testing.T) {
 	cfg, err := parse(writeConfig(t, `{"OPENROUTER_API_KEY":"k","OPENROUTER_COLOR":true}`))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	if cfg.Color {
-		t.Error("OPENROUTER_COLOR turned colour on")
+		t.Error("OPENROUTER_COLOR turned color on")
 	}
 }
 
-// A file that cannot be read for its key is still read, so the colour
+// A file that cannot be read for its key is still read, so the color
 // preferences travel with the typed error.
 func TestColorSurvivesAMissingKey(t *testing.T) {
 	body := `{"color":true,"color_theme":{"foreground":"green","background":"zzz"}}`
@@ -210,7 +210,7 @@ func TestColorSurvivesAMissingKey(t *testing.T) {
 	}
 }
 
-// A skipped setup is returned as a configuration and carries the colour
+// A skipped setup is returned as a configuration and carries the color
 // preferences too.
 func TestColorSurvivesASkippedSetup(t *testing.T) {
 	cfg, err := parse(writeConfig(t, `{"setup_complete":true,"color":true,"color_theme":{"background":"17"}}`))
@@ -229,10 +229,10 @@ func TestSetColorOnAConfiguration(t *testing.T) {
 	}
 }
 
-// The default file is unchanged by colour: nothing about it is written until
+// The default file is unchanged by color: nothing about it is written until
 // the reader asks.
-func TestDefaultFileCarriesNoColour(t *testing.T) {
+func TestDefaultFileCarriesNoColor(t *testing.T) {
 	if strings.Contains(DefaultFile, "color") {
-		t.Errorf("DefaultFile mentions colour: %q", DefaultFile)
+		t.Errorf("DefaultFile mentions color: %q", DefaultFile)
 	}
 }

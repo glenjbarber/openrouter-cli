@@ -192,8 +192,8 @@ func positionAt(line string, caret int) (pos position, start, end int) {
 }
 
 // options are the keys the configuration file is written with. Most are named
-// after the environment variables they correspond to. The colour keys are lower
-// case and have no such variable, since colour is not read from the
+// after the environment variables they correspond to. The color keys are lower
+// case and have no such variable, since color is not read from the
 // environment.
 //
 // They are completed only as a whole single word, so that the completer offers
@@ -205,8 +205,8 @@ var options = []Candidate{
 	{"OPENROUTER_MODEL", "the model a session starts with"},
 	{"OPENROUTER_MOUSE", "ask for mouse reporting on every run"},
 	{"OPENROUTER_BELL", "ring the terminal bell when a reply arrives"},
-	{"color", "turn colour on at startup, true or false"},
-	{"color_theme", "base colours, an object with foreground and background"},
+	{"color", "turn color on at startup, true or false"},
+	{"color_theme", "base colors, an object with foreground and background"},
 }
 
 // filterPrefix returns the candidates whose names begin with prefix, without

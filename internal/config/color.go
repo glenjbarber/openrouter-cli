@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// ColorNames are the sixteen colour names a theme value may take, in the order
-// of their ANSI indexes: the eight normal colours first and the eight bright
+// ColorNames are the sixteen color names a theme value may take, in the order
+// of their ANSI indexes: the eight normal colors first and the eight bright
 // forms after them. The list is written once here and the palette reads it, so
 // the names a file may carry and the names the screen understands cannot drift
 // apart.
@@ -18,8 +18,8 @@ var ColorNames = [16]string{
 	"bright_blue", "bright_magenta", "bright_cyan", "bright_white",
 }
 
-// Theme is the base colours the file asks for. An empty field means the
-// terminal theme is used for that side, so no base colour is written for it.
+// Theme is the base colors the file asks for. An empty field means the
+// terminal theme is used for that side, so no base color is written for it.
 //
 // A value is held in the canonical form NormalizeColor returns: a lower case
 // name, a decimal index with no leading zeros, or a lower case #rrggbb. A value
@@ -118,5 +118,5 @@ func parseTheme(raw json.RawMessage) (Theme, string) {
 		return theme, ""
 	}
 	return theme, "color_theme: ignored " + strings.Join(bad, " and ") +
-		" (use a colour name, an index from 0 to 255 or #rrggbb), using the terminal theme"
+		" (use a color name, an index from 0 to 255 or #rrggbb), using the terminal theme"
 }

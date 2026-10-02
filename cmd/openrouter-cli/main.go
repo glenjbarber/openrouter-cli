@@ -115,7 +115,7 @@ func interface_(out, in *os.File, cfg *config.Config, opts options, doc *bootstr
 	// absence as an ordinary message rather than refusing to open.
 	session.Configure(cfg)
 	session.SetBell(cfg.Bell)
-	// Colour is handed over and drawn from the next paint. A theme value that
+	// Color is handed over and drawn from the next paint. A theme value that
 	// was not valid has already been dropped by the loader, and the one line
 	// note is shown once so that the fallback is not silent.
 	session.SetColor(cfg.Color)

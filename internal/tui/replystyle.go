@@ -1,10 +1,10 @@
 package tui
 
-// The work indicators are drawn in colour that deepens with the depth of the
+// The work indicators are drawn in color that deepens with the depth of the
 // work, so that a reader watching a turn sees it get louder rather than having
 // to count what it is doing.
 //
-// Colour is applied by Draw, around the row rather than into it, since the row
+// Color is applied by Draw, around the row rather than into it, since the row
 // text is what a terminal selection copies out. A sequence written into a row
 // would be copied along with the prose and would act on whatever the reader
 // pasted it into, which is the reason the frame is plain text. Draw already
@@ -15,7 +15,7 @@ package tui
 //
 // A zero style is the ordinary one, which is plain text in the default
 // attribute. A row carrying a style is drawn with it and reset afterwards, so
-// that a styled row cannot colour the rows beneath it, which are prose.
+// that a styled row cannot color the rows beneath it, which are prose.
 type style uint8
 
 const (
@@ -52,7 +52,7 @@ const (
 // the terminal back.
 //
 // The reset is written after every styled row rather than once at the end of
-// the frame, so that a styled row cannot colour the prose drawn under it.
+// the frame, so that a styled row cannot color the prose drawn under it.
 //
 // A plain row is written with no sequence at all, neither the set nor the
 // reset. The frame already resets the attribute before each row, so a plain row

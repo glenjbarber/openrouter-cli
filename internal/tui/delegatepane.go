@@ -24,7 +24,7 @@ type delegatePane struct {
 }
 
 // addAnswer appends the answer a delegate gave, recorded as a reply so that
-// its markdown is coloured as the conversation's is. The caller holds mu.
+// its markdown is colored as the conversation's is. The caller holds mu.
 func (d *delegatePane) addAnswer(text string) {
 	for len(d.kinds) < len(d.lines) {
 		d.kinds = append(d.kinds, entryKind{})
@@ -114,7 +114,7 @@ func (s *Session) applyDelegatePane(f *Frame) {
 	f.Title = delegateTitle
 	f.Reply = append([]string(nil), s.dpane.lines...)
 	// The records of the main pane belong to it, and a record left in place
-	// would colour these lines by the position of another entry. The pane keeps
+	// would color these lines by the position of another entry. The pane keeps
 	// its own, which say which of its lines are answers.
 	f.Kinds = append([]entryKind(nil), s.dpane.kinds...)
 	f.Delegate = s.dpane.partial

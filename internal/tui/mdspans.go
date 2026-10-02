@@ -10,9 +10,9 @@ import (
 //
 // The spans are integers beside the rows and never text inside them. The rows
 // are produced by the same code with or without them, so the text of a row does
-// not depend on whether anything is going to be coloured, and a construct is
-// recognised for colour without being rewritten. The one place a span is turned
-// into bytes is Screen.DrawFrame, and only when colour is on.
+// not depend on whether anything is going to be colored, and a construct is
+// recognised for color without being rewritten. The one place a span is turned
+// into bytes is Screen.DrawFrame, and only when color is on.
 //
 // Spans are built in three steps. The inline scan reports where emphasis and
 // code lie in the text it leaves, and the link scan reports where links lie in
@@ -56,7 +56,7 @@ const maxLinkDest = 2048
 // findLinks returns the links in a rendered line as they appear in it.
 //
 // A link is "[text](destination)". The whole of it is marked, brackets and
-// destination included, since all of it is on the screen and a link coloured
+// destination included, since all of it is on the screen and a link colored
 // only in its text would leave the address looking like prose. The text is not
 // rewritten: the brackets and the address stay where they are.
 //

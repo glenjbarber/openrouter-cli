@@ -385,9 +385,9 @@ func TestSetsAreKeptApart(t *testing.T) {
 	}
 }
 
-// The colour keys are lower case and carry no OPENROUTER_ prefix, and they are
+// The color keys are lower case and carry no OPENROUTER_ prefix, and they are
 // completed the same way as the others.
-func TestColourOptionsComplete(t *testing.T) {
+func TestColorOptionsComplete(t *testing.T) {
 	res := completeAt(testCompleter(), "color_")
 	if res.Kind != Unique || res.Line != "color_theme" {
 		t.Errorf("color_ gave %v %q, want Unique color_theme", res.Kind, res.Line)

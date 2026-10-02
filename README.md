@@ -181,9 +181,9 @@ once, so that a slow model does not look idle. A twiddle turns beside the reply
 while a request, a compaction, or a connection test is in progress, and the
 status field reads `Working` for the same period, and the row carries how long
 the work has been running, in seconds until a minute and in minutes after. The twiddle is the one part of
-the frame drawn in colour: it scrolls through the six primaries, taking four
+the frame drawn in color: it scrolls through the six primaries, taking four
 seconds to come round, so an indicator that never changes is not one a reader
-learns to look past. The colour covers the figure and the word beside it, and is
+learns to look past. The color covers the figure and the word beside it, and is
 reset before the next row, so selecting the pane copies the text with no escape
 sequence in it. A stream that fails
 partway keeps the text received before the failure and reports the error beneath

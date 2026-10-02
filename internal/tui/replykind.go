@@ -8,7 +8,7 @@ import "strings"
 // An entry is only a string, and a string cannot say who wrote it. A line that
 // starts with "[fs]" may be a tool line the client wrote or a sentence a model
 // chose to begin that way, and so may a line that starts with "(error)". A
-// guess made from the text would colour what a model wrote as though the client
+// guess made from the text would color what a model wrote as though the client
 // had written it, so the client records what it wrote at the moment it writes
 // it, in Frame.Kinds, which runs parallel to Frame.Reply. Nothing is read back
 // out of the text.
@@ -17,11 +17,11 @@ import "strings"
 type replyKind uint8
 
 const (
-	// kindPlain is a line that takes no colour: the line the user typed and
+	// kindPlain is a line that takes no color: the line the user typed and
 	// echoed, and a note the client wrote. It is the zero value, so an entry
 	// with no record is plain.
 	kindPlain replyKind = iota
-	// kindReply is text a model wrote. Its markdown is coloured when colour is
+	// kindReply is text a model wrote. Its markdown is colored when color is
 	// on, and the kind is what says which entries are the model's, so that no
 	// guess is made from what an entry says.
 	kindReply
@@ -85,7 +85,7 @@ func (f Frame) kindAt(i int) entryKind {
 // syncKinds brings Kinds to the length of Reply. The caller holds mu.
 //
 // A writer that assigned to Reply directly leaves Kinds longer or shorter than
-// it. Padding with plain and trimming keeps a stale record from colouring a row
+// it. Padding with plain and trimming keeps a stale record from coloring a row
 // it was not written for.
 func (s *Session) syncKinds() {
 	n := len(s.frame.Reply)
@@ -131,7 +131,7 @@ func toolTag(label string, failed bool) entryKind {
 }
 
 // textSpan returns the span covering a row up to its last visible character, or
-// none where the row is blank. Trailing spaces are left out, since colouring
+// none where the row is blank. Trailing spaces are left out, since coloring
 // them writes a sequence around nothing.
 func textSpan(row string, r role) []span {
 	end := len(strings.TrimRight(row, " "))
@@ -147,7 +147,7 @@ func textSpan(row string, r role) []span {
 // each of them. A tool line is the exception: a routine success is dimmed whole,
 // and dim wins over the identity of the tool, so it carries no second span. Any
 // other tool line, which is a failure, keeps the failure role and names the tool
-// in its identity colour on the label, which only the first row carries.
+// in its identity color on the label, which only the first row carries.
 func entrySpans(tag entryKind, row string, first bool) []span {
 	switch tag.kind {
 	case kindNotice:

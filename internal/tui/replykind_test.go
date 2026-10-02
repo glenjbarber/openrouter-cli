@@ -145,7 +145,7 @@ func TestSearchKeepsKindsInStepAndRestoresThem(t *testing.T) {
 	for i, row := range rows {
 		for _, sp := range spans[i] {
 			if strings.Contains(row, "kumquat") && sp.role != roleChrome {
-				t.Errorf("the search listing row %q is coloured %d", row, sp.role)
+				t.Errorf("the search listing row %q is colored %d", row, sp.role)
 			}
 		}
 	}
@@ -202,7 +202,7 @@ func TestTheDelegatePaneDropsTheMainKinds(t *testing.T) {
 	for _, sp := range replySpansOf(t, f, 24, 80) {
 		for _, v := range sp {
 			if strings.HasPrefix(v, "failure=") {
-				t.Errorf("a delegate line was coloured as a failure: %q", v)
+				t.Errorf("a delegate line was colored as a failure: %q", v)
 			}
 		}
 	}
@@ -290,7 +290,7 @@ func TestAModelReplyThatLooksLikeAToolOrAnErrorTakesNoSpan(t *testing.T) {
 		if strings.Contains(row, "[fs]") || strings.Contains(row, "(error)") || strings.Contains(row, "(stopped)") {
 			seen++
 			if len(spans[i]) != 0 {
-				t.Errorf("row %q was coloured: %+v", row, spans[i])
+				t.Errorf("row %q was colored: %+v", row, spans[i])
 			}
 		}
 	}
@@ -359,14 +359,14 @@ func TestAPartialAndTheEntryItBecomesTakeTheSameSpans(t *testing.T) {
 		}
 		for j := range a[i] {
 			if a[i][j] != b[i][j] {
-				t.Errorf("row %d changed colour when the stream ended", i)
+				t.Errorf("row %d changed color when the stream ended", i)
 			}
 		}
 	}
 	for i := range b {
 		for _, sp := range b[i] {
 			if sp.role != roleChrome && sp.role != roleTitle {
-				t.Errorf("a reply row was coloured: row %d %+v", i, sp)
+				t.Errorf("a reply row was colored: row %d %+v", i, sp)
 			}
 		}
 	}
@@ -421,9 +421,9 @@ func TestErrorAndStopLinesAreRecordedAsFailures(t *testing.T) {
 	}
 }
 
-// With colour off the bytes are what they were before the records existed, and
-// with colour on the text with the sequences stripped is the same text.
-func TestKindsLeaveTheColourOffBytesAndTheTextAlone(t *testing.T) {
+// With color off the bytes are what they were before the records existed, and
+// with color on the text with the sequences stripped is the same text.
+func TestKindsLeaveTheColorOffBytesAndTheTextAlone(t *testing.T) {
 	f := toolFrame(
 		"> hi", entryKind{},
 		"[fs] read_file a -> 3 bytes", toolTag("fs", false),
@@ -445,7 +445,7 @@ func TestKindsLeaveTheColourOffBytesAndTheTextAlone(t *testing.T) {
 	sc.DrawFrame(rows, framePaint{spans: spans, twiddle: -1})
 	off := read()
 	if want := oldFrame(rows, height); !strings.HasPrefix(off, want) {
-		t.Errorf("colour off is not the old bytes\n got %q\nwant %q...", off, want)
+		t.Errorf("color off is not the old bytes\n got %q\nwant %q...", off, want)
 	}
 
 	pal := newPalette(config.Theme{})
@@ -454,10 +454,10 @@ func TestKindsLeaveTheColourOffBytesAndTheTextAlone(t *testing.T) {
 	sc2.DrawFrame(rows, framePaint{spans: spans, pal: &pal, twiddle: -1})
 	on := read2()
 	if csi.ReplaceAllString(on, "") != csi.ReplaceAllString(off, "") {
-		t.Error("the text with colour stripped is not the colour-off text")
+		t.Error("the text with color stripped is not the color-off text")
 	}
 	if on == off {
-		t.Error("colour on drew nothing for tool, failure and notice lines")
+		t.Error("color on drew nothing for tool, failure and notice lines")
 	}
 	for _, row := range rows {
 		if strings.ContainsRune(row, 0x1b) {

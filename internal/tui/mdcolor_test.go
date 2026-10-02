@@ -11,7 +11,7 @@ import (
 )
 
 // replyCorpus is the text the fold is held to. It reaches every construct the
-// colour knows, every one it does not, and the shapes that have broken folds
+// color knows, every one it does not, and the shapes that have broken folds
 // before: an open fence, a marker with nothing to close it, wide runes, tabs and
 // nothing at all.
 func replyCorpus() []string {
@@ -105,7 +105,7 @@ func TestStyledTextIsTheTextOfWrapBlock(t *testing.T) {
 	}
 }
 
-// A stream is cut at every byte of a reply, so a reply is folded and coloured in
+// A stream is cut at every byte of a reply, so a reply is folded and colored in
 // every state it passes through, and the text is the same as ever in each.
 func TestStyledTextHoldsForAStreamCutAtEveryByte(t *testing.T) {
 	for _, w := range []int{1, 7, 24, 80} {
@@ -162,7 +162,7 @@ func TestSpansStayInsideTheirRows(t *testing.T) {
 }
 
 // styledAs renders a reply and returns every row as "role=text|role=text", with
-// the text outside a span left out, so a test can say what was coloured and in
+// the text outside a span left out, so a test can say what was colored and in
 // what. A row with no span is shown as "-".
 func styledAs(in string, width int) []string {
 	rows, spans := WrapBlockStyled(in, width)
@@ -242,11 +242,11 @@ func TestEachConstructTakesItsRole(t *testing.T) {
 		{"fenced block", "```go\nx := 1\n```", []string{"code=```go", "code=x := 1", "code=```"}},
 		{"code keeps its markers", "```\n**x** [a](b)\n```", []string{"code=```", "code=**x** [a](b)", "code=```"}},
 		{"blank row in a block", "```\na\n\nb\n```", []string{"code=```", "code=a", "-", "code=b", "code=```"}},
-		{"indentation of code is not coloured", "```\n    indented\n```", []string{"code=```", "code=indented", "code=```"}},
-		{"trailing spaces of code are not coloured", "```\nx   \n```", []string{"code=```", "code=x", "code=```"}},
+		{"indentation of code is not colored", "```\n    indented\n```", []string{"code=```", "code=indented", "code=```"}},
+		{"trailing spaces of code are not colored", "```\nx   \n```", []string{"code=```", "code=x", "code=```"}},
 		{"prose before a fence", "see: ```sh\nls\n```", []string{"-", "code=```sh", "code=ls", "code=```"}},
 		{"an open fence is code to the end", "a\n```\nb\nc", []string{"-", "code=```", "code=b", "code=c"}},
-		{"markdown after a fence is coloured again", "```\nx\n```\n**y**", []string{"code=```", "code=x", "code=```", "emphasis=y"}},
+		{"markdown after a fence is colored again", "```\nx\n```\n**y**", []string{"code=```", "code=x", "code=```", "emphasis=y"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -319,7 +319,7 @@ func TestAHeadingAndAListFoldUnderTheirMarker(t *testing.T) {
 }
 
 // A marker wider than the pane takes a row of its own, cut with an ellipsis, and
-// the ellipsis is not coloured.
+// the ellipsis is not colored.
 func TestAMarkerWiderThanThePaneKeepsItsEllipsisPlain(t *testing.T) {
 	in := "   1234567890. a b"
 	rows, spans := WrapBlockStyled(in, 6)
@@ -393,7 +393,7 @@ func TestNoSpansAreWorkedOutWithoutAWindow(t *testing.T) {
 }
 
 // notMarkdown reports whether a role is one the frame gives its chrome and its
-// notices, which colour on and colour off alike draw, rather than one of the
+// notices, which color on and color off alike draw, rather than one of the
 // roles of the markdown in a reply.
 func notMarkdown(r role) bool {
 	return r == roleChrome || r == roleTitle || r == roleNotice
@@ -410,7 +410,7 @@ func replyFrame(text string) Frame {
 
 // The row a reply entry folds to carries its spans through the frame: the
 // pane's rows are the rows WrapBlock gave, and the spans are the twin's.
-func TestTheFrameColoursAReplyEntryOnly(t *testing.T) {
+func TestTheFrameColorsAReplyEntryOnly(t *testing.T) {
 	f := replyFrame("a **bold** word\n```\ncode\n```")
 	rows, spans, _, _ := renderStyled(f, 30, 60)
 	got := map[string]string{}
@@ -423,14 +423,14 @@ func TestTheFrameColoursAReplyEntryOnly(t *testing.T) {
 		}
 	}
 	if got["a bold word"] != "emphasis=bold;" {
-		t.Errorf("the reply was not coloured: %v", got)
+		t.Errorf("the reply was not colored: %v", got)
 	}
 	if got["code"] != "code=code;" {
-		t.Errorf("the code was not coloured: %v", got)
+		t.Errorf("the code was not colored: %v", got)
 	}
 	for text, spans := range got {
 		if strings.Contains(text, "question") || text == "a note" {
-			t.Errorf("a line that is not a reply was coloured: %q %s", text, spans)
+			t.Errorf("a line that is not a reply was colored: %q %s", text, spans)
 		}
 	}
 }
@@ -457,46 +457,46 @@ func TestTypedLinesAndNotesStayPlain(t *testing.T) {
 	}
 }
 
-// Colour off draws the bytes it always did and works out no markdown span.
-func TestColourOffWorksOutNoMarkdownSpans(t *testing.T) {
+// Color off draws the bytes it always did and works out no markdown span.
+func TestColorOffWorksOutNoMarkdownSpans(t *testing.T) {
 	on := replyFrame(sampleReply)
 	off := on
 	off.styleReplies = false
 	rowsOn, spansOn, _, _ := renderStyled(on, 40, 60)
 	rowsOff, spansOff, _, _ := renderStyled(off, 40, 60)
 	if strings.Join(rowsOn, "\n") != strings.Join(rowsOff, "\n") {
-		t.Fatal("colour changed the rows")
+		t.Fatal("color changed the rows")
 	}
 	if len(spansOn) != len(spansOff) {
 		t.Fatalf("%d span lists on, %d off", len(spansOn), len(spansOff))
 	}
-	coloured := 0
+	colored := 0
 	for i := range rowsOn {
 		for _, sp := range spansOff[i] {
 			if !notMarkdown(sp.role) {
-				t.Errorf("colour off made a reply span: %+v on %q", sp, rowsOff[i])
+				t.Errorf("color off made a reply span: %+v on %q", sp, rowsOff[i])
 			}
 		}
 		for _, sp := range spansOn[i] {
 			if !notMarkdown(sp.role) {
-				coloured++
+				colored++
 			}
 		}
 	}
-	if coloured == 0 {
-		t.Error("colour on coloured nothing in the reply")
+	if colored == 0 {
+		t.Error("color on colored nothing in the reply")
 	}
 
 	sc, read := screenCapture(t)
 	sc.height, sc.width = 40, 60
 	sc.DrawFrame(rowsOff, framePaint{spans: spansOff, twiddle: -1})
 	if got, want := read(), oldFrame(rowsOff, 40); !strings.HasPrefix(got, want) {
-		t.Errorf("colour off is not the old bytes\n got %q\nwant %q", got, want)
+		t.Errorf("color off is not the old bytes\n got %q\nwant %q", got, want)
 	}
 }
 
-// With colour on, the row text is the same and only sequences are added.
-func TestColourOnOnlyAddsSequences(t *testing.T) {
+// With color on, the row text is the same and only sequences are added.
+func TestColorOnOnlyAddsSequences(t *testing.T) {
 	f := replyFrame(sampleReply)
 	rows, spans, _, _ := renderStyled(f, 40, 60)
 	height, width := 40, 60
@@ -512,7 +512,7 @@ func TestColourOnOnlyAddsSequences(t *testing.T) {
 	sc2.DrawFrame(rows, framePaint{spans: spans, pal: &pal, twiddle: -1})
 	on := read2()
 	if csi.ReplaceAllString(on, "") != csi.ReplaceAllString(off, "") {
-		t.Error("the text with colour stripped is not the colour-off text")
+		t.Error("the text with color stripped is not the color-off text")
 	}
 	for _, want := range []string{pal.role(roleHeading), pal.role(roleEmphasis), pal.role(roleCode),
 		pal.role(roleQuote), pal.role(roleList), pal.role(roleLink)} {
@@ -530,7 +530,7 @@ func TestColourOnOnlyAddsSequences(t *testing.T) {
 	}
 }
 
-// The spans of every row of a frame, with colour on, line up with the rows and
+// The spans of every row of a frame, with color on, line up with the rows and
 // stay inside them, over every reply and every size.
 func TestFrameSpansHoldAtEverySize(t *testing.T) {
 	for _, in := range replyCorpus() {
@@ -557,9 +557,9 @@ func TestFrameSpansHoldAtEverySize(t *testing.T) {
 	}
 }
 
-// A partial and the entry it becomes are coloured the same, row for row, so the
-// colour does not change when the stream ends.
-func TestAPartialAndItsEntryAreColouredAlike(t *testing.T) {
+// A partial and the entry it becomes are colored the same, row for row, so the
+// color does not change when the stream ends.
+func TestAPartialAndItsEntryAreColoredAlike(t *testing.T) {
 	for n := 0; n <= len(sampleReply); n += 3 {
 		text := strings.TrimRight(sampleReply[:n], "\n")
 		streaming := Frame{Reply: []string{"> q"}, Kinds: []entryKind{{}}, Partial: text, styleReplies: true}
@@ -571,16 +571,16 @@ func TestAPartialAndItsEntryAreColouredAlike(t *testing.T) {
 		}
 		for i := range a {
 			if fmt.Sprint(a[i]) != fmt.Sprint(b[i]) {
-				t.Fatalf("cut at %d: row %d %q changed colour when the stream ended: %+v then %+v",
+				t.Fatalf("cut at %d: row %d %q changed color when the stream ended: %+v then %+v",
 					n, i, ra[i], a[i], b[i])
 			}
 		}
 	}
 }
 
-// What is open when a stream is cut is coloured as the renderer already treats
+// What is open when a stream is cut is colored as the renderer already treats
 // it: a fence with no end is code, and a marker with no partner is text.
-func TestWhatIsOpenMidStreamIsColouredAsTheRendererTreatsIt(t *testing.T) {
+func TestWhatIsOpenMidStreamIsColoredAsTheRendererTreatsIt(t *testing.T) {
 	got := styledAs("text **bold\n```\ncode", 80)
 	want := []string{"-", "code=```", "code=code"}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
@@ -588,7 +588,7 @@ func TestWhatIsOpenMidStreamIsColouredAsTheRendererTreatsIt(t *testing.T) {
 	}
 	got = styledAs("an *open marker and `an open tick and [a link](", 80)
 	if strings.Join(got, "\n") != "-" {
-		t.Errorf("got %q, want nothing coloured", got)
+		t.Errorf("got %q, want nothing colored", got)
 	}
 }
 
@@ -619,7 +619,7 @@ func bigReply(n int) string {
 }
 
 // A repaint is the cost of the fold and a screenful of spans: growing the reply
-// by a factor of ten grows the colour-on repaint by about that factor and no
+// by a factor of ten grows the color-on repaint by about that factor and no
 // more. The bound is loose, since a timing is only roughly proportional, and it
 // is there to catch a repaint that goes with the square.
 func TestARepaintIsNotQuadraticInTheReply(t *testing.T) {
@@ -664,7 +664,7 @@ func TestLinkScanIsLinear(t *testing.T) {
 	}
 }
 
-func TestADelegateAnswerIsColouredAndItsQuestionIsNot(t *testing.T) {
+func TestADelegateAnswerIsColoredAndItsQuestionIsNot(t *testing.T) {
 	s := &Session{}
 	s.addDelegateLines("/delegate what is **this**", "a note with `code`")
 	s.mu.Lock()
@@ -691,6 +691,6 @@ func TestADelegateAnswerIsColouredAndItsQuestionIsNot(t *testing.T) {
 		}
 	}
 	if len(got) != 1 || strings.Join(got["the answer with `code`"], "|") != "emphasis=answer|code=`code`" {
-		t.Errorf("only the answer should be coloured: %v", got)
+		t.Errorf("only the answer should be colored: %v", got)
 	}
 }

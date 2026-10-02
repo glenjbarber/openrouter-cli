@@ -32,8 +32,8 @@ func BenchmarkLegacyWrapBlock5000(b *testing.B) {
 	}
 }
 
-// A repaint with colour off is what every repaint cost before colour existed.
-func BenchmarkRepaint5000ColourOff(b *testing.B) {
+// A repaint with color off is what every repaint cost before color existed.
+func BenchmarkRepaint5000ColorOff(b *testing.B) {
 	f := Frame{Reply: []string{bigReply(5000)}, Kinds: []entryKind{{kind: kindReply}}}
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -42,8 +42,8 @@ func BenchmarkRepaint5000ColourOff(b *testing.B) {
 	}
 }
 
-// A repaint with colour on adds the spans of the rows in sight.
-func BenchmarkRepaint5000ColourOn(b *testing.B) {
+// A repaint with color on adds the spans of the rows in sight.
+func BenchmarkRepaint5000ColorOn(b *testing.B) {
 	f := Frame{Reply: []string{bigReply(5000)}, Kinds: []entryKind{{kind: kindReply}}, styleReplies: true}
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -53,7 +53,7 @@ func BenchmarkRepaint5000ColourOn(b *testing.B) {
 }
 
 // The same repaint scrolled to the middle of the reply.
-func BenchmarkRepaint5000ColourOnScrolled(b *testing.B) {
+func BenchmarkRepaint5000ColorOnScrolled(b *testing.B) {
 	f := Frame{Reply: []string{bigReply(5000)}, Kinds: []entryKind{{kind: kindReply}}, styleReplies: true, Scroll: 3000}
 	b.ReportAllocs()
 	b.ResetTimer()
