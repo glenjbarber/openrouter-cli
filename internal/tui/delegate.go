@@ -67,6 +67,10 @@ func (d *Delegate) Run(ctx context.Context, c *openrouter.Client, model string,
 
 	d.mu.Lock()
 	d.conv.messages = append(d.conv.messages, openrouter.Message{
+		Role:    openrouter.RoleSystem,
+		Content: delegateNotice,
+	})
+	d.conv.messages = append(d.conv.messages, openrouter.Message{
 		Role:    openrouter.RoleUser,
 		Content: d.task,
 	})
@@ -154,6 +158,12 @@ func (s *Session) startDelegate(task string) {
 	// The label goes in the pane first, so the reader sees the question before
 	// the answer rather than after.
 	s.appendLines("/delegate " + task)
+	// The reader is told the same thing the model is, since a delegate that
+	// answers short of what the question needed is otherwise a reader
+	// wondering whether the model did not understand it.
+	s.appendLines("A delegate is given no tools, so it answers from the " +
+		"conversation and from what it already knows. Ask the conversation " +
+		"itself for anything it would have to go and look at.")
 	s.draw()
 
 	go func() {
@@ -202,3 +212,19 @@ func (s *Session) delegatePending() int {
 	defer s.mu.Unlock()
 	return len(s.delegates)
 }
+
+// delegateNotice tells the model what a delegate is and is not given.
+//
+// A delegate is sent no tools, since it records nothing and a tool acts on the
+// host. A model that is not told will ask for one anyway when the question calls
+// for it, and a provider asked for a call it was not offered streams the
+// markup as text: the reader sees a tool call written out in the reply rather
+// than a reply at all.
+//
+// Saying so is what stops it. It is the same notice a thread gives, for the
+// same reason, since both are conversations that promise nothing is recorded.
+const delegateNotice = "You are answering one question alongside a conversation " +
+	"that is still going on. You are not given any tools: you cannot read a " +
+	"file, run a program or look at a repository. Answer from the conversation " +
+	"and from what you already know. If the question needs something you cannot " +
+	"reach, say what is missing rather than asking to be given a tool."
