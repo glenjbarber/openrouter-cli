@@ -837,7 +837,7 @@ func render(f Frame, height, width int) ([]string, int, int) {
 		}
 		body = append(body, line)
 	}
-	body = append(body, indent(promptMark, "", confirmInput(f), width))
+	body = append(body, indent(promptMark, "", confirmInput(f), inputWidth(width)))
 
 	// The row below the prompt is a rule at the very bottom of the frame, with
 	// a blank between it and the prompt. The blank is what keeps the rule from
@@ -1462,3 +1462,41 @@ func firstRune(s string) string {
 	}
 	return ""
 }
+
+// inputNumerator and inputDenominator are the fraction of the terminal the
+// composed line is drawn across.
+//
+// Three quarters rather than the whole width. A line long enough to reach the
+// edge of the terminal carries the eye off the end of the screen and the reader
+// has to find the end of it again to see what they last typed, and a prompt that
+// spans the whole width gives the conversation above it no visible edge, so the
+// two run into each other.
+//
+// The line is not cut at that width: a long one keeps its tail, and what is
+// dropped is the part already spoken for. The reader is looking at the end of
+// what they are writing, and the end is the only part they cannot read from
+// memory.
+const (
+	inputNumerator   = 3
+	inputDenominator = 4
+)
+
+// inputWidth is how many columns the composed line is drawn across.
+//
+// The floor keeps a prompt readable on a terminal too narrow for the fraction to
+// mean anything: three quarters of nothing is nothing, and a prompt that cannot
+// show a word is worse than a narrow one.
+func inputWidth(width int) int {
+	narrow := width * inputNumerator / inputDenominator
+	if narrow < minInputWidth {
+		return width
+	}
+	return narrow
+}
+
+// minInputWidth is the width below which the composed line is drawn across the
+// whole terminal rather than a fraction of it.
+//
+// Four columns is the prompt mark and two characters, which is the least that
+// shows anything of what is being typed.
+const minInputWidth = 6

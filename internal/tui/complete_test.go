@@ -73,19 +73,28 @@ func TestTheSecondTabMovesToTheNextMatch(t *testing.T) {
 	}
 }
 
-// Tab past the last match stays there rather than wrapping, since wrapping
-// puts the reader back at a word they had already moved past.
-func TestTheLastMatchStaysPut(t *testing.T) {
+// The cycle wraps round, as the model filter does, so a reader who has seen
+// the whole set and presses Tab again is taken back to the first rather than
+// handed a key that has stopped doing anything.
+func TestTheCycleWrapsRound(t *testing.T) {
 	s := completionSession()
 
-	seen := map[string]bool{}
 	line := "/mo"
-	for i := 0; i < 8; i++ {
+	seen := map[string]bool{}
+	var first string
+	for i := 0; i < 5; i++ {
 		line = s.completeLine(line)
+		if i == 0 {
+			first = line
+		}
 		seen[line] = true
 	}
+
 	if len(seen) < 2 {
-		t.Errorf("eight presses of Tab reached %d matches", len(seen))
+		t.Fatalf("five presses of Tab reached %d matches", len(seen))
+	}
+	if !seen[first] {
+		t.Errorf("the cycle did not come back to the first match: %v", seen)
 	}
 }
 
@@ -178,5 +187,24 @@ func TestTheResultKindsAreUnchanged(t *testing.T) {
 	}
 	if got := c.Complete("/mo", 3); got.Kind != complete.Ambiguous {
 		t.Errorf("/mo is %v, want Ambiguous", got.Kind)
+	}
+}
+
+// The listing says where in the set the reader is, as the model filter does,
+// since the line itself already holds the choice.
+func TestTheListingSaysWhichMatchIsInForce(t *testing.T) {
+	s := completionSession()
+
+	s.completeLine("/mo")
+
+	joined := strings.Join(s.frame.Reply, "\n")
+	if !strings.Contains(joined, "[1 of 3]") {
+		t.Errorf("the listing does not say which match is in force:\n%s", joined)
+	}
+
+	s.completeLine(s.completeLine("/mo"))
+	joined = strings.Join(s.frame.Reply, "\n")
+	if !strings.Contains(joined, "[2 of 3]") {
+		t.Errorf("the listing does not follow the cycle:\n%s", joined)
 	}
 }

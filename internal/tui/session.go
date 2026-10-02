@@ -185,6 +185,10 @@ type Session struct {
 	// because the user asked for it, or because it was left on by a crash,
 	// which is reported at startup rather than honoured silently.
 	cognito bool
+	// verbosity is the level at which the model is asked to answer, from 0 to 6.
+	// It is guarded by mu, since the request goroutine reads it to build a turn
+	// and the command writes it from the input goroutine.
+	verbosity int
 	// verbose reports that the pane should describe the shape of each
 	// streamed turn. It is a display mode rather than a recording one, so
 	// nothing about the request or the conversation changes because of it.
@@ -267,6 +271,11 @@ func Start(out, in *os.File, title string) (*Session, error) {
 	// something that is not going to change.
 	s.approvals = newApprovalState()
 	s.answered = make(chan bool, 1)
+	// The level a session starts at is the one the configuration file names,
+	// which is a preference rather than a setting: it is about the conversation
+	// rather than about the client. A session with no file, or one naming a
+	// level that is not one, starts at the default.
+	s.verbosity = clampVerbosity(cfgVerbosity(s.cfg))
 	// The rules are read at startup rather than on each call, since they change
 	// only through /permission and a call asking the filesystem what is
 	// permitted is a call on the path of every program run.
@@ -727,6 +736,7 @@ func init() {
 		{names: []string{"/new"}, description: "clear the conversation", run: (*Session).cmdNew, idleOnly: true},
 		{names: []string{"/bell"}, description: "ring the terminal bell on reply, on or off", run: (*Session).cmdBell},
 		{names: []string{"/cognito"}, description: "record nothing, on or off", run: (*Session).cmdCognito},
+		{names: []string{"/verbosity"}, usage: "/verbosity [0-6]", description: "how much the model is asked to answer with", run: (*Session).cmdVerbosity},
 		{names: []string{"/verbose"}, description: "report the shape of each streamed turn, on or off", run: (*Session).cmdVerbose},
 		{names: []string{"/delegate"}, usage: "/delegate QUESTION", description: "ask a question alongside, without recording it", run: (*Session).cmdDelegate},
 		{names: []string{"/btw"}, description: "start a thread branched from this conversation", run: (*Session).cmdBtw, idleOnly: true},
@@ -1021,6 +1031,11 @@ func (s *Session) completeLine(line string) string {
 	// so completing it yields that command again and the reader would never
 	// reach the second match at all.
 	if s.cycleNext(res) {
+		// The candidates are listed again as well as cycled, so the position
+		// in the set is on screen while the reader moves through it. The model
+		// filter does the same: it re-renders its listing on every cycle so
+		// the count in its heading follows the choice.
+		s.showCandidates(res)
 		return s.cycleLine(res)
 	}
 
@@ -1079,12 +1094,11 @@ func (s *Session) cycleNext(res complete.Result) bool {
 	if res.Prefix != s.completedPrefix && !s.holdingName(res.Prefix) {
 		return false
 	}
-	if s.completedAt+1 >= len(s.completedNames) {
-		// The last match is where it stays, since wrapping round would put the
-		// reader back at a word they had already been offered and moved past.
-		return false
-	}
-	s.completedAt++
+	// The cycle wraps round, as the model filter does, so that a reader
+	// pressing Tab past the last match comes back to the first. A reader who
+	// has seen the whole set and presses Tab again is asking to start over
+	// rather than being handed a key that has stopped doing anything.
+	s.completedAt = (s.completedAt + 1) % len(s.completedNames)
 	return true
 }
 
@@ -1141,8 +1155,23 @@ func (s *Session) showCandidates(res complete.Result) {
 			width = len(c.Name)
 		}
 	}
+
+	s.mu.Lock()
+	at := s.completedAt
+	held := len(s.completedNames)
+	s.mu.Unlock()
+
+	head := res.Set + " matching " + res.Prefix
+	if held > 0 {
+		// The position is stated in the heading rather than marked against a
+		// row, as it is for the model filter. The line already holds the
+		// choice, so a marker would repeat what the reader can see, while the
+		// heading says which of the set they are on.
+		head += fmt.Sprintf(" [%d of %d]", at+1, held)
+	}
+
 	lines := make([]string, 0, len(res.Candidates)+1)
-	lines = append(lines, res.Set+" matching "+res.Prefix)
+	lines = append(lines, head)
 	for _, c := range res.Candidates {
 		lines = append(lines, fmt.Sprintf("%-*s  %s", width, c.Name, c.Description))
 	}
@@ -1795,7 +1824,7 @@ func (s *Session) send(ctx context.Context, conv *Conversation, line string) {
 
 		err := s.client.Chat(ctx, openrouter.ChatRequest{
 			Model:    conv.Model(),
-			Messages: conv.PendingMessages(pending),
+			Messages: conv.PendingMessages(pending, s.verbosityLevel()),
 			Tools:    specs,
 		}, func(e openrouter.StreamEvent) {
 			report.note(e)
@@ -2425,4 +2454,14 @@ func (s *Session) holdingName(name string) bool {
 func lastWordEnd(line string) int {
 	trimmed := strings.TrimRight(line, " \t")
 	return len(trimmed)
+}
+
+// verbosityLevel is the level the session is asking for, taken under the lock.
+//
+// It is read on the request goroutine and written by the command on the input
+// one, so it is taken under the same lock as the rest of what a turn reads.
+func (s *Session) verbosityLevel() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.verbosity
 }
