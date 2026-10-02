@@ -731,6 +731,27 @@ so that a later change does not silently reverse it.
   the tree to learn that a value is optional, which is the worse trade.
 - `/tools` reports the tools, their argument schemas and the root. It is the
   only place a reader can find out what the client is willing to do.
+- `/approve` reports or sets the mode, which is `ask`, `allow` or `refuse` and
+  settles every call a file rule does not and no earlier answer has.
+- The mode is a session preference and is not written to the configuration
+  file. A file is somewhere a permission outlives the reading of it, and
+  anything that would run every program without a question is not something to
+  leave behind in a file a later run opens without being told what it holds. A
+  permission the reader means to keep is a rule under `OPENROUTER_TOOLS`, which
+  is asked for rather than switched on.
+- A mode of allow does not widen the allowlist. A program outside it is refused
+  by the tool before the mode is reached, so allowing says nothing about what
+  may be proposed, only about what happens to what has been.
+- A file rule settles a call whatever the mode says. A mode is a decision about
+  what to ask rather than a revocation of what was permitted in advance, and a
+  reader who permitted something in a file meant it.
+- Changing the mode clears the answers remembered for the session, since an
+  answer given while asking is an answer to one question. Without that, a
+  reader moving from refusing to allowing would find every program they had
+  once refused still refused.
+- `/approve` is refused while a model is working, since a turn in flight is
+  holding a question and changing the answer under it settles a call the reader
+  never saw.
 - The model is given a shell, which runs a program in the working directory,
   such as `go build ./...`. It is the first tool that runs something on the
   host rather than reading the tree, and it is what made asking about a call

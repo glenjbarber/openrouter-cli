@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/glenjbarber/openrouter-cli/internal/config"
 	"github.com/glenjbarber/openrouter-cli/internal/tools"
 )
 
@@ -38,15 +39,62 @@ type approvalState struct {
 	granted map[string]bool
 	// refused holds the programs the reader refused for the session.
 	refused map[string]bool
+	// mode is what happens to a call that is not settled by a rule in the file
+	// or by an answer given earlier in the session.
+	mode approvalMode
 }
 
-// newApprovalState returns the state a session begins with, permitting nothing
-// and refusing nothing, so that the first call of each program is asked about.
+// The modes the approval can be in.
+//
+// They are named for what they do to a question rather than for the reader who
+// set them, since a reader setting a mode is answering for themselves and the
+// model is what the mode governs.
+type approvalMode int
+
+const (
+	// modeAsk puts every call to the reader.
+	modeAsk approvalMode = iota
+	// modeAllow approves without asking. A file rule still governs what may be
+	// proposed at all, so this does not widen the allowlist.
+	modeAllow
+	// modeRefuse refuses every call without asking. A model told a program was
+	// refused learns that, rather than being left to ask again.
+	modeRefuse
+)
+
+// String renders the mode as the status bar and the command report it.
+func (m approvalMode) String() string {
+	switch m {
+	case modeAllow:
+		return "allow"
+	case modeRefuse:
+		return "refuse"
+	default:
+		return "ask"
+	}
+}
+
+// newApprovalState returns the state a session begins with: asking about
+// everything, permitting nothing and refusing nothing, so that the first call
+// of each program is put to the reader.
 func newApprovalState() *approvalState {
 	return &approvalState{
 		granted: make(map[string]bool),
 		refused: make(map[string]bool),
+		mode:    modeAsk,
 	}
+}
+
+// setMode changes the mode and says what it changed.
+//
+// The remembered answers are cleared, since an answer given while asking is an
+// answer to one question and a mode that stops asking makes them meaningless. A
+// reader who moves from refusing to allowing would otherwise find every
+// program they had once refused still refused.
+func (a *approvalState) setMode(m approvalMode) {
+	a.mode = m
+	clear(a.granted)
+	clear(a.refused)
 }
 
 // remembered reports what the reader already decided about a program.
@@ -97,9 +145,24 @@ func (s *Session) Approve(command string, args []string, dir string) bool {
 
 	s.mu.Lock()
 	decided, answered := s.approvals.remembered(command)
+	mode := s.approvals.mode
 	s.mu.Unlock()
 	if answered {
 		return decided
+	}
+
+	// The mode settles the call before a question is put, so that a reader who
+	// has said to stop being asked is not asked. The allowlist is not widened:
+	// a program outside it is refused by the tool before the mode is reached,
+	// so allowing a mode says nothing about what may be proposed.
+	switch mode {
+	case modeAllow:
+		s.mu.Lock()
+		s.approvals.record(command, true)
+		s.mu.Unlock()
+		return true
+	case modeRefuse:
+		return false
 	}
 
 	if err := s.putQuestion(command, args, dir); err != nil {
@@ -262,3 +325,107 @@ const (
 	keyApproveOnceUpper = 'Y'
 	keyApproveAllUpper  = 'A'
 )
+
+// cmdApprove reports or changes the approval mode.
+//
+// The mode is a session preference and is not written to the configuration
+// file. A file is somewhere a permission outlives the reading of it, and
+// anything that would run every program without a question is not something to
+// leave behind in a file that a later run opens without being told what it
+// holds. A permission the reader means to keep is a rule under
+// OPENROUTER_TOOLS, which is asked for rather than switched on.
+//
+// The mode is refused while a model is working, since a turn in flight holds the
+// question it asked and changing the answer under it would settle a call the
+// reader never saw.
+func (s *Session) cmdApprove(args []string) bool {
+	if s.working() {
+		s.addReply("(/approve is refused while a model is working, since the turn in " +
+			"flight is holding a question; wait for the answer and try again)")
+		return false
+	}
+	if len(args) == 0 {
+		s.appendLines(strings.Join(s.approvalListing(), "\n"))
+		return false
+	}
+
+	want := strings.ToLower(strings.Join(args, " "))
+	var mode approvalMode
+	switch want {
+	case "ask", "every", "every time":
+		mode = modeAsk
+	case "allow", "all", "yes", "approve":
+		mode = modeAllow
+	case "refuse", "no", "reject", "never":
+		mode = modeRefuse
+	default:
+		s.addReply("(/approve takes ask, allow or refuse; not " + want + ")")
+		return false
+	}
+
+	s.mu.Lock()
+	s.approvals.setMode(mode)
+	s.mu.Unlock()
+	s.updateStatus()
+
+	switch mode {
+	case modeAllow:
+		s.appendLines("approval is off: every program the model may run will run " +
+			"without a question. It stays that way until /approve ask, or until " +
+			"the session ends.")
+	case modeRefuse:
+		s.appendLines("approval is off: every program will be refused, and the " +
+			"model is told so rather than left to ask again.")
+	default:
+		s.appendLines("approval is on: every program is put to you before it runs.")
+	}
+	return false
+}
+
+// approvalListing says what the shell will do with a call, and what the reader
+// has already decided.
+func (s *Session) approvalListing() []string {
+	s.mu.Lock()
+	mode := s.approvals.mode
+	granted, refused := len(s.approvals.granted), len(s.approvals.refused)
+	s.mu.Unlock()
+
+	lines := []string{
+		"approval: " + mode.String() + " (y approves once, a approves for the " +
+			"session, anything else refuses; a mode of allow or refuse is asked " +
+			"of nobody)",
+	}
+	if !s.tools.offersShell() {
+		return lines
+	}
+
+	var rules []config.ApprovalRule
+	if s.cfg != nil {
+		rules = s.cfg.Tools
+	}
+	if permitted := config.PermittedCommands(rules, s.tools.dir); len(permitted) > 0 {
+		lines = append(lines, "  permitted by the configuration file here: "+
+			strings.Join(permitted, ", "))
+	} else {
+		lines = append(lines, "  no rule covers this directory, so the file "+
+			"permits nothing on its own")
+	}
+	switch {
+	case granted > 0:
+		lines = append(lines, "  granted for this session: "+itoa(granted)+" programs")
+	case refused > 0:
+		lines = append(lines, "  refused for this session: "+itoa(refused)+" programs")
+	}
+	return lines
+}
+
+// setApprovalMode changes the mode outside the command.
+//
+// It exists so that the command and a test agree on what changing the mode
+// does. Clearing the remembered answers is part of it, since an answer given
+// while asking is an answer to one question.
+func (s *Session) setApprovalMode(mode approvalMode) {
+	s.mu.Lock()
+	s.approvals.setMode(mode)
+	s.mu.Unlock()
+}
