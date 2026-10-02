@@ -46,22 +46,68 @@ const maxDelimRun = 3
 // A fenced block never reaches here, because the wrapper separates the block
 // before this is called. A line inside one is left exactly as it was written.
 func renderMarkdown(line string, width int) []string {
+	rows, _ := renderMarkdownRows(line, width, false)
+	return rows
+}
+
+// renderMarkdownRows renders one line of prose, folds it to width, and when
+// track is set also returns the style spans of each row.
+//
+// The text is the same with track set or clear, since both are the one path:
+// the spans are worked out beside the text and never decide it. A line that is
+// quoted, a heading, or a list item takes the roles below, and the inline
+// constructs inside it are laid over them.
+func renderMarkdownRows(line string, width int, track bool) ([]string, [][]span) {
 	if width < 1 {
 		width = wrapWidth
 	}
 	if strings.TrimSpace(line) == "" {
-		return []string{""}
+		return []string{""}, blankSpans(1, track)
 	}
 	if prefix, text, ok := splitHeading(line); ok {
-		return foldConstruct(prefix, text, width)
+		return foldConstructRows(prefix, text, width, roleHeading, roleHeading, track)
 	}
 	if prefix, text, ok := splitListItem(line); ok {
-		return foldConstruct(prefix, text, width)
+		return foldConstructRows(prefix, text, width, roleList, noRole, track)
 	}
-	return foldWords(renderInline(line), width)
+	text, marks := scanInline(line, track)
+	if !track {
+		return foldWords(text, width), nil
+	}
+	base := noRole
+	if isQuote(line) {
+		base = roleQuote
+	}
+	return foldWordsStyled(text, paintRoles(len(text), base, marks), width)
+}
+
+// blankSpans returns a list of n empty span lists, or none when spans are not
+// being tracked.
+func blankSpans(n int, track bool) [][]span {
+	if !track {
+		return nil
+	}
+	return make([][]span, n)
+}
+
+// isQuote reports whether a line is a block quote.
+//
+// It is recognised for colour only. The marker stays in the text, since
+// dropping it would edit the reply rather than show it, and the rows of a quote
+// that folds are not indented under it.
+func isQuote(line string) bool {
+	t := strings.TrimLeft(line, " \t")
+	return t == ">" || strings.HasPrefix(t, "> ")
 }
 
 // foldConstruct folds the text of a block construct under its marker.
+func foldConstruct(prefix, text string, width int) []string {
+	rows, _ := foldConstructRows(prefix, text, width, noRole, noRole, false)
+	return rows
+}
+
+// foldConstructRows folds the text of a block construct under its marker, and
+// when track is set returns the spans of each row.
 //
 // The rows after the first are indented to line up under the first character
 // of the text, since a construct whose rows ran back to the edge would read as
@@ -73,31 +119,62 @@ func renderMarkdown(line string, width int) []string {
 // up with, so the text is folded to the full width and the marker takes a row
 // of its own. That row is left over the edge rather than cut, which is what a
 // row holding a word wider than the pane does as well.
-func foldConstruct(prefix, text string, width int) []string {
+//
+// The marker is drawn in prefixRole and the text starts from textRole. The
+// spans of the text are shifted by the width of what stands in front of them on
+// each row, which is the marker on the first and the indent on the others.
+func foldConstructRows(prefix, text string, width int, prefixRole, textRole role, track bool) ([]string, [][]span) {
 	// The text is rendered here rather than by the caller, so that a heading
 	// and a list item cannot each forget to do it.
-	text = renderInline(text)
+	text, marks := scanInline(text, track)
+	var roles []int8
+	if track {
+		roles = paintRoles(len(text), textRole, marks)
+	}
+	fold := func(w int) ([]string, [][]span) {
+		if !track {
+			return foldWords(text, w), nil
+		}
+		return foldWordsStyled(text, roles, w)
+	}
 
 	// The hang is measured in columns, since a marker carrying a wide
 	// character takes two of them and indenting the rows under a count that
 	// says one would leave them short of the text they belong to.
 	hang := displayWidth(prefix)
 	if hang >= width {
-		rows := foldWords(text, width)
-		return append([]string{truncate(prefix, width)}, rows...)
+		rows, sp := fold(width)
+		head := truncate(prefix, width)
+		out := append([]string{head}, rows...)
+		if !track {
+			return out, nil
+		}
+		return out, append([][]span{markerSpans(head, prefix, prefixRole)}, sp...)
 	}
 
-	rows := foldWords(text, width-hang)
+	rows, sp := fold(width - hang)
 	indent := strings.Repeat(" ", hang)
 	out := make([]string, 0, len(rows))
+	var spans [][]span
+	if track {
+		spans = make([][]span, 0, len(rows))
+	}
 	for i, row := range rows {
+		lead := indent
 		if i == 0 {
-			out = append(out, prefix+row)
+			lead = prefix
+		}
+		out = append(out, lead+row)
+		if !track {
 			continue
 		}
-		out = append(out, indent+row)
+		shifted := shiftSpans(sp[i], len(lead))
+		if i == 0 {
+			shifted = append(markerSpans(prefix, prefix, prefixRole), shifted...)
+		}
+		spans = append(spans, shifted)
 	}
-	return out
+	return out, spans
 }
 
 // splitHeading separates the marker of an ATX heading from its text.
@@ -202,6 +279,19 @@ func splitListItem(line string) (prefix, text string, ok bool) {
 // do, but it changes the text and an escape is rare enough that the mark is
 // cheaper than the edit.
 func renderInline(s string) string {
+	out, _ := scanInline(s, false)
+	return out
+}
+
+// scanInline is renderInline, and when track is set it also reports where the
+// emphasised spans and the code spans lie in the text it returns.
+//
+// The offsets are bytes into the returned text, since that is the text the rows
+// are cut from: the markers that were stripped are not in it, so every offset
+// after one has moved against the source. A link is recognised in the returned
+// text rather than in the source, for the same reason, and never rewrites it.
+// The text returned is the same with track set or clear.
+func scanInline(s string, track bool) (string, []inlineMark) {
 	r := []rune(s)
 	var b strings.Builder
 
@@ -210,11 +300,19 @@ func renderInline(s string) string {
 	// its way past. They are kept on a stack because emphasis nests, and one
 	// remembered run would be overwritten by the run inside it.
 	var closing []int
+	// opens is where each remembered closing run's span begins in the output.
+	// It is pushed and popped with closing, so the two never differ in depth.
+	var opens []int
+	var emph, code []inlineMark
 
 	for i := 0; i < len(r); {
 		if n := len(closing); n > 0 && i == closing[n-1] {
 			i += runLen(r, i, r[i])
 			closing = closing[:n-1]
+			if track {
+				emph = append(emph, inlineMark{start: opens[n-1], end: b.Len(), role: roleEmphasis})
+				opens = opens[:n-1]
+			}
 			continue
 		}
 
@@ -229,7 +327,11 @@ func renderInline(s string) string {
 				// A code span is taken whole, so that a marker inside one
 				// survives as the character it is rather than being read as
 				// emphasis laid over code.
+				from := b.Len()
 				b.WriteString(string(r[i : end+n]))
+				if track {
+					code = append(code, inlineMark{start: from, end: b.Len(), role: roleCode})
+				}
 				i = end + n
 				continue
 			}
@@ -251,13 +353,23 @@ func renderInline(s string) string {
 				continue
 			}
 			closing = append(closing, end)
+			if track {
+				opens = append(opens, b.Len())
+			}
 			i += n
 		default:
 			b.WriteRune(c)
 			i++
 		}
 	}
-	return b.String()
+	out := b.String()
+	if !track {
+		return out, nil
+	}
+	// The marks are returned in the order they are painted in, so a later one
+	// wins where two cover the same byte: emphasis, then code, then a link.
+	marks := append(emph, code...)
+	return out, append(marks, findLinks(out, code)...)
 }
 
 // opensSpan reports whether a run of markers can begin an emphasised span.

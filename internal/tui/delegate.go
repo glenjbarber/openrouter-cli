@@ -197,7 +197,7 @@ func (s *Session) startDelegate(task string) {
 			// request path uses.
 			s.dpane.lines = append(s.dpane.lines, "(the model returned nothing)")
 		default:
-			s.dpane.lines = append(s.dpane.lines, answer)
+			s.dpane.addAnswer(answer)
 		}
 		s.mu.Unlock()
 		s.draw()

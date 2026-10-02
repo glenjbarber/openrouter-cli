@@ -79,3 +79,36 @@ func remapSpans(row string, spans []span) []span {
 	}
 	return out
 }
+
+// replyRun is a stretch of the rows of a frame that came from one piece of model
+// text: where it starts among the rows, how many rows it folded to, and the text
+// they were folded from.
+type replyRun struct {
+	start, n int
+	text     string
+}
+
+// fillReplySpans works out the markdown spans of the runs that reach the rows
+// from lo up to but not including hi, and stores them in spans beside the rows.
+//
+// A run is folded again, with spans, only when one of its rows is in sight. The
+// fold is the same one that made the rows, so its rows are the same, and a run
+// that did not come out the length it went in is left plain rather than risk
+// putting a span on the wrong row.
+func fillReplySpans(spans [][]span, runs []replyRun, width, lo, hi int) {
+	for _, run := range runs {
+		first, last := maxInt(lo, run.start), minInt(hi, run.start+run.n)
+		if first >= last {
+			continue
+		}
+		rows, sp := wrapBlock(run.text, width, first-run.start, last-run.start)
+		if len(rows) != run.n || len(sp) != last-first {
+			continue
+		}
+		for k, one := range sp {
+			if at := first + k; at < len(spans) {
+				spans[at] = one
+			}
+		}
+	}
+}

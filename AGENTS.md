@@ -1475,8 +1475,7 @@ so that a later change does not silently reverse it.
   A prefix such as `[fs]` or `(error)` is something a model can write as easily
   as the client can, so a guess would colour a sentence a model chose to begin
   that way as though the client had said it.
-  Model text is recorded as a reply and takes no colour of its own in this
-  form.
+  Model text is recorded as a reply, and only a reply takes markdown colour.
 - Every write that replaces `Frame.Reply` resets or trims `Frame.Kinds` with it,
   through `replaceReply`, `clearReply` and `syncKinds`.
   The search and the model listing replace the pane and restore it afterwards,
@@ -1489,6 +1488,52 @@ so that a later change does not silently reverse it.
   on the label.
   The streaming partial and the entry it becomes are both replies, so the colour
   does not change when the stream ends.
+- The markdown in a reply is coloured from spans, on the same terms as the rest.
+  The elements are code, headings, emphasis, quotes, list markers and links, and
+  each has its own role in the palette.
+  Bold and emphasis share one role, since the plain text keeps neither marker.
+- A construct is recognised for colour and never rewritten.
+  A line that begins with `> ` is a quote span, and a `[text](destination)` is a
+  link span over the whole of it as it appears, brackets and destination
+  included.
+  The text of every row is the text it was before colour existed, so quotes and
+  links are drawn as written and a quote that folds is not indented.
+- The fold has one implementation.
+  `WrapBlock` returns the rows and `WrapBlockStyled` returns the same rows with
+  their spans, and both are the one function, so the text cannot differ.
+  Offsets are bytes into the row.
+  The inline scan reports where emphasis and code lie in the text it leaves,
+  after the markers it strips, and the link scan reads that same text.
+- Where constructs overlap, a later one wins byte by byte, in this order: the
+  base role of the line (heading or quote), emphasis, code, link.
+  The roles are painted per byte before the fold, so the spans of a row come out
+  ordered and disjoint however the constructs nest.
+  The fold carries each word's roles to the row it lands on, and a span that
+  crosses a fold is split, one piece for each row.
+  The single space the fold puts between two words takes a role only where the
+  source gap and both words carry it, so an emphasised phrase is one span.
+- A span never covers padding.
+  Indentation and trailing spaces of a code row are left out, and an ellipsis
+  added by a cut is left unstyled.
+- A fenced block is code from its opening marker to its closing one, markers
+  included, and a block left open is code to the end, since that is how the
+  renderer treats it as text.
+  An unmatched marker, an unterminated backtick and a bracket with no
+  destination are text and take no span.
+  So a reply that is still streaming is coloured exactly as the renderer already
+  folds it, and the partial and the entry it becomes take the same spans.
+- Markdown spans are worked out only when colour is on, and only for the rows in
+  sight.
+  The frame is repainted on every tick of the spinner, so a repaint folds every
+  entry as it always did and then folds again, with spans, only the entries that
+  reach the visible rows, and the spans of those rows alone.
+  A repaint is therefore linear in the reply.
+  With colour off it costs what it always did.
+  The link scan is linear in the length of a line.
+- The delegate pane records its answers as replies, and its question and its
+  notes stay plain.
+  The answer that is still arriving in the delegate pane is drawn as a single
+  unfolded row today and takes no colour until it is finished.
 
 ### Echo
 

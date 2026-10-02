@@ -385,6 +385,10 @@ type Frame struct {
 	Status Status
 	// Reply holds the messages exchanged so far.
 	Reply []string
+	// styleReplies asks the renderer to work out the markdown spans of model
+	// text. It is set when colour is on and left clear otherwise, so a frame
+	// drawn without colour costs what it always did.
+	styleReplies bool
 	// Kinds runs parallel to Reply and records what each entry is, as small
 	// integers, so that colour can be chosen without guessing from the text. A
 	// missing or short Kinds means the entries it does not reach are plain.
@@ -674,11 +678,20 @@ func renderStyled(f Frame, height, width int) ([]string, [][]span, int, int) {
 	// replySpans runs beside reply, one list for each row. An entry that folds
 	// to several rows has its spans mapped onto all of them.
 	replySpans := make([][]span, 0, len(f.Reply)*2)
+	// runs notes the entries that are model text, and where their rows landed,
+	// so that their markdown can be coloured once the pane is settled. Folding
+	// is done for every entry, since it decides how many rows there are, but the
+	// spans are worked out only for the rows that are in sight.
+	var runs []replyRun
 	for i, entry := range f.Reply {
 		tag := f.kindAt(i)
+		start := len(reply)
 		for j, row := range WrapBlock(entry, width) {
 			reply = append(reply, row)
 			replySpans = append(replySpans, entrySpans(tag, row, j == 0))
+		}
+		if f.styleReplies && tag.kind == kindReply {
+			runs = append(runs, replyRun{start: start, n: len(reply) - start, text: entry})
 		}
 	}
 
@@ -688,9 +701,14 @@ func renderStyled(f Frame, height, width int) ([]string, [][]span, int, int) {
 		// well matters for a code block: an unfinished reply is not yet known
 		// to contain a fence, so folding it separately would reflow code that
 		// must keep its own lines.
-		// The partial is model text, so it is a reply entry and takes no span,
-		// which is what the entry it becomes when the stream ends takes too.
+		// The partial is model text, so it is coloured as a reply is, and by the
+		// same code, which is what keeps it the colour of the entry it becomes
+		// when the stream ends.
+		start := len(reply)
 		reply = append(reply, WrapBlock(f.Partial, width)...)
+		if f.styleReplies {
+			runs = append(runs, replyRun{start: start, n: len(reply) - start, text: f.Partial})
+		}
 	}
 	if f.Delegate != "" {
 		// A delegate that is still answering is labelled, so a line in the
@@ -783,6 +801,14 @@ func renderStyled(f Frame, height, width int) ([]string, [][]span, int, int) {
 	// truncation gives.
 	for _, i := range headerKept(header, headerRows) {
 		put(header[i], wholeRow(header[i], headerRoles[i])...)
+	}
+
+	// The rows in sight are the last paneHeight rows left once the offset is
+	// taken off the end. Markdown is coloured for those rows alone, so a repaint
+	// does not cost more for a long reply than it did before colour existed.
+	if len(runs) > 0 {
+		shown := len(reply) - f.Scroll
+		fillReplySpans(replySpans, runs, width, maxInt(0, shown-paneHeight), shown)
 	}
 
 	if f.Scroll > 0 {

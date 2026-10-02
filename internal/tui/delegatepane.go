@@ -17,6 +17,20 @@ type delegatePane struct {
 	lines []string
 	// partial is the answer still arriving, shown below the lines.
 	partial string
+	// kinds records what each line is, beside it and never inside it. It may be
+	// shorter than lines, and a line it does not reach is plain: the question
+	// and the notes are the client's own words, and only an answer is a reply.
+	kinds []entryKind
+}
+
+// addAnswer appends the answer a delegate gave, recorded as a reply so that
+// its markdown is coloured as the conversation's is. The caller holds mu.
+func (d *delegatePane) addAnswer(text string) {
+	for len(d.kinds) < len(d.lines) {
+		d.kinds = append(d.kinds, entryKind{})
+	}
+	d.lines = append(d.lines, text)
+	d.kinds = append(d.kinds, entryKind{kind: kindReply})
 }
 
 // delegateHint is shown while the pane is empty.
@@ -99,9 +113,10 @@ func (s *Session) applyDelegatePane(f *Frame) {
 	}
 	f.Title = delegateTitle
 	f.Reply = append([]string(nil), s.dpane.lines...)
-	// The records belong to the main pane. The delegate lines are plain, and a
-	// record left in place would colour them by the position of another entry.
-	f.Kinds = nil
+	// The records of the main pane belong to it, and a record left in place
+	// would colour these lines by the position of another entry. The pane keeps
+	// its own, which say which of its lines are answers.
+	f.Kinds = append([]entryKind(nil), s.dpane.kinds...)
 	f.Delegate = s.dpane.partial
 	f.Partial = ""
 	f.Spinner = ""

@@ -2437,6 +2437,10 @@ func (s *Session) paintNow() {
 	s.mu.Unlock()
 
 	height, width := s.screen.Size()
+	// The palette is resolved before the frame is folded, since whether colour
+	// is on decides whether the markdown spans of a reply are worked out at all.
+	pal := s.framePalette()
+	frame.styleReplies = pal != nil
 	rows, spans, drawn, twiddle := renderStyled(frame, height, width)
 	// The offset the renderer drew at is adopted back into the session, so
 	// that scrolling up further than there is history does not leave the
@@ -2456,7 +2460,7 @@ func (s *Session) paintNow() {
 	s.screen.DrawFrame(rows, framePaint{
 		box:      frame.ConfirmBox,
 		spans:    spans,
-		pal:      s.framePalette(),
+		pal:      pal,
 		twiddle:  twiddle,
 		sequence: frame.Tint,
 		figure:   frame.Spinner,

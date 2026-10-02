@@ -21,9 +21,9 @@ const (
 	// echoed, and a note the client wrote. It is the zero value, so an entry
 	// with no record is plain.
 	kindPlain replyKind = iota
-	// kindReply is text a model wrote. It takes no colour in this form; the
-	// kind is recorded so that the reply text can be styled later without a
-	// guess about which entries are the model's.
+	// kindReply is text a model wrote. Its markdown is coloured when colour is
+	// on, and the kind is what says which entries are the model's, so that no
+	// guess is made from what an entry says.
 	kindReply
 	// kindNotice is an ordinary line the client wrote to say something.
 	kindNotice
