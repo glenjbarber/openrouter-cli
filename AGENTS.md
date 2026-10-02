@@ -752,6 +752,38 @@ so that a later change does not silently reverse it.
 - `/approve` is refused while a model is working, since a turn in flight is
   holding a question and changing the answer under it settles a call the reader
   never saw.
+- The conversation is written on its own as well as by `/save`. It is written
+  after every turn that ended cleanly, and again if the session sits idle for
+  five minutes, which is the case a machine going down leaves behind.
+- The autosave timer is inside the client rather than a cron entry or a shell
+  loop. A scheduled job writing a session it has not read would keep writing
+  the same conversation for ever, and a reader would come back to a directory of
+  files that all say the same thing.
+- The interval is five minutes. Seconds would write the same conversation over
+  and over while a reader pauses to think, and a reader would come back to a
+  directory full of copies of one exchange.
+- An autosave is named for the user, the directory and the moment, with a link
+  beside them pointing at the newest for that directory. The three parts are
+  separated by the escape, so a reader can see where the name is split.
+- A filename cannot carry a separator, a character outside ASCII or a space, so
+  each is replaced rather than stripped. Stripping would give two directories
+  differing only in a non-ASCII character one name, which is a save overwritten
+  by another.
+- A literal escape is doubled before anything else is replaced, so a path
+  already carrying one cannot be read as a replacement. Non-ASCII is written as
+  the escape and the code point in hex, since a rune and its bytes give
+  different lengths and the bytes are what read back.
+- A path longer than the name limit is shortened from the front and marked,
+  since the tail of a path is the directory a reader recognises.
+- An autosave is refused in cognito and in a thread, on the same grounds as
+  `/save`. A mode that says nothing is recorded cannot then write the
+  conversation to a disk.
+- The newest link is replaced rather than written over, since a symlink written
+  over another becomes a link to the link on some systems, and a link pointing
+  at a file about to be replaced would resolve to nothing.
+- A write that asks to overwrite creates the file where there is nothing yet.
+  Every autosave names a file that is not there, and truncating a path with
+  nothing at it fails, which refused `/save` under the same name as well.
 - The model is given a shell, which runs a program in the working directory,
   such as `go build ./...`. It is the first tool that runs something on the
   host rather than reading the tree, and it is what made asking about a call
