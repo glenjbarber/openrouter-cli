@@ -179,9 +179,19 @@ func TestMissingKeyDoesNotStopTheSession(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
+	// The working directory is trusted first, since the trust check precedes
+	// the interface.
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := config.Trust(path, wd); err != nil {
+		t.Fatalf("Trust: %v", err)
+	}
+
 	// The interface needs a terminal, so the run stops there. What matters is
 	// that it got that far rather than failing on the missing key.
-	err := run(nil)
+	err = run(nil)
 	if err == nil {
 		t.Fatal("run entered the interface without a terminal, want the terminal refused")
 	}
@@ -264,5 +274,24 @@ func TestEmptyBootstrapPathNamesNoDocument(t *testing.T) {
 	}
 	if opts.bootstrap != "" {
 		t.Errorf("bootstrap = %q, want empty", opts.bootstrap)
+	}
+}
+
+// A directory not marked trusted is refused when the input is not a terminal,
+// and nothing is written to the configuration file.
+func TestUntrustedDirectoryIsRefusedWithoutTerminal(t *testing.T) {
+	home := isolateHome(t)
+	path := filepath.Join(home, config.DefaultFileName)
+	body := `{"OPENROUTER_MODEL":"a/b"}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	err := run(nil)
+	if !errors.Is(err, config.ErrNotTrusted) {
+		t.Fatalf("err = %v, want the directory refused as not trusted", err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != body {
+		t.Errorf("file = %q, want it unchanged", got)
 	}
 }

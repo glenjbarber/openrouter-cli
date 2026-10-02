@@ -79,6 +79,13 @@ func run(args []string) error {
 		}
 	}
 
+	// The current directory is read only with the reader's permission. The
+	// answer is remembered in the configuration file, and any doubt, including
+	// input that is not a terminal, leaves the directory untrusted.
+	if err := requireTrust(); err != nil {
+		return err
+	}
+
 	// The interface is entered only when both ends are a terminal. A
 	// redirected run reports why and stops rather than writing a frame into
 	// the capture, since escape sequences in a file or a pipe are noise.
@@ -249,4 +256,25 @@ read-only. /tools reports exactly what is on offer. Nothing else is reachable,
 and a thread or a cognito session offers the model nothing at all, since those
 record nothing.
 `)
+}
+
+// requireTrust refuses to continue unless the current directory is trusted.
+func requireTrust() error {
+	dir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("locating the current directory: %w", err)
+	}
+	path, _ := config.ConfigPath()
+	interactive := false
+	if info, err := os.Stdin.Stat(); err == nil {
+		interactive = info.Mode()&os.ModeCharDevice != 0
+	}
+	ok, err := config.EnsureTrusted(path, dir, os.Stdin, os.Stderr, interactive)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("%w: %s", config.ErrNotTrusted, dir)
+	}
+	return nil
 }
