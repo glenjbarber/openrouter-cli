@@ -323,6 +323,13 @@ func Start(out, in *os.File, title string) (*Session, error) {
 	// candidates is settled here and the editor is handed back the line to
 	// compose.
 	s.editor.OnTab = func(line string) string { return s.completeLine(line) }
+	// A key arriving while a question is open is offered to the question
+	// before the editor acts on it. The editor owns the terminal while a line
+	// is being composed, so the loop below does not regain control until a key
+	// arrives, and without this the key is taken as part of a message the
+	// reader was not writing. It is the whole of the focus: the question is
+	// drawn at once, and the key that answers it is routed here.
+	s.editor.OnAsk = s.takeAsk
 	// A shifted arrow pages the pane. It is handled here rather than in the
 	// editor because a page is a screenful and only the session knows how tall
 	// the pane is; the editor knows the composed line and nothing of the frame.
