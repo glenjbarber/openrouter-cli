@@ -1277,14 +1277,13 @@ so that a later change does not silently reverse it.
 - The caret sits one column past the last character, which is where the next one
   is written, and is bounded by the prompt width rather than the terminal.
 
-- The prompt is separated from the conversation by a rule, a blank row, a bar, a blank row, and a second rule, in that order from the top.
+- The prompt is separated from the conversation by a blank row, a rule, a blank row, a bar, a blank row, a second rule, and a blank row, in that order from the top.
   The bar carries the values that change on the fly, which are the provider, the model, the state, and the approval.
-  The first rule sits directly under the pane, and the second sits directly above the input block.
-  The blanks around the bar are what give the rules air.
-- This replaces the earlier rule that the prompt was separated from the conversation by a blank row, a rule, and another blank row.
-  The earlier rule also held that a rule touching the prompt reads as a border of the prompt rather than a division of the screen.
-  That is relaxed deliberately for the second rule, since the bar above it already divides the prompt from the conversation.
-  The rows were fixed by the maintainer as pane, rule, blank, bar, blank, rule, input, so the two adjacent rules that would otherwise follow one another are one.
+  Each rule is separated from what it borders by a blank row, so the first rule does not touch the pane and the second does not touch the input block.
+- The principle that every rule is separated from what it borders by a blank row holds for this division without exception.
+  A first version of the division put the rule directly against the pane and directly against the input block, and that reversed the rule.
+  The maintainer decided that the blank rows are restored, and the decision is final.
+  A rule touching the prompt reads as a border of the prompt rather than a division of the screen, which is why the blank below the second rule matters as much as the one above the first.
 - The rule is a box-drawing character rather than a run of dashes, since dashes read as text and a rule reads as a rule.
 - The status is split in two, and the split is a deliberate decision of the maintainer.
   What changes on the fly sits next to the input box, in the bar between the two rules above the prompt.
@@ -1298,17 +1297,20 @@ so that a later change does not silently reverse it.
   The remaining fields stay in the header on the original reasoning.
 - The rows of the frame, from the top, are the header, the pane, and the input block.
   The header is a rule, the title, a blank, a rule, a blank, the top bar, a blank, a rule, and a blank, which is nine rows.
-  The pane follows, then a rule, a blank, the bar, a blank, and a rule, which is five rows.
+  The pane follows, then a blank, a rule, a blank, the bar, a blank, a rule, and a blank, which is seven rows.
   The input block is the pasted rows, the queue, the notice, the hint row, any question, and the prompt.
   The foot is a blank and a rule, and one row is held below it.
-  With nothing above the prompt the frame costs eighteen rows, and the pane is given the rest.
-  It cost sixteen rows before the split, so the pane is two rows shorter at every height.
+  With nothing above the prompt the frame costs twenty rows apart from the pane, and the pane is given the rest.
+  It cost sixteen rows before the split, so the pane is four rows shorter at every height.
+  The nine rows of the header, the seven of the division, the prompt, the two of the foot, and the held row are the twenty.
   The earlier note that the header costs three rows was stale, since the header was nine rows already.
 - The height of the pane is worked out once, in `paneBudget`, from `baseInputRows`.
   The renderer, the pane search, and the page keys all use it.
   The search and the pager had each kept a count of their own, and both had drifted from what the renderer drew, so a page was longer than the pane it was paging.
-- On a terminal too short for the division, the rules and the blanks are given up and the bar is kept, from six rows up to nine.
-  Below six rows the bar is dropped as well.
+- On a terminal too short for the division, the rules and the blanks are given up and the bar is kept, from six rows up to eleven.
+  The whole division is drawn from twelve rows up, which is one row of header, one of pane, the seven of the division, the prompt, and the two of the foot.
+  Below six rows the bar is dropped as well, which is one row of header, one of pane, the bar, the prompt, and the two of the foot.
+  A rule is never drawn without the blank rows on both sides of it, so the division is whole or it is the bar alone, and it is never partly drawn.
   The prompt is kept at every height, and the header still yields before the prompt does.
   The mouse acts on the wheel only, so no coordinate is mapped onto a row and no hit test depends on the layout.
 - The scroll is clamped so that a full pane of history remains, or all of it when there is less than that.
@@ -1695,7 +1697,8 @@ so that a later change does not silently reverse it.
   is not blank.
 - The frame is divided by rules: one on the first row, one under the title, one under the top bar, one above the bar for what changes on the fly, one below it, and one at the very bottom.
   Each is separated from what it borders by a blank, except the title, which sits against the rule above it so that the rule reads as the edge of the frame rather than as an underline of the title.
-  The two rules around the bar sit against the pane and against the input block, and the blanks on either side of the bar are what give them air.
+  The two rules around the bar follow the same rule: each has a blank on both sides, so neither touches the pane or the input block.
+  The held row below the closing rule is blank, so it is no exception.
 - The rule on the first row is kept rather than spent on decoration. It marks
   where the frame begins, so a pane scrolled back is visibly still inside a
   window, and without it the oldest line of a conversation runs into the edge of

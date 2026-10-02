@@ -343,20 +343,22 @@ you cannot read from memory. The conversation above is still drawn across the
 full width.
 
 The prompt sits in its own box at the foot of the screen, below the bar that carries the values that change on the fly.
-A full-width rule sits above that bar and another below it, with a blank row on either side of the bar:
+A full-width rule sits above that bar and another below it, and every rule has a blank row on both sides of it:
 
 ```
+
 ────────────────────────────────────────────────
 
 Provider: openrouter.ai | Model: stealth/space-bunny-alpha | Status: idle | Approval: ask
 
 ────────────────────────────────────────────────
+
 > what does this project do?
 ```
 
 The rules keep a reply and the prompt from reading as one block, which they do when a reply ends mid-sentence directly above the prompt.
-The frame takes eighteen rows apart from the conversation, and the conversation is given the rest.
-On a terminal too short to hold all of that, the rules and the blank rows are dropped and the bar is kept, and on a very short one the bar is dropped too.
+The frame takes twenty rows apart from the conversation, and the conversation is given the rest.
+On a terminal shorter than twelve rows, the rules and the blank rows are dropped and the bar is kept, and on one shorter than six rows the bar is dropped too.
 The prompt is kept at every height, since a frame taller than the screen would push it off.
 
 ### Wrapping
