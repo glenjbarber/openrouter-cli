@@ -189,6 +189,20 @@ sequence in it. A stream that fails
 partway keeps the text received before the failure and reports the error beneath
 it.
 
+The conversation is also written on its own: `/autosave` reports or sets it, and
+it is on by default. Each save is named for you, the directory and the moment,
+under `~/.openrouter-cli/sessions`, with a link beside them pointing at the
+newest for that directory. A path cannot go into a filename as written, so the
+separator, anything outside ASCII and any space are replaced; a percent in a
+path is doubled first so it cannot be read as a replacement. `/autosave now`
+writes one at once. It is refused in cognito and in a thread, since both
+promise nothing is recorded.
+
+`/approve` reports or sets whether programs run without being asked: `ask`,
+`allow` or `refuse`. A mode of allow does not widen the list of programs the
+model may propose, and a permission you want to keep is a rule under
+`OPENROUTER_TOOLS` rather than a switch.
+
 `/new` clears the conversation but keeps the bootstrap document in force, since
 losing it would silently change how the model behaves.
 

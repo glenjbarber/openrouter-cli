@@ -31,6 +31,10 @@ type Session struct {
 	// open. It is guarded by mu, since the turn goroutine opens it and the
 	// input goroutine closes it.
 	asked *question
+	// autosaveStop ends the autosave timer, and is nil while no timer runs. It
+	// is guarded by mu, since the command starts and stops it and the command
+	// runs on the input goroutine.
+	autosaveStop chan struct{}
 	// answered receives the answer to the question being asked. It is buffered
 	// so that the input goroutine never blocks on the turn having arrived to
 	// receive it, which it may not have when the keys are read.
@@ -251,6 +255,10 @@ func Start(out, in *os.File, title string) (*Session, error) {
 	// something that is not going to change.
 	s.approvals = newApprovalState()
 	s.answered = make(chan bool, 1)
+	// The autosave timer runs for the whole session rather than being started
+	// by the command, since a reader who asked for it once should not have to
+	// ask again after a /new.
+	s.setAutosave(true)
 	s.tools = toolsAt(workingDir(), s)
 	if absence := s.tools.absence(); absence != "" {
 		s.addReply(absence)
@@ -647,6 +655,7 @@ func init() {
 		{names: []string{"/mouse"}, description: "turn mouse reporting on or off, for wheel scrolling", run: (*Session).cmdMouse},
 		{names: []string{"/clear"}, description: "clear the pane", run: (*Session).cmdClear, idleOnly: true},
 		{names: []string{"/info"}, description: "report the session settings", run: (*Session).cmdInfo},
+		{names: []string{"/autosave"}, usage: "/autosave [on|off|now]", description: "write the conversation without being asked", run: (*Session).cmdAutosave},
 		{names: []string{"/approve"}, usage: "/approve [ask|allow|refuse]", description: "report or set whether programs run without asking", run: (*Session).cmdApprove, idleOnly: true},
 		{names: []string{"/tools"}, description: "list the tools the model is given, and the root they are in", run: (*Session).cmdTools},
 		{names: []string{"/quit", "/exit"}, description: "leave the interface", run: (*Session).cmdQuit},
@@ -1678,6 +1687,12 @@ func (s *Session) send(ctx context.Context, conv *Conversation, line string) {
 				s.thread.Note()
 			}
 			conv.RecordMessages(pending)
+			// The conversation is written once it has been recorded, so a file
+			// on disk never holds an exchange the conversation has not
+			// accepted. A failure here is not reported into the pane: the
+			// reader asked a question and got an answer, and a line about a
+			// disk below the answer reads as though the answer were in doubt.
+			s.autosaveAfterTurn()
 			return
 		}
 

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/glenjbarber/openrouter-cli/internal/openrouter"
 )
 
 // The name of an autosave has to be a filename, has to be readable, and has to
@@ -165,5 +167,40 @@ func TestTheNameIsAcceptedByTheFilesystem(t *testing.T) {
 		if _, err := os.Stat(full); err != nil {
 			t.Errorf("the file did not survive: %v", err)
 		}
+	}
+}
+
+// A caller asking to overwrite is asking to write there, not to be refused for
+// the absence of the thing they offered to replace. Truncating a path with
+// nothing at it fails, and every autosave names a file that is not there yet.
+func TestOverwritingAFileThatIsNotThereWritesIt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fresh.db")
+
+	if err := Write(path, Session{Name: "first", Messages: []openrouter.Message{{Role: "user"}}}, true); err != nil {
+		t.Fatalf("writing to a path with nothing at it: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("the file is not there: %v", err)
+	}
+}
+
+// A link pointing at the file keeps resolving after an overwrite, which is what
+// the autosave newest link depends on.
+func TestOverwritingKeepsThePathResolving(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "save.db")
+	link := filepath.Join(dir, "newest.db")
+
+	if err := Write(path, Session{Name: "first"}, true); err != nil {
+		t.Fatalf("the first write: %v", err)
+	}
+	if err := os.Symlink(path, link); err != nil {
+		t.Fatalf("making the link: %v", err)
+	}
+	if err := Write(path, Session{Name: "second"}, true); err != nil {
+		t.Fatalf("the second write: %v", err)
+	}
+	if _, err := os.Stat(link); err != nil {
+		t.Errorf("the link no longer resolves: %v", err)
 	}
 }

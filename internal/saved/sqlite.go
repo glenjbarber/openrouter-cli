@@ -68,9 +68,20 @@ func claim(path string, overwrite bool) error {
 		return f.Close()
 	}
 	// A replaced file is truncated rather than removed and recreated, so that
-	// the path keeps whatever a link pointing at it resolves to.
+	// the path keeps whatever a link pointing at it resolves to. Truncating a
+	// path with nothing at it fails, so the file is created when it is absent:
+	// a caller asking to overwrite is asking to write there, not to be refused
+	// for the absence of the thing they offered to replace. That is the case
+	// every autosave hits, since each one names a file that is not there yet.
 	if err := os.Truncate(path, 0); err != nil {
-		return fmt.Errorf("replacing %s: %w", path, err)
+		if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("replacing %s: %w", path, err)
+		}
+		f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+		if err != nil {
+			return fmt.Errorf("creating %s: %w", path, err)
+		}
+		return f.Close()
 	}
 	return os.Chmod(path, 0o600)
 }
