@@ -77,27 +77,53 @@ func TestTheClipboardIsTheOneWritten(t *testing.T) {
 	}
 }
 
-func TestTheConversationIsWhatIsCopied(t *testing.T) {
+// The last reply is what is copied, and the question is not, since a reader
+// carrying one answer elsewhere does not want the question with it.
+func TestOnlyTheLastReplyIsCopied(t *testing.T) {
 	s, _ := clipboardSession(t)
-	s.conv.Record("a question", "an answer")
+	s.conv.Record("a first question", "a first answer")
+	s.conv.Record("a second question", "a second answer")
 
-	text := s.copyText()
+	text := s.lastReply()
 
-	if !strings.Contains(text, "a question") {
-		t.Errorf("the question is missing:\n%s", text)
+	if !strings.Contains(text, "a second answer") {
+		t.Errorf("the last reply is missing:\n%s", text)
 	}
-	if !strings.Contains(text, "an answer") {
-		t.Errorf("the answer is missing:\n%s", text)
-	}
-	// The turn is told apart from what answers it, or a reader pasting it
-	// elsewhere cannot see who said what.
-	if !strings.Contains(text, "> a question") {
-		t.Errorf("the question is not marked as asked:\n%s", text)
+	for _, unwanted := range []string{"a first answer", "a first question", "a second question"} {
+		if strings.Contains(text, unwanted) {
+			t.Errorf("%q is in what was copied:\n%s", unwanted, text)
+		}
 	}
 }
 
-// A turn where the model called a tool carries the call, since that is part of
-// what the reader asked for and what came back.
+// The most recent reply is taken, not the first, which is what a reader means
+// by the last one.
+func TestTheNewestReplyIsTheOneTaken(t *testing.T) {
+	s, _ := clipboardSession(t)
+	for i := 0; i < 5; i++ {
+		s.conv.Record("a question", "answer number "+itoa(i))
+	}
+
+	text := s.lastReply()
+
+	if !strings.Contains(text, "answer number 4") {
+		t.Errorf("the newest reply was not taken:\n%s", text)
+	}
+}
+
+// A reader who has only asked and got nothing is told so, rather than copying
+// nothing and saying it copied nothing.
+func TestNothingToCopySaysSoWhenNoReplyHasArrived(t *testing.T) {
+	s, _ := clipboardSession(t)
+	s.conv.Record("a question", "")
+
+	if got := s.lastReply(); got != "" {
+		t.Errorf("an empty reply produced %q", got)
+	}
+}
+
+// A turn where the model called a tool carries the call, since a turn that ran
+// a build and reported the error is one answer.
 func TestAToolCallIsCopied(t *testing.T) {
 	s, _ := clipboardSession(t)
 	s.conv.RecordMessages([]openrouter.Message{
@@ -115,12 +141,16 @@ func TestAToolCallIsCopied(t *testing.T) {
 		{Role: openrouter.RoleAssistant, Content: "it builds."},
 	})
 
-	text := s.copyText()
+	text := s.lastReply()
 
-	for _, want := range []string{"build it", "shell", "go build ./...", "it builds."} {
+	// The question is not carried, since the reader asked it and has it.
+	for _, want := range []string{"shell", "go build ./...", "it builds."} {
 		if !strings.Contains(text, want) {
 			t.Errorf("%q is missing from what was copied:\n%s", want, text)
 		}
+	}
+	if strings.Contains(text, "build it") {
+		t.Errorf("the question was carried with the answer:\n%s", text)
 	}
 }
 
@@ -132,7 +162,7 @@ func TestAMultiLineResultIsFolded(t *testing.T) {
 		{Role: openrouter.RoleTool, Content: "line one\nline two\nline three"},
 	})
 
-	text := s.copyText()
+	text := s.lastReply()
 
 	if strings.Contains(text, "\nline two") {
 		t.Errorf("a result was not folded onto one line:\n%s", text)
@@ -169,5 +199,39 @@ func TestAnOverlongConversationIsRefused(t *testing.T) {
 
 	if strings.Contains(read(), seqCopyPrefix) {
 		t.Error("an overlong copy was written to the terminal")
+	}
+}
+
+// The exchange reads forwards, which a reply built backwards does not.
+func TestTheExchangeIsInTheOrderItWasSaid(t *testing.T) {
+	s, _ := clipboardSession(t)
+	s.conv.RecordMessages([]openrouter.Message{
+		{Role: openrouter.RoleUser, Content: "build it"},
+		{
+			Role: openrouter.RoleAssistant,
+			ToolCalls: []openrouter.ToolCall{{
+				Function: openrouter.ToolCallFunction{
+					Name:      "shell",
+					Arguments: `{"command":"go","args":["build","./..."]}`,
+				},
+			}},
+		},
+		{Role: openrouter.RoleTool, Content: "it does not compile"},
+		{Role: openrouter.RoleAssistant, Content: "one line is wrong."},
+	})
+
+	text := s.lastReply()
+	want := []string{"[called shell", "[it does not compile]", "one line is wrong."}
+
+	at := -1
+	for _, w := range want {
+		i := strings.Index(text, w)
+		if i < 0 {
+			t.Fatalf("%q is missing:\\n%s", w, text)
+		}
+		if i < at {
+			t.Errorf("%q comes before the one after it:\\n%s", w, text)
+		}
+		at = i
 	}
 }

@@ -873,9 +873,18 @@ so that a later change does not silently reverse it.
   client means the approval path and a question about every copy, and it does
   not work over a link where the clipboard belongs to the machine the reader is
   sitting at.
-- The conversation is copied whole rather than the visible pane. The pane is
-  folded to the width of the terminal, so what a reader selected out of it is
-  not the reply as the model wrote it.
+- `/copy` copies the last reply rather than the conversation. A reader reaching
+  for a copy is usually carrying one answer somewhere, and the whole
+  conversation is what they would select with the mouse when they meant all of
+  it.
+- A reply is a whole exchange rather than one message. A turn that called a tool
+  is several: the call, the result, and then what the model said about it. Those
+  are one answer, and a reader carrying it elsewhere wants the build and the
+  error with the answer rather than the answer with the evidence missing, so the
+  walk goes back to the question rather than to the last assistant turn alone.
+  The question itself is left out, since the reader asked it and has it.
+- The pane is not what is copied. It is folded to the width of the terminal, so
+  what a reader selected out of it is not the reply as the model wrote it.
 - A copy the terminal refused is not known, since OSC 52 is written and nothing
   comes back. The command says so once, since a copy that silently did nothing
   is worse than one that reports that it did not.
