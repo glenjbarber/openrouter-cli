@@ -747,9 +747,28 @@ so that a later change does not silently reverse it.
   learn it is not available rather than have it silently split into arguments.
 - A command is contained to the working directory as the filesystem tools are,
   by the same cleaned path and resolved path comparison the git tool makes.
-- A call is put to the reader before the program runs. The question is drawn in
-  the pane rather than on the prompt line, since the prompt line belongs to the
-  message being composed and overwriting it would lose a half typed line.
+- A call is put to the reader before the program runs.
+- The question is put on the turn goroutine and answered on the input one. A
+  turn runs on its own goroutine so that the input loop keeps reading while a
+  model works, and the input loop owns the terminal, so a question read from the
+  turn would race the line editor for every key the reader pressed and a `y`
+  meant as an answer would be taken as part of a message being composed.
+- The turn hands the question over and waits for the answer. The answer is
+  buffered, so the input goroutine never blocks on the turn having arrived to
+  receive it, which it may not have when the keys are read.
+- A question nobody answers is a refusal rather than a wait. The wait ends with
+  the session as well as with the answer, since a question left open at exit
+  would strand the turn on a channel nobody is left to post to. A turn blocked
+  there is a turn a reader reads as a hang.
+- The question is drawn on the input block rather than into the pane. A question
+  written into the pane scrolls back into the history the moment a reply
+  arrives, which is about the moment a reader answering it would need to read it
+  again.
+- The hint row names the keys while a question is open. Nothing else on screen
+  says how to answer, and a question with no way to answer it is a question the
+  reader can only escape.
+- A question outranks the pane search and the model filter while it is open. A
+  key reaching a search behind it would be a key answering nothing.
 - The question names the resolved directory rather than the one that was asked
   for. A reader approving a command in a directory they were not shown would be
   approving something other than what runs.
