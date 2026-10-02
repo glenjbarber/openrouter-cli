@@ -157,11 +157,11 @@ func (s *Session) startDelegate(task string) {
 
 	// The label goes in the pane first, so the reader sees the question before
 	// the answer rather than after.
-	s.appendLines("/delegate " + task)
+	s.addDelegateLines("/delegate " + task)
 	// The reader is told the same thing the model is, since a delegate that
 	// answers short of what the question needed is otherwise a reader
 	// wondering whether the model did not understand it.
-	s.appendLines("A delegate is given no tools, so it answers from the " +
+	s.addDelegateLines("A delegate is given no tools, so it answers from the " +
 		"conversation and from what it already knows. Ask the conversation " +
 		"itself for anything it would have to go and look at.")
 	s.draw()
@@ -173,12 +173,10 @@ func (s *Session) startDelegate(task string) {
 		defer s.delegateWG.Done()
 
 		d.Run(s.ctx, client, model, func(text string) {
-			s.mu.Lock()
 			// The partial answer replaces the last line rather than being
 			// appended, so a growing answer does not fill the pane with
 			// copies of itself.
-			s.frame.Delegate = text
-			s.mu.Unlock()
+			s.setDelegatePartial(text)
 			s.draw()
 		})
 
@@ -186,20 +184,20 @@ func (s *Session) startDelegate(task string) {
 
 		s.mu.Lock()
 		delete(s.delegates, d)
-		s.frame.Delegate = ""
-		// The finished answer joins the pane as ordinary text. It is not
+		s.dpane.partial = ""
+		// The finished answer joins the delegate pane as ordinary text. It is not
 		// added to the conversation, since a delegate keeps nothing.
 		switch {
 		case err != nil:
-			s.frame.Reply = append(s.frame.Reply,
+			s.dpane.lines = append(s.dpane.lines,
 				fmt.Sprintf("/delegate %s (error) %v", task, err))
 		case answer == "":
 			// An empty line would be indistinguishable from a question that
 			// was never asked, so the absence is said in the same words the
 			// request path uses.
-			s.frame.Reply = append(s.frame.Reply, "(the model returned nothing)")
+			s.dpane.lines = append(s.dpane.lines, "(the model returned nothing)")
 		default:
-			s.frame.Reply = append(s.frame.Reply, answer)
+			s.dpane.lines = append(s.dpane.lines, answer)
 		}
 		s.mu.Unlock()
 		s.draw()
