@@ -268,8 +268,8 @@ func (s *Session) drawToolCall(r tools.Result) {
 		// tools rather than a line the renderer dropped something from.
 		label = "?"
 	}
-	s.addReply(fmt.Sprintf("[%s] %s %s -> %s", label, name,
-		callSummary(r.Call), toolOutcome(r)))
+	s.addReplyTagged(toolTag(label, r.Err != nil),
+		fmt.Sprintf("[%s] %s %s -> %s", label, name, callSummary(r.Call), toolOutcome(r)))
 	s.draw()
 }
 

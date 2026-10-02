@@ -48,6 +48,14 @@ type rawFile struct {
 	// only thing in the file that grants a capability the client would
 	// otherwise ask about on every call.
 	Tools []ApprovalRule `json:"OPENROUTER_TOOLS"`
+	// Color turns color on at startup. The color keys are lower case and have
+	// no OPENROUTER_ prefix, like setup_complete, since color is not read from
+	// the environment and so has no environment variable to be named after.
+	Color bool `json:"color"`
+	// ColorTheme is held raw so that a theme of the wrong shape is reported in
+	// a note rather than failing the whole file. A theme is a preference and
+	// is never fatal.
+	ColorTheme json.RawMessage `json:"color_theme"`
 }
 
 // Config is the resolved configuration.
@@ -80,6 +88,16 @@ type Config struct {
 	// written. The order is kept rather than reduced to one resolved set,
 	// since which rule matched is what a reader needs to be able to see.
 	Tools []ApprovalRule
+	// Color reports that the file asks for color. It is off unless the file
+	// says so, and /color changes it for a session without writing the file.
+	Color bool
+	// ColorTheme is the base colors the file asks for. A side the file does
+	// not set, or sets to a value that is not valid, is empty and so follows
+	// the terminal theme.
+	ColorTheme Theme
+	// ColorNote is a single line describing a theme value that was dropped, or
+	// empty when the theme was fine. The interface shows it once at startup.
+	ColorNote string
 }
 
 // Permits reports whether the configuration permits a command for a directory
@@ -134,6 +152,11 @@ type ErrNoAPIKey struct {
 	// not a credential, and dropping it would make a file that was read look
 	// as though it had not been.
 	Tools []ApprovalRule
+	// Color, ColorTheme and ColorNote are the color preferences the file
+	// carries, carried through on the same reasoning as the rest.
+	Color      bool
+	ColorTheme Theme
+	ColorNote  string
 }
 
 // Error implements the error interface.
@@ -162,6 +185,19 @@ func EmptyMouse(model string, mouse, bell bool) *Config {
 	cfg := Empty(model, bell)
 	cfg.Mouse = mouse
 	return cfg
+}
+
+// SetColor sets the color preferences on a configuration and returns it.
+//
+// It is a setter rather than another parameter of EmptyMouse, which already
+// carries more than a constructor should. A caller standing in a configuration
+// for a file that could not be read for its key hands over what the error
+// carried.
+func (c *Config) SetColor(on bool, theme Theme, note string) *Config {
+	c.Color = on
+	c.ColorTheme = theme
+	c.ColorNote = note
+	return c
 }
 
 // Load reads the configuration from the first file found at a search path.
@@ -283,6 +319,8 @@ func parse(path string) (*Config, error) {
 	// sending one the backend will reject.
 	unset := strings.TrimSpace(raw.APIKey) == ""
 
+	theme, themeNote := parseTheme(raw.ColorTheme)
+
 	cfg := &Config{
 		APIKey:    raw.APIKey,
 		Model:     strings.TrimSpace(raw.Model),
@@ -293,6 +331,10 @@ func parse(path string) (*Config, error) {
 		Mouse:     raw.Mouse,
 		Tools:     raw.Tools,
 		Verbosity: raw.Verbosity,
+
+		Color:      raw.Color,
+		ColorTheme: theme,
+		ColorNote:  themeNote,
 	}
 
 	if unset {
@@ -311,6 +353,10 @@ func parse(path string) (*Config, error) {
 			URLBase:   cfg.URLBase,
 			Tools:     raw.Tools,
 			Verbosity: raw.Verbosity,
+
+			Color:      raw.Color,
+			ColorTheme: theme,
+			ColorNote:  themeNote,
 		}
 	}
 	return cfg, nil

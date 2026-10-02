@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/glenjbarber/openrouter-cli/internal/config"
 )
 
 // The ramp was written before anything called it, so it carried no test of its
@@ -39,15 +41,15 @@ func TestATwiddleStepProducesASequence(t *testing.T) {
 	}
 }
 
-func TestTheRampIsNotOneColour(t *testing.T) {
-	// Every step must not draw the same colour, or the ramp is a shade rather
-	// than a scroll and the figure is not worth colouring.
+func TestTheRampIsNotOneColor(t *testing.T) {
+	// Every step must not draw the same color, or the ramp is a shade rather
+	// than a scroll and the figure is not worth coloring.
 	seen := map[string]bool{}
 	for step := 0; step < twiddleSteps; step++ {
 		seen[twiddleTint(step)] = true
 	}
-	if len(seen) < len(primaryColours) {
-		t.Errorf("the ramp produced %d distinct colours over %d steps, want at least one per primary",
+	if len(seen) < len(primaryColors) {
+		t.Errorf("the ramp produced %d distinct colors over %d steps, want at least one per primary",
 			len(seen), twiddleSteps)
 	}
 }
@@ -94,7 +96,7 @@ func TestTheRampIsNeverTheBlackOfTheCube(t *testing.T) {
 }
 
 // The frame leaves the renderer as plain text, so a copy out of the pane cannot
-// carry a sequence. This is what makes the colour a screen concern.
+// carry a sequence. This is what makes the color a screen concern.
 func TestTheTwiddleRowCarriesNoSequenceOutOfTheRenderer(t *testing.T) {
 	rows := Render(Frame{Spinner: spinnerFrames[0], Partial: "a"}, 24, 80)
 
@@ -152,7 +154,7 @@ func TestTheReportedRowFollowsThePane(t *testing.T) {
 
 // A scrolled pane has no twiddle on it. The figure is the newest line of the
 // pane, so any offset takes it off the screen, and no row may be reported. A
-// tint naming a row that has taken its place would colour a line of history a
+// tint naming a row that has taken its place would color a line of history a
 // reader is reading.
 func TestAScrolledPaneReportsNoRow(t *testing.T) {
 	var reply []string
@@ -191,7 +193,7 @@ func TestAShortPaneKeepsTheTwiddleThroughAnyScroll(t *testing.T) {
 	}
 }
 
-// The colour covers the whole row, the twiddle and the word beside it, and is
+// The color covers the whole row, the twiddle and the word beside it, and is
 // reset before the next row so that it does not run on into whatever follows.
 func TestTheSequenceCoversTheWholeRow(t *testing.T) {
 	sc, read := screenCapture(t)
@@ -202,11 +204,11 @@ func TestTheSequenceCoversTheWholeRow(t *testing.T) {
 
 	marker := strings.Index(got, "\x1b[38;5;")
 	if marker < 0 {
-		t.Fatalf("no colour was written at all: %q", got)
+		t.Fatalf("no color was written at all: %q", got)
 	}
 	rest := got[marker:]
 
-	// The word is inside the colour, since the point of the row is that the
+	// The word is inside the color, since the point of the row is that the
 	// whole indicator is drawn as one thing.
 	figureAt := strings.Index(rest, "⠋")
 	wordAt := strings.Index(rest, "thinking")
@@ -219,13 +221,13 @@ func TestTheSequenceCoversTheWholeRow(t *testing.T) {
 
 	resetAt := strings.Index(rest, seqResetAttr)
 	if resetAt < 0 {
-		t.Fatalf("the colour was never reset: %q", got)
+		t.Fatalf("the color was never reset: %q", got)
 	}
 	if resetAt < wordAt {
-		t.Errorf("the colour was reset before the word beside the twiddle: %q", got)
+		t.Errorf("the color was reset before the word beside the twiddle: %q", got)
 	}
 
-	// The reset has to come before the next row is drawn, or the colour runs
+	// The reset has to come before the next row is drawn, or the color runs
 	// on into whatever the frame drew after it. The line break and the next
 	// row's own reset sit between them, so what is checked is that the
 	// sequence ends at the reset rather than that nothing follows it.
@@ -235,13 +237,13 @@ func TestTheSequenceCoversTheWholeRow(t *testing.T) {
 		t.Fatalf("the row after the twiddle was not drawn: %q", got)
 	}
 	if strings.Contains(tail[:next], "\x1b[38;5;") {
-		t.Errorf("the colour ran on into the next row: %q", tail[:next])
+		t.Errorf("the color ran on into the next row: %q", tail[:next])
 	}
 }
 
-// The row is built as plain text whatever the colour is doing, so a selection
+// The row is built as plain text whatever the color is doing, so a selection
 // out of the pane carries the characters and not the sequence. This is what
-// makes colouring the word beside the twiddle safe.
+// makes coloring the word beside the twiddle safe.
 func TestTheTwiddleRowIsStillPlainTextForASelection(t *testing.T) {
 	rows := Render(Frame{Spinner: spinnerFrames[0], Partial: "a"}, 24, 80)
 
@@ -265,7 +267,7 @@ func TestTheFigureIsNotCutInHalf(t *testing.T) {
 
 	marker := strings.Index(got, "\x1b[38;5;1m")
 	if marker < 0 {
-		t.Fatalf("no colour was written: %q", got)
+		t.Fatalf("no color was written: %q", got)
 	}
 	after := got[marker+len("\x1b[38;5;1m"):]
 	if !strings.HasPrefix(after, spinnerFrames[0]) {
@@ -302,7 +304,7 @@ func TestATintNamingNoRowIsNotApplied(t *testing.T) {
 }
 
 // A row whose text is not the twiddle is left alone, since the figure is what
-// decides whether the colour applies and not the index alone.
+// decides whether the color applies and not the index alone.
 func TestATintNotMatchingTheRowIsNotApplied(t *testing.T) {
 	sc, read := screenCapture(t)
 
@@ -312,5 +314,79 @@ func TestATintNotMatchingTheRowIsNotApplied(t *testing.T) {
 
 	if strings.Contains(read(), "\x1b[38;5;1m") {
 		t.Error("a tint whose figure is not on the row was applied")
+	}
+}
+
+// The twiddle color is governed by the color setting like every other color.
+// These cover the gate in DrawFrame and the same gate reached through the
+// session, so that /color and the key cannot disagree about it.
+
+// twiddleFrame is a frame with a twiddle on it, and the rows it draws as.
+func twiddleFrame(t *testing.T) ([]string, [][]span, int) {
+	t.Helper()
+	f := Frame{Title: "t", Partial: "a", Spinner: spinnerFrames[0], Elapsed: "1s", Input: "x"}
+	rows, spans, _, twiddle := renderStyled(f, 24, 60)
+	if twiddle < 0 {
+		t.Fatal("no twiddle row")
+	}
+	return rows, spans, twiddle
+}
+
+// With color off a frame carrying a tint is the frame with no tint at all.
+func TestATintIsIgnoredWithColorOff(t *testing.T) {
+	rows, spans, twiddle := twiddleFrame(t)
+	tintSeq := twiddleTint(2)
+
+	tinted, readTinted := screenCapture(t)
+	tinted.height, tinted.width = 24, 60
+	tinted.DrawFrame(rows, framePaint{spans: spans, twiddle: twiddle, sequence: tintSeq, figure: spinnerFrames[0]})
+
+	bare, readBare := screenCapture(t)
+	bare.height, bare.width = 24, 60
+	bare.DrawFrame(rows, framePaint{spans: spans, twiddle: -1})
+
+	if readTinted() != readBare() {
+		t.Errorf("a tint changed a color-off frame:\n%q\n%q", readTinted(), readBare())
+	}
+	if strings.Contains(readTinted(), tintSeq) {
+		t.Error("the twiddle sequence was written with color off")
+	}
+}
+
+// With color on the sequence is written and reset around the row, as before.
+func TestATintIsAppliedWithColorOn(t *testing.T) {
+	rows, spans, twiddle := twiddleFrame(t)
+	pal := newPalette(config.Theme{})
+	tintSeq := twiddleTint(2)
+	sc, read := screenCapture(t)
+	sc.height, sc.width = 24, 60
+	sc.DrawFrame(rows, framePaint{spans: spans, pal: &pal, twiddle: twiddle, sequence: tintSeq, figure: spinnerFrames[0]})
+	if !strings.Contains(read(), tintSeq+rows[twiddle]+seqResetAttr) {
+		t.Errorf("the twiddle row is not colored with color on:\n%q", read())
+	}
+}
+
+// /color on and off toggle the twiddle color on the next paint, through the
+// real command path.
+func TestColorCommandTogglesTheTwiddleColor(t *testing.T) {
+	s, capture := auditSession(t, "")
+	tintSeq := twiddleTint(2)
+	s.mu.Lock()
+	s.frame.Busy = true
+	s.frame.Spinner = spinnerFrames[0]
+	s.frame.Elapsed = "1s"
+	s.frame.Tint = tintSeq
+	s.mu.Unlock()
+
+	if got := paintedFrame(t, s, capture); strings.Contains(got, tintSeq) {
+		t.Errorf("a fresh session paints the twiddle color:\n%q", got)
+	}
+	s.command("/color on")
+	if got := paintedFrame(t, s, capture); !strings.Contains(got, tintSeq+spinnerFrames[0]) {
+		t.Errorf("the paint after /color on has no twiddle color:\n%q", got)
+	}
+	s.command("/color off")
+	if got := paintedFrame(t, s, capture); strings.Contains(got, tintSeq) {
+		t.Errorf("the paint after /color off still has the twiddle color:\n%q", got)
 	}
 }

@@ -119,8 +119,23 @@ so that a later change does not silently reverse it.
   prompts for the API key and offers a skip, which records that setup was done
   and suppresses the prompt without storing a credential.
 - The configuration file is written at startup when no file exists, and again
-  during first-time setup. These are the only two circumstances in which it is
-  written. The rest of the time the file is treated as read-only.
+  during first-time setup. Apart from those, two runtime writers exist and no
+  others: `config.Trust`, which adds a directory to the trusted list, and the
+  `/color` command, which sets the `color` key. Each reads the existing file and
+  writes a temporary file beside it at `0600`, which it renames over the
+  original. Trust carries every other key over as the raw bytes it was read as.
+  The color writer copies the file exactly, as bytes: only the value of a
+  top-level `color` key is changed, or, when there is none, one member is added
+  in the file's own style, with its indentation, line separator and colon
+  spacing, and a comma after the member before it. Key order, whitespace, line
+  endings, escapes and a missing final newline are kept, and the edit is checked
+  to parse as a JSON object holding the new value before anything is written.
+  The rename is atomic so that an interrupted write leaves the previous file and
+  never a half-written credential. Neither writer ever creates the file: a file
+  made by a command would hold no key and would suppress first-time setup. Each
+  refuses, and leaves the file as it is, when the mode is not `0600` or the
+  content is not a JSON object. The rest of the time the file is treated as
+  read-only.
 - The default written at startup sets `OPENROUTER_URL_BASE` only. No key is
   written, because a placeholder key would be indistinguishable from a real one
   and would be sent to the backend.
@@ -830,8 +845,8 @@ so that a later change does not silently reverse it.
   directory without being asked. The rules are the same ones a reader can write
   by hand under `OPENROUTER_TOOLS`, and the two are read as one set.
 - The rules are kept in a file beside the configuration rather than in it, since
-  the configuration holds the credential and is treated as read-only outside
-  setup. A reader editing rules should not have to open a file whose mode they
+  the configuration holds the credential and is rewritten only by the two
+  writers named under Configuration. A reader editing rules should not have to open a file whose mode they
   have to get right, and a command rewriting one could damage the key in it. The
   file is written at 0600, since it names the directories a model may run
   programs in.
@@ -896,14 +911,17 @@ so that a later change does not silently reverse it.
   lines of prose is read as part of the conversation. A reader who has just been
   asked whether a program may run must not be able to mistake the question for
   output.
-- The box is drawn in red, since it is the one thing on the screen asking the
-  reader to decide something. The colour is on the corner and stops there, so
-  the text inside the box is the colour of the rest of the frame: a border
-  entirely in one colour reads as a line of text that happens to be long.
+- The box corners are drawn in red when the `color` setting is on, since the
+  box is the one thing on the screen asking the reader to decide something.
+  The corners were red unconditionally until the color setting was decided, and
+  the change is deliberate: with color off the box is drawn in plain text, as
+  every other row is. The color is on the corner and stops there, so the text
+  inside the box is the color of the rest of the frame: a border entirely in
+  one color reads as a line of text that happens to be long. See Color.
 - A corner is taken whole rather than by its first byte. The box-drawing runes
   are several bytes each, and cutting one in half draws half a glyph followed by
   the rest of it as text.
-- The frame is drawn in one pass rather than one per thing to colour. Each pass
+- The frame is drawn in one pass rather than one per thing to color. Each pass
   clears every row before writing it, so a second pass would wipe the first and
   the frame would flicker.
 - The box is drawn with the box-drawing set rather than with pipes and hyphens,
@@ -1116,7 +1134,7 @@ so that a later change does not silently reverse it.
   marking every occurrence would need delimiters that would be copied out along
   with the text.
 - The match is shown by the column it starts at, set in the margin, and by the
-  query in the heading. Nothing is inverted or coloured, since a selection is
+  query in the heading. Nothing is inverted or colored, since a selection is
   taken out of the pane as plain text and an escape sequence drawn around the
   match would be copied along with it.
 - The margin is dropped rather than pushing the text off the edge on a pane too
@@ -1146,7 +1164,8 @@ so that a later change does not silently reverse it.
 
 - The mode is recorded by a marker file in the home directory rather than by a
   key in the configuration file, since the configuration file holds the
-  credential and is treated as read-only outside setup.
+  credential and is rewritten only by the two writers named under
+  Configuration.
 - The marker records the process that wrote it, so a marker left behind by a
   crash is distinguishable from one held by a running session.
 - A marker left by a crash is reported at startup rather than honoured
@@ -1355,22 +1374,25 @@ so that a later change does not silently reverse it.
   frame paint over the interface after the work had ended.
 - Starting an already-running twiddle does nothing, so a caller need not track
   whether one is running.
-- The twiddle row is the one part of the frame drawn in colour, and the colour
-  scrolls through the six primaries while work is in progress. Every other row
-  is prose: a reply is written by a model and copied out by a reader, and a
-  sequence written into prose is copied out with it. The primaries are used
-  since they are the colours every terminal can be relied on to show.
-- The colour is interpolated between the primaries rather than stepped between
-  them. Six colours turning is not a scroll, and a hard change is the thing a
+- The twiddle row is drawn in color only when the color setting is on, like
+  everything else in the frame, and the color scrolls through the six primaries
+  while work is in progress. Color is off by default, so by default the twiddle
+  row is plain text. `/color`, `/colour` and the `color` key govern it alike, as
+  described under Color. The twiddle was once exempt from the setting and drew
+  in color regardless; the maintainer reversed that, so no part of the frame is
+  colored without being asked for. The primaries are used since they are the
+  colors every terminal can be relied on to show.
+- The color is interpolated between the primaries rather than stepped between
+  them. Six colors turning is not a scroll, and a hard change is the thing a
   scroll is wanted in place of.
 - A circuit takes four seconds, long enough that the movement reads as movement
   rather than as a flicker. The ramp is divided by the repaint interval rather
-  than counted in steps of its own, so the colour moves at the rate the figure
+  than counted in steps of its own, so the color moves at the rate the figure
   does whatever the interval is later changed to.
 - A component reaching zero on the way down is floored rather than drawn at the
   bottom of the cube. A blue at zero is the black that red at zero would be, and
   a dark background is the common case.
-- The colour is written by the screen and not by the renderer. Every row leaves
+- The color is written by the screen and not by the renderer. Every row leaves
   the renderer as plain text with the bytes a terminal would act on removed, and
   a sequence inserted before that would be stripped along with the ones a model
   sent. The screen is the one place that writes bytes rather than text.
@@ -1378,19 +1400,19 @@ so that a later change does not silently reverse it.
   and is reset before the next row is drawn. The row is an indicator rather than
   prose: it is written by the client rather than by a model, it is on screen only
   while work is in progress, and the next frame replaces it. A selection of the
-  pane carries the characters rather than the colour either way, since the
+  pane carries the characters rather than the color either way, since the
   sequence is written by the screen and is not part of the row.
 - The twiddle row is found in the finished frame rather than tracked through the
   trims the pane applies. The pane drops lines from the front and adds blanks at
   the back, so an index moved by hand through both is a second thing to keep
   correct, while matching the line once against a frame that has stopped moving
   is one comparison. A row that has scrolled off reports none, since a tint
-  naming a row that has taken its place would colour a line of history.
+  naming a row that has taken its place would color a line of history.
 - The tint carries the twiddle as text rather than as a count of columns. The
   figures are braille and several bytes each, so a count of bytes cuts one in
   half and the terminal draws half a glyph followed by the rest of it as text.
 - The tint is cleared with the twiddle. A tint left behind with no twiddle would
-  colour whichever row it was pointed at.
+  color whichever row it was pointed at.
 - The row carries how long the work has been running, since that is the question
   a reader watching a slow turn is asking. The figure follows the word rather than
   leading it, so the left of the row still reads as the twiddle and the word.
@@ -1403,6 +1425,144 @@ so that a later change does not silently reverse it.
   that cannot have happened.
 - The twiddle leads the line rather than trailing it, since a trailing one
   would shift the text sideways on every step.
+
+### Color
+
+- Color is added only when the screen is drawn. The pane, `/copy`, saved
+  conversations, the history, and the context sent to the model carry text and
+  nothing else. An escape sequence written into any of them is copied out with
+  the text and acts on whatever receives it, so stored text never contains one.
+  The twiddle follows the same rule, as the Progress section records.
+- The twiddle color is governed by the color setting like every other color.
+  The tint is still recorded with the twiddle, but the screen ignores it when
+  the frame has no palette, so with color off the bytes are those of a frame
+  with no tint at all: no sequence, no reset written for it, and the same row
+  text. The twiddle row still wins its own row over the chrome spans when color
+  is on.
+- Color is off by default. A user who did not ask for color would find it
+  startling, and a terminal that cannot show it would show the bytes instead.
+- `/color` turns it on and off, taking an optional `on` or `off` and otherwise
+  toggling. `/colour` is accepted when typed and is a hidden alias: it is never
+  listed in `/help` and never offered by Tab completion. The new state is also
+  recorded in the `color` key of the configuration file, whichever of the two
+  spellings was typed, and the writer is one of the two runtime writers
+  described under Configuration. The session changes first and whatever happens
+  to the file does not undo it. When the file cannot take the change, the status
+  line reads `color on (not saved: <reason>)`, and the reason never carries file
+  content. With no configuration file the reason is `no configuration file`,
+  and the file is not created. `color_theme` is never written by the command.
+- The scope is the frame chrome, tool call lines, approval lines, notice lines,
+  and reply text. The line the user types is never colored, since it is the
+  user's own text and nothing is gained by marking it.
+- The default palette is the sixteen ANSI colors, so that the terminal theme
+  decides what they look like. No color is chosen on the terminal's behalf.
+- A theme may set a foreground and a background. Terminal.app supports 256
+  colors and does not support 24-bit color, so no 24-bit sequence is ever
+  written: a `#rrggbb` value is mapped to the nearest of the 256 colors. With no
+  theme set, no base color is written and the terminal theme shows through.
+- The keys are `color`, a boolean, and `color_theme`, an object with the string
+  fields `foreground` and `background`. They are lowercase and carry no
+  `OPENROUTER_` prefix, like `setup_complete`, since they are not
+  transferable to the environment. A value is one of the sixteen names (`black`,
+  `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, and the `bright_`
+  forms of each), an index from 0 to 255, or `#rrggbb`.
+- An invalid theme value falls back to the terminal theme and produces a one line
+  note at startup. It is never fatal, since a theme is a preference and a
+  preference is not worth refusing to start over.
+- The environment is deliberately excluded. `NO_COLOR` and every other variable
+  are not read, and the key has no environment twin. Color is decided by the
+  file and by `/color` alone, on the same terms as the API key.
+- Color travels beside the rows as spans, which are a byte start, a byte end
+  and a role, and never inside them. The renderer builds the spans with the
+  rows and trims, pads and cuts them together, so folding, width, scrolling,
+  search and `/copy` see plain text. Only `DrawFrame` turns a span into bytes, in
+  the one pass the frame is drawn in, and only when color is on. With color
+  off the bytes are those of a frame that has no color in it.
+- When a theme sets a foreground or a background, every reset re-applies it
+  before the row is cleared, so the fill takes the background, and the screen
+  clears it again on the way out so the shell is not left on the theme.
+- The palette is resolved at paint time from the flag and the theme, and the
+  command and the configuration key set only those two, so they cannot produce
+  different frames. The command prints one line saying what it did, and the
+  input loop repaints after every command.
+- The approval box border is drawn in the approval color when color is on, and
+  the corner is no longer a special case of its own.
+- The approval box corner is red only when color is on. It was red
+  unconditionally, and the change is deliberate.
+- A routine successful tool line is dimmed, and dim wins over the color of the
+  tool. A failure and an approval prompt keep full strength, since they are the
+  lines a reader must not skim past.
+- What a reply entry is travels beside it in `Frame.Kinds`, which runs parallel
+  to `Frame.Reply`.
+  Each record is a small integer kind, the identity role of a tool, and an ok
+  flag, and never a string that holds an escape.
+  The client writes the record at the moment it writes the entry, through
+  `addReplyKind` and `addReplyTagged`.
+  `addReply` stays and records a plain entry, and a missing or short `Kinds`
+  means plain.
+- The kind is never guessed from the text of an entry.
+  A prefix such as `[fs]` or `(error)` is something a model can write as easily
+  as the client can, so a guess would color a sentence a model chose to begin
+  that way as though the client had said it.
+  Model text is recorded as a reply, and only a reply takes markdown color.
+- Every write that replaces `Frame.Reply` resets or trims `Frame.Kinds` with it,
+  through `replaceReply`, `clearReply` and `syncKinds`.
+  The search and the model listing replace the pane and restore it afterwards,
+  and the delegate pane swaps in lines of its own, so a stale record would
+  color the wrong rows.
+- One entry may fold to several rows.
+  The spans of the entry are mapped onto every one of its rows.
+  A failure takes the failure role on the whole line, a routine successful tool
+  line is dimmed whole, and a tool failure names its tool in the identity color
+  on the label.
+  The streaming partial and the entry it becomes are both replies, so the color
+  does not change when the stream ends.
+- The markdown in a reply is colored from spans, on the same terms as the rest.
+  The elements are code, headings, emphasis, quotes, list markers and links, and
+  each has its own role in the palette.
+  Bold and emphasis share one role, since the plain text keeps neither marker.
+- A construct is recognised for color and never rewritten.
+  A line that begins with `> ` is a quote span, and a `[text](destination)` is a
+  link span over the whole of it as it appears, brackets and destination
+  included.
+  The text of every row is the text it was before color existed, so quotes and
+  links are drawn as written and a quote that folds is not indented.
+- The fold has one implementation.
+  `WrapBlock` returns the rows and `WrapBlockStyled` returns the same rows with
+  their spans, and both are the one function, so the text cannot differ.
+  Offsets are bytes into the row.
+  The inline scan reports where emphasis and code lie in the text it leaves,
+  after the markers it strips, and the link scan reads that same text.
+- Where constructs overlap, a later one wins byte by byte, in this order: the
+  base role of the line (heading or quote), emphasis, code, link.
+  The roles are painted per byte before the fold, so the spans of a row come out
+  ordered and disjoint however the constructs nest.
+  The fold carries each word's roles to the row it lands on, and a span that
+  crosses a fold is split, one piece for each row.
+  The single space the fold puts between two words takes a role only where the
+  source gap and both words carry it, so an emphasised phrase is one span.
+- A span never covers padding.
+  Indentation and trailing spaces of a code row are left out, and an ellipsis
+  added by a cut is left unstyled.
+- A fenced block is code from its opening marker to its closing one, markers
+  included, and a block left open is code to the end, since that is how the
+  renderer treats it as text.
+  An unmatched marker, an unterminated backtick and a bracket with no
+  destination are text and take no span.
+  So a reply that is still streaming is colored exactly as the renderer already
+  folds it, and the partial and the entry it becomes take the same spans.
+- Markdown spans are worked out only when color is on, and only for the rows in
+  sight.
+  The frame is repainted on every tick of the spinner, so a repaint folds every
+  entry as it always did and then folds again, with spans, only the entries that
+  reach the visible rows, and the spans of those rows alone.
+  A repaint is therefore linear in the reply.
+  With color off it costs what it always did.
+  The link scan is linear in the length of a line.
+- The delegate pane records its answers as replies, and its question and its
+  notes stay plain.
+  The answer that is still arriving in the delegate pane is drawn as a single
+  unfolded row today and takes no color until it is finished.
 
 ### Echo
 

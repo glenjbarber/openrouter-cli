@@ -81,7 +81,7 @@ type Session struct {
 	completedPrefix string
 	completedNames  []string
 	completedAt     int
-	// step is how many twiddle frames have been drawn, and is where the colour
+	// step is how many twiddle frames have been drawn, and is where the color
 	// ramp is taken from. It is guarded by mu with the rest of the frame, since
 	// it is written by the spinner goroutine and read by the paint path.
 	step int
@@ -134,6 +134,9 @@ type Session struct {
 	// restore rather than rebuilding from the conversation, which is folded
 	// at render time and so cannot be turned back into lines here.
 	searchReply []string
+	// searchKinds is the record of each entry of searchReply, held aside with
+	// it so that closing the search restores the color the entries had.
+	searchKinds []entryKind
 	// searchScroll is the offset the reader held before the search moved the
 	// view. It is restored when the search closes, since a search that leaves
 	// the reader somewhere else would move the view out from under them.
@@ -197,6 +200,15 @@ type Session struct {
 	// It is a preference read from the configuration and changed at runtime,
 	// so that a user who did not ask for it never hears one.
 	bellWanted bool
+	// colorOn reports that color is drawn on the screen. It is off unless the
+	// configuration asked for it, and /color changes it and records the change.
+	colorOn bool
+	// colorSaver records the color state in the configuration file, or is nil
+	// when there is no file to record it in.
+	colorSaver func(on bool) error
+	// colorTheme is the base colors the configuration asks for, empty on a
+	// side that follows the terminal theme.
+	colorTheme config.Theme
 	// out is where the bell is written, which is the interface output.
 	out *os.File
 	// cognito reports that this session records nothing. The mode is in force
@@ -543,15 +555,13 @@ func (s *Session) addReply(lines ...string) {
 	if len(lines) == 0 {
 		return
 	}
-	s.mu.Lock()
-	s.frame.Reply = append(s.frame.Reply, lines...)
-	s.mu.Unlock()
+	s.addReplyTagged(entryKind{}, lines...)
 }
 
 // clearReply empties the reply pane.
 func (s *Session) clearReply() {
 	s.mu.Lock()
-	s.frame.Reply = nil
+	s.replaceReply(nil)
 	s.mu.Unlock()
 }
 
@@ -562,12 +572,25 @@ func (s *Session) clearReply() {
 // the renderer sees no block and folds code that must not be folded. The
 // renderer folds what it is given, so what it is given has to carry the whole
 // reply.
+//
+// The text is the client's own, a listing or a confirmation, and is recorded as
+// a notice. Text a model wrote goes through appendModelText instead.
 func (s *Session) appendLines(text string) {
 	text = strings.TrimRight(text, "\n")
 	if text == "" {
 		return
 	}
-	s.addReply(text)
+	s.addReplyKind(kindNotice, text)
+}
+
+// appendModelText adds text a model wrote to the reply pane, recorded as a
+// reply so that nothing about it is taken from what it says.
+func (s *Session) appendModelText(text string) {
+	text = strings.TrimRight(text, "\n")
+	if text == "" {
+		return
+	}
+	s.addReplyKind(kindReply, text)
 }
 
 // Note adds a line to the reply pane, for a message the client generates such
@@ -749,6 +772,11 @@ type command struct {
 	// run performs the command with the words that follow it, and reports
 	// whether the session should end.
 	run func(s *Session, args []string) bool
+	// hidden are names that select the command but are neither listed in the
+	// help nor offered by the completer. Only lookupCommand reads them, so a
+	// spelling that is accepted when typed does not widen the vocabulary the
+	// reader is shown.
+	hidden []string
 }
 
 // commands is the interface vocabulary, in the order the help lists it.
@@ -776,6 +804,7 @@ func init() {
 		{names: []string{"/model"}, usage: "/model [NAME]", description: "show or choose the model, without an argument to list", run: (*Session).cmdModel},
 		{names: []string{"/new"}, description: "clear the conversation", run: (*Session).cmdNew, idleOnly: true},
 		{names: []string{"/bell"}, description: "ring the terminal bell on reply, on or off", run: (*Session).cmdBell},
+		{names: []string{"/color"}, hidden: []string{"/colour"}, usage: "/color [on|off]", description: "turn color on or off, and save the choice", run: (*Session).cmdColor},
 		{names: []string{"/cognito"}, description: "record nothing, on or off", run: (*Session).cmdCognito},
 		{names: []string{"/verbosity"}, usage: "/verbosity [0-6]", description: "how much the model is asked to answer with", run: (*Session).cmdVerbosity},
 		{names: []string{"/verbose"}, description: "report the shape of each streamed turn, on or off", run: (*Session).cmdVerbose},
@@ -819,7 +848,7 @@ func (s *Session) command(line string) bool {
 		}
 		return c.run(s, args[1:])
 	}
-	s.addReply("unknown command: " + name)
+	s.addReplyKind(kindFailure, "unknown command: "+name)
 	return false
 }
 
@@ -831,6 +860,11 @@ func (s *Session) command(line string) bool {
 func lookupCommand(name string) *command {
 	for i, c := range commands {
 		for _, n := range c.names {
+			if n == name {
+				return &commands[i]
+			}
+		}
+		for _, n := range c.hidden {
 			if n == name {
 				return &commands[i]
 			}
@@ -1242,7 +1276,7 @@ func (s *Session) connect() {
 
 	usage, err := s.client.KeyUsage(ctx)
 	if err != nil {
-		s.addReply("connect failed: " + err.Error())
+		s.addReplyKind(kindFailure, "connect failed: "+err.Error())
 		return
 	}
 
@@ -1262,7 +1296,7 @@ func (s *Session) showUsage() {
 
 	usage, err := s.client.KeyUsage(ctx)
 	if err != nil {
-		s.addReply("usage failed: " + err.Error())
+		s.addReplyKind(kindFailure, "usage failed: "+err.Error())
 		return
 	}
 	s.conv.usage = *usage
@@ -1290,7 +1324,7 @@ func (s *Session) filterKey() {
 		s.modelList = nil
 		s.modelFilter = ""
 		s.dropModelCycle()
-		s.frame.Reply = nil
+		s.replaceReply(nil)
 		s.mu.Unlock()
 		return
 	}
@@ -1312,7 +1346,7 @@ func (s *Session) beginModelList(keep func(openrouter.Model) bool) {
 
 	models, err := s.client.Models(ctx)
 	if err != nil {
-		s.appendLines("models failed: " + err.Error())
+		s.addReplyKind(kindFailure, "models failed: "+err.Error())
 		return
 	}
 	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
@@ -1378,7 +1412,7 @@ func (s *Session) pane() {
 	lines = append(lines, "filter: "+filter+"_", "Tab cycles, Enter to choose, Esc to leave")
 
 	s.mu.Lock()
-	s.frame.Reply = lines
+	s.replaceReply(lines)
 	s.mu.Unlock()
 }
 
@@ -1484,7 +1518,7 @@ func (s *Session) modelListKey(b byte) {
 		s.modelList = nil
 		s.modelFilter = ""
 		s.dropModelCycle()
-		s.frame.Reply = nil
+		s.replaceReply(nil)
 		s.mu.Unlock()
 		s.draw()
 	case keyTab:
@@ -1776,11 +1810,13 @@ func (s *Session) send(ctx context.Context, conv *Conversation, line string) {
 	defer s.paintFinal()
 
 	if msg := s.credentialProblem(); msg != "" {
-		s.addReply("> "+line, msg)
+		s.addReply("> " + line)
+		s.addReplyKind(kindNotice, msg)
 		return
 	}
 	if conv.Model() == "" {
-		s.addReply("> "+line, "(no model is selected: /model NAME)")
+		s.addReply("> " + line)
+		s.addReplyKind(kindNotice, "(no model is selected: /model NAME)")
 		return
 	}
 
@@ -1860,9 +1896,9 @@ func (s *Session) send(ctx context.Context, conv *Conversation, line string) {
 		// would tell the reader that something broke when they had asked for it.
 		stopReport := func() {
 			if reply.Len() > 0 {
-				s.addReply(strings.TrimRight(reply.String(), "\n"))
+				s.addReplyKind(kindReply, strings.TrimRight(reply.String(), "\n"))
 			}
-			s.addReply("(stopped)")
+			s.addReplyKind(kindFailure, "(stopped)")
 		}
 
 		err := s.client.Chat(ctx, openrouter.ChatRequest{
@@ -1884,9 +1920,9 @@ func (s *Session) send(ctx context.Context, conv *Conversation, line string) {
 				// text is kept: it is usually more useful than an error alone.
 				failed = true
 				if reply.Len() > 0 {
-					s.addReply(strings.TrimRight(reply.String(), "\n"))
+					s.addReplyKind(kindReply, strings.TrimRight(reply.String(), "\n"))
 				}
-				s.addReply("(error) " + e.Err.Error())
+				s.addReplyKind(kindFailure, "(error) "+e.Err.Error())
 				return
 			}
 			if e.Done {
@@ -1909,7 +1945,7 @@ func (s *Session) send(ctx context.Context, conv *Conversation, line string) {
 				stopReport()
 				return
 			}
-			s.addReply("(error) " + err.Error())
+			s.addReplyKind(kindFailure, "(error) "+err.Error())
 			return
 		}
 
@@ -1942,7 +1978,7 @@ func (s *Session) send(ctx context.Context, conv *Conversation, line string) {
 			// since that line is the question. Overwriting it loses the
 			// exchange and makes the pane show a reply with nothing that
 			// prompted it.
-			s.appendLines(withResponseRule(text))
+			s.appendModelText(withResponseRule(text))
 			// The bell rings once the reply has finished arriving rather
 			// than when the request was sent, since the point of it is to say
 			// the answer is ready.
@@ -1965,15 +2001,15 @@ func (s *Session) send(ctx context.Context, conv *Conversation, line string) {
 		// shown while it arrives would vanish under the answer to the calls it
 		// asked to make.
 		if reply.Len() > 0 {
-			s.appendLines(strings.TrimRight(reply.String(), "\n"))
+			s.appendModelText(reply.String())
 		}
 
 		if round == maxToolRounds-1 {
 			// The turn is stopped rather than cut short silently. A reader
 			// shown a reply with no explanation has been given a turn that
 			// ended for a reason nothing said.
-			s.addReply("(stopped: the model is still asking for tools, and the turn " +
-				"reached its limit of " + itoa(maxToolRounds) + " requests)")
+			s.addReplyKind(kindFailure, "(stopped: the model is still asking for tools, "+
+				"and the turn reached its limit of "+itoa(maxToolRounds)+" requests)")
 			return
 		}
 
@@ -2175,10 +2211,10 @@ func (s *Session) beginWork() {
 	s.startedAt = time.Now()
 	s.mu.Unlock()
 	s.spinner.Start(func(frame string) {
-		// The step advances once per frame, which is what makes the colour
+		// The step advances once per frame, which is what makes the color
 		// move at the rate the twiddle does rather than at a rate of its own.
 		// The figure and the step are written under one lock, so a repaint
-		// can never draw a colour belonging to a different frame than the one
+		// can never draw a color belonging to a different frame than the one
 		// it is drawing.
 		s.mu.Lock()
 		s.frame.Spinner = frame
@@ -2233,7 +2269,7 @@ func (s *Session) endWork() {
 	s.mu.Lock()
 	s.frame.Spinner = ""
 	// The tint is cleared with the twiddle rather than left behind, since a
-	// tint with no twiddle would colour whichever row it was pointed at.
+	// tint with no twiddle would color whichever row it was pointed at.
 	s.frame.Tint = ""
 	s.frame.Elapsed = ""
 	s.startedAt = time.Time{}
@@ -2404,7 +2440,11 @@ func (s *Session) paintNow() {
 	s.mu.Unlock()
 
 	height, width := s.screen.Size()
-	rows, drawn, twiddle := render(frame, height, width)
+	// The palette is resolved before the frame is folded, since whether color
+	// is on decides whether the markdown spans of a reply are worked out at all.
+	pal := s.framePalette()
+	frame.styleReplies = pal != nil
+	rows, spans, drawn, twiddle := renderStyled(frame, height, width)
 	// The offset the renderer drew at is adopted back into the session, so
 	// that scrolling up further than there is history does not leave the
 	// session holding an offset the pane cannot show. The change is made
@@ -2417,11 +2457,13 @@ func (s *Session) paintNow() {
 		}
 		s.mu.Unlock()
 	}
-	// The colour is pointed at the row the renderer reported. A frame with no
+	// The color is pointed at the row the renderer reported. A frame with no
 	// twiddle reports none, and the screen draws it exactly as it always has.
 	//
 	s.screen.DrawFrame(rows, framePaint{
 		box:      frame.ConfirmBox,
+		spans:    spans,
+		pal:      pal,
 		twiddle:  twiddle,
 		sequence: frame.Tint,
 		figure:   frame.Spinner,

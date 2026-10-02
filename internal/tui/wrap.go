@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"math"
 	"strings"
 	"unicode/utf8"
 )
@@ -92,23 +93,88 @@ func foldWords(para string, width int) []string {
 // a construct, and stripping an asterisk out of a shell glob would change what
 // the reader was shown.
 func WrapBlock(s string, width int) []string {
+	rows, _ := wrapBlock(s, width, 0, 0)
+	return rows
+}
+
+// WrapBlockStyled folds a reply exactly as WrapBlock does and returns the style
+// spans of every row beside it.
+//
+// The rows are the rows WrapBlock returns, byte for byte, since both are the one
+// function. The spans are the color a reply takes when color is on: code,
+// headings, emphasis, quotes, list markers and links. They are offsets into the
+// row and never text in it, so nothing here puts an escape character anywhere.
+func WrapBlockStyled(s string, width int) ([]string, [][]span) {
+	return wrapBlock(s, width, 0, math.MaxInt)
+}
+
+// wrapBlock is the one fold behind WrapBlock and WrapBlockStyled.
+//
+// Spans are worked out only for the rows from lo up to but not including hi,
+// counted from the first row of the reply, and the list returned holds one entry
+// for each of those rows that exists, so entry k belongs to row lo+k. A frame is
+// repainted on every tick of the spinner and shows a screenful of a reply that
+// may be thousands of rows long, so the rows out of sight cost no more than they
+// did before color existed. With lo and hi both zero no span is worked out at
+// all, and the return is the fold WrapBlock always was.
+func wrapBlock(s string, width, lo, hi int) ([]string, [][]span) {
 	if width < 1 {
 		width = wrapWidth
 	}
 
 	var out []string
+	var spans [][]span
 	var block []string
 	inFence := false
+
+	// add appends one row, and its spans when the row is one the caller asked
+	// for. The spans are finished against the row they belong to, so that none
+	// reaches into the spaces at its end or past its length.
+	add := func(row string, sp []span) {
+		if at := len(out); at >= lo && at < hi {
+			spans = append(spans, finishSpans(row, sp))
+		}
+		out = append(out, row)
+	}
+	// addCode appends a row drawn as code. The spans of a row that is out of
+	// sight are not worked out.
+	addCode := func(row string) {
+		if at := len(out); at >= lo && at < hi {
+			add(row, codeRowSpans(row))
+			return
+		}
+		out = append(out, row)
+	}
+	// addProse appends the rows one line of prose folds to. The line is folded
+	// without spans first, which is all a row out of sight needs, and folded
+	// again with them only when one of its rows is in sight. The text of the two
+	// is the same, and the first is the one kept, so that a fault in the second
+	// could cost a line its color and nothing else.
+	addProse := func(line string) {
+		rows, _ := renderMarkdownRows(line, width, false)
+		at := len(out)
+		if at < hi && at+len(rows) > lo {
+			if again, sp := renderMarkdownRows(line, width, true); sameRows(rows, again) {
+				for i, row := range rows {
+					add(row, sp[i])
+				}
+				return
+			}
+		}
+		for _, row := range rows {
+			add(row, nil)
+		}
+	}
 
 	flush := func() {
 		for _, l := range block {
 			// A line holding only indentation is blank, since keeping it
 			// leaves a column of spaces that reads as content.
 			if strings.TrimSpace(l) == "" {
-				out = append(out, "")
+				add("", nil)
 				continue
 			}
-			out = append(out, l)
+			addCode(l)
 		}
 		block = nil
 	}
@@ -128,17 +194,17 @@ func WrapBlock(s string, width int) []string {
 				if inFence {
 					block = append(block, before)
 				} else {
-					out = append(out, renderMarkdown(before, width)...)
+					addProse(before)
 				}
 			}
 			flush()
 			inFence = !inFence
-			out = append(out, marker)
+			addCode(marker)
 			if after != "" {
 				if inFence {
 					block = append(block, strings.TrimRight(after, " \t"))
 				} else {
-					out = append(out, renderMarkdown(after, width)...)
+					addProse(after)
 				}
 			}
 			continue
@@ -148,13 +214,26 @@ func WrapBlock(s string, width int) []string {
 			block = append(block, line)
 			continue
 		}
-		out = append(out, renderMarkdown(line, width)...)
+		addProse(line)
 	}
 
 	// A block left open at the end is still emitted, since a reply cut short
 	// by a disconnect should not lose its tail.
 	flush()
-	return out
+	return out, spans
+}
+
+// sameRows reports whether two lists of rows are the same text.
+func sameRows(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // splitFence divides a line at the first fence marker.

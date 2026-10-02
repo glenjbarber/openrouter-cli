@@ -384,3 +384,20 @@ func TestSetsAreKeptApart(t *testing.T) {
 		}
 	}
 }
+
+// The color keys are lower case and carry no OPENROUTER_ prefix, and they are
+// completed the same way as the others.
+func TestColorOptionsComplete(t *testing.T) {
+	res := completeAt(testCompleter(), "color_")
+	if res.Kind != Unique || res.Line != "color_theme" {
+		t.Errorf("color_ gave %v %q, want Unique color_theme", res.Kind, res.Line)
+	}
+	res = completeAt(testCompleter(), "col")
+	if res.Kind != Ambiguous {
+		t.Fatalf("col: Kind = %v, want Ambiguous", res.Kind)
+	}
+	want := []string{"color", "color_theme"}
+	if got := names(res.Candidates); !equalStrings(got, want) {
+		t.Errorf("candidates = %v, want %v", got, want)
+	}
+}

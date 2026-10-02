@@ -3,6 +3,8 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	"github.com/glenjbarber/openrouter-cli/internal/config"
 )
 
 // The question is drawn as a box, since it is the one thing on screen that asks
@@ -152,51 +154,76 @@ func TestTheBoxIsAboveThePrompt(t *testing.T) {
 	}
 }
 
-// The box is drawn in red, since it is the one thing on the screen asking the
-// reader to decide something.
-func TestTheBoxIsDrawnInRed(t *testing.T) {
+// styledFrame renders a frame with its spans and draws it with color on.
+func styledFrame(t *testing.T, f Frame, height, width int, pal *palette) (string, []string) {
+	t.Helper()
 	sc, read := screenCapture(t)
-	rows := Render(Frame{Title: "t", Confirm: "run go?", Input: "hi"}, 24, 40)
+	sc.height, sc.width = height, width
+	rows, spans, _, twiddle := renderStyled(f, height, width)
+	sc.DrawFrame(rows, framePaint{box: f.ConfirmBox, spans: spans, pal: pal, twiddle: twiddle})
+	return read(), rows
+}
 
-	sc.DrawFrame(rows, framePaint{box: rows[boxRowIndex(t, rows):]})
-	got := read()
+// The box is drawn in the approval color when color is on, since it is the
+// one thing on the screen asking the reader to decide something.
+func TestTheBoxIsDrawnInRedWhenColorIsOn(t *testing.T) {
+	pal := newPalette(config.Theme{})
+	got, _ := styledFrame(t, Frame{Title: "t", Confirm: "run go?", Input: "hi"}, 24, 40, &pal)
 
-	if !strings.Contains(got, seqRed) {
-		t.Errorf("no red was written:\n%q", got)
+	approval := pal.role(roleApproval)
+	if !strings.Contains(got, approval+boxTopLeft) {
+		t.Errorf("the top corner is not in the approval color:\n%q", got)
+	}
+	if !strings.Contains(got, approval+boxBottomLeft) {
+		t.Errorf("the bottom corner is not in the approval color:\n%q", got)
 	}
 }
 
-// The colour is on the border and not on the text inside it, since the text is
-// what the reader reads and a selection of it carries no colour either way.
+// With color off the corner is plain. It was red unconditionally before, and
+// the change is deliberate.
+func TestTheBoxCornerIsPlainWhenColorIsOff(t *testing.T) {
+	got, _ := styledFrame(t, Frame{Title: "t", Confirm: "run go?", Input: "hi"}, 24, 40, nil)
+
+	if !strings.Contains(got, boxTopLeft) {
+		t.Fatalf("no box was drawn:\n%q", got)
+	}
+	for _, seq := range roleSequences {
+		if strings.Contains(got, seq) {
+			t.Errorf("a role sequence %q was written with color off:\n%q", seq, got)
+		}
+	}
+	if strings.Contains(got, "\x1b[31m") {
+		t.Errorf("a red corner was written with color off:\n%q", got)
+	}
+}
+
+// The color is on the border and not on the text inside it, since the text is
+// what the reader reads and a selection of it carries no color either way.
 func TestTheRedIsOnTheBorderAndNotTheText(t *testing.T) {
-	sc, read := screenCapture(t)
-	rows := Render(Frame{Title: "t", Confirm: "run go?", Input: "hi"}, 24, 40)
-	at := boxRowIndex(t, rows)
+	pal := newPalette(config.Theme{})
+	got, rows := styledFrame(t, Frame{Title: "t", Confirm: "run go?", Input: "hi"}, 24, 40, &pal)
+	approval := pal.role(roleApproval)
 
-	sc.DrawFrame(rows, framePaint{box: rows[at : at+3]})
-	got := read()
-
-	// The colour is written before the corner and reset immediately after it,
-	// so the rest of the border and the text inside the box are in the colour
-	// of the rest of the frame.
-	marker := strings.Index(got, seqRed)
-	if marker < 0 {
-		t.Fatalf("no red was written:\n%q", got)
+	// A side row is colored at its two edges, and what is between them is
+	// written plain.
+	var side string
+	for _, row := range rows {
+		if strings.HasPrefix(row, boxVertical) && strings.Contains(row, "run go?") {
+			side = row
+		}
 	}
-	rest := got[marker+len(seqRed):]
-	// The corner is a box-drawing rune of several bytes, so the reset is looked
-	// for after it rather than compared against a prefix of it.
-	cornerAt := strings.Index(rest, boxTopLeft)
-	if cornerAt < 0 {
-		t.Fatalf("the corner was not written: %q", rest)
+	if side == "" {
+		t.Fatalf("no side row carries the question:\n%s", strings.Join(rows, "\n"))
 	}
-	if !strings.HasPrefix(rest[cornerAt+len(boxTopLeft):], seqResetAttr) {
-		t.Errorf("the colour does not stop after the corner: %q", rest[:40])
+	inner := side[len(boxVertical) : len(side)-len(boxVertical)]
+	want := approval + boxVertical + pal.reset() + inner + approval + boxVertical + pal.reset()
+	if !strings.Contains(got, want) {
+		t.Errorf("the side row is not colored at its edges only:\n%q\nwant it to contain %q", got, want)
 	}
 }
 
-// A frame with no question is drawn exactly as it was, in the colour of the
-// rest of the frame, since there is no box to colour.
+// A frame with no question is drawn exactly as it was, in the color of the
+// rest of the frame, since there is no box to color.
 func TestAFrameWithNoBoxCarriesNoRed(t *testing.T) {
 	sc, read := screenCapture(t)
 	rows := Render(Frame{Title: "t", Input: "hi"}, 24, 40)
@@ -204,7 +231,7 @@ func TestAFrameWithNoBoxCarriesNoRed(t *testing.T) {
 	sc.DrawFrame(rows, framePaint{twiddle: -1})
 	got := read()
 
-	if strings.Contains(got, seqRed) {
+	if strings.Contains(got, roleSequences[roleApproval]) {
 		t.Errorf("red was written with no question on screen:\n%q", got)
 	}
 }
@@ -217,16 +244,4 @@ func TestTheBoxRowsCarryNoEscape(t *testing.T) {
 			t.Errorf("a box row carries an escape: %q", row)
 		}
 	}
-}
-
-// boxRowIndex is where the box begins in a drawn frame.
-func boxRowIndex(t *testing.T, rows []string) int {
-	t.Helper()
-	for i, row := range rows {
-		if strings.HasPrefix(row, boxTopLeft) {
-			return i
-		}
-	}
-	t.Fatalf("no box in the frame:\n%s", strings.Join(rows, "\n"))
-	return -1
 }

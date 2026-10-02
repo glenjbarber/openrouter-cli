@@ -24,6 +24,7 @@ func (s *Session) searching() bool {
 func (s *Session) beginSearch() {
 	s.mu.Lock()
 	s.searchReply = s.frame.Reply
+	s.searchKinds = s.frame.Kinds
 	s.searchOpen = true
 	s.search = ""
 	s.searchScroll = s.scroll
@@ -40,7 +41,9 @@ func (s *Session) beginSearch() {
 func (s *Session) endSearch() {
 	s.mu.Lock()
 	s.frame.Reply = s.searchReply
+	s.frame.Kinds = s.searchKinds
 	s.searchReply = nil
+	s.searchKinds = nil
 	s.searchOpen = false
 	s.search = ""
 	s.scroll = s.searchScroll
@@ -175,7 +178,7 @@ func (s *Session) searchPane() {
 	lines = append(lines, "search: "+query+"_", "Enter to jump, Esc to leave")
 
 	s.mu.Lock()
-	s.frame.Reply = lines
+	s.replaceReply(lines)
 	s.mu.Unlock()
 }
 
@@ -232,7 +235,7 @@ func paneRows(height int) int {
 	return rows
 }
 
-// markMatch makes the matched part of a line visible without colour.
+// markMatch makes the matched part of a line visible without color.
 //
 // A selection is taken out of the pane as plain text, so an escape sequence
 // drawn around the match would be copied along with it. The match is therefore

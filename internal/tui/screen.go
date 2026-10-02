@@ -38,6 +38,11 @@ type Screen struct {
 	// closed records that the terminal has already been put back, so that a
 	// signal arriving during the ordinary exit does not restore it twice.
 	closed bool
+	// base records that the last frame left the base colors of a theme set,
+	// which a reset that re-applies them does. They belong to the interface and
+	// not to the terminal, so restore clears them before the shell is returned
+	// to, or the shell would be drawn on the theme background.
+	base bool
 }
 
 // ANSI control sequences. Only the ones the interface actually uses are
@@ -58,10 +63,6 @@ const (
 	// Bracketed paste is private mode 2004. Without it a pasted block is
 	// indistinguishable from typing, and a newline inside a paste would submit
 	// the line halfway through and send half of it as a message.
-	// 31 is the bright red of the eight-colour foreground, which is the
-	// colour a terminal already means by danger. It is in the eight every
-	// terminal has rather than in a cube one of them may not show.
-	seqRed      = "\x1b[31m"
 	seqPasteOn  = "\x1b[?2004h"
 	seqPasteOff = "\x1b[?2004l"
 	// Mouse reporting is turned on and off with the private mode 1000, which
@@ -188,6 +189,12 @@ func (s *Screen) restore() {
 	// on wraps a paste in markers that nothing is reading, and the shell the
 	// reader is returned to loses the text that was pasted into it.
 	s.write(seqPasteOff)
+	if s.base {
+		// The bare reset, with no base re-applied, since this is the one
+		// place a theme color must not be left set.
+		s.write(seqResetAttr)
+		s.base = false
+	}
 	s.write(seqShowCur + seqExitAlt)
 }
 

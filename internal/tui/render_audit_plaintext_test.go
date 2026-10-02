@@ -20,7 +20,7 @@ func TestFrameCarriesNoControlByte(t *testing.T) {
 		"```go\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n```",
 		"windows line endings\r\nand a second line\r\n",
 		"a bare carriage return\rafter which the rest of the row is overtyped",
-		"an escape \x1b[31mthat would recolour the frame\x1b[0m and a cursor move",
+		"an escape \x1b[31mthat would recolor the frame\x1b[0m and a cursor move",
 		"a tab\tinside one line",
 		"emoji and wide text: 你好世界 \U0001F600 end",
 		"combining: éèê end",

@@ -121,7 +121,7 @@ func setCognito(on bool) error {
 func (s *Session) toggleCognito() {
 	if s.cognito {
 		if err := setCognito(false); err != nil {
-			s.addReply("(error) " + err.Error())
+			s.addReplyKind(kindFailure, "(error) "+err.Error())
 			return
 		}
 		s.cognito = false
@@ -140,7 +140,7 @@ func (s *Session) toggleCognito() {
 	}
 
 	if err := setCognito(true); err != nil {
-		s.addReply("(error) " + err.Error())
+		s.addReplyKind(kindFailure, "(error) "+err.Error())
 		return
 	}
 	s.cognito = true
