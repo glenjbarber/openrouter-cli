@@ -197,6 +197,9 @@ type Session struct {
 	// It is a preference read from the configuration and changed at runtime,
 	// so that a user who did not ask for it never hears one.
 	bellWanted bool
+	// colorOn reports that colour is drawn on the screen. It is off unless the
+	// configuration asked for it, and /color changes it for the session only.
+	colorOn bool
 	// out is where the bell is written, which is the interface output.
 	out *os.File
 	// cognito reports that this session records nothing. The mode is in force
@@ -749,6 +752,11 @@ type command struct {
 	// run performs the command with the words that follow it, and reports
 	// whether the session should end.
 	run func(s *Session, args []string) bool
+	// hidden are names that select the command but are neither listed in the
+	// help nor offered by the completer. Only lookupCommand reads them, so a
+	// spelling that is accepted when typed does not widen the vocabulary the
+	// reader is shown.
+	hidden []string
 }
 
 // commands is the interface vocabulary, in the order the help lists it.
@@ -776,6 +784,7 @@ func init() {
 		{names: []string{"/model"}, usage: "/model [NAME]", description: "show or choose the model, without an argument to list", run: (*Session).cmdModel},
 		{names: []string{"/new"}, description: "clear the conversation", run: (*Session).cmdNew, idleOnly: true},
 		{names: []string{"/bell"}, description: "ring the terminal bell on reply, on or off", run: (*Session).cmdBell},
+		{names: []string{"/color"}, hidden: []string{"/colour"}, usage: "/color [on|off]", description: "turn colour on or off, for this session", run: (*Session).cmdColor},
 		{names: []string{"/cognito"}, description: "record nothing, on or off", run: (*Session).cmdCognito},
 		{names: []string{"/verbosity"}, usage: "/verbosity [0-6]", description: "how much the model is asked to answer with", run: (*Session).cmdVerbosity},
 		{names: []string{"/verbose"}, description: "report the shape of each streamed turn, on or off", run: (*Session).cmdVerbose},
@@ -831,6 +840,11 @@ func (s *Session) command(line string) bool {
 func lookupCommand(name string) *command {
 	for i, c := range commands {
 		for _, n := range c.names {
+			if n == name {
+				return &commands[i]
+			}
+		}
+		for _, n := range c.hidden {
 			if n == name {
 				return &commands[i]
 			}

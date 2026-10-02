@@ -21,7 +21,7 @@ var requiredNames = []string{
 	"/help", "/clear", "/quit", "/exit", "/connect", "/key", "/search",
 	"/models", "/freemodels", "/model", "/new", "/bell", "/cognito",
 	"/verbose", "/delegate", "/pane", "/btw", "/main", "/compact", "/mouse", "/info",
-	"/save", "/load", "/tools", "/approve", "/autosave", "/permission", "/copy", "/verbosity",
+	"/save", "/load", "/tools", "/approve", "/autosave", "/permission", "/copy", "/verbosity", "/color",
 }
 
 // Every name the interface is expected to answer to is declared in the table
@@ -45,6 +45,15 @@ func TestCommandNamesAreDeclaredOnce(t *testing.T) {
 	seen := map[string]bool{}
 	for _, c := range commands {
 		for _, n := range c.names {
+			if seen[n] {
+				t.Errorf("%s is declared more than once", n)
+			}
+			seen[n] = true
+		}
+		// A hidden name shares the table with the listed ones, so it is held
+		// to the same rule: one declared twice, or declared as both listed
+		// and hidden, would leave the dispatcher depending on the order.
+		for _, n := range c.hidden {
 			if seen[n] {
 				t.Errorf("%s is declared more than once", n)
 			}
