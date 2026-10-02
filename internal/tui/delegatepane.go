@@ -74,9 +74,14 @@ func (s *Session) showDelegatePane(on bool) {
 
 // stepPane shows the next pane for a delta of one and the previous for minus
 // one, wrapping around, as tmux does for its next and previous window keys.
+//
+// The set is grown to the worker pane as well, since a reader stepping forward
+// past the delegate pane should reach the worker output rather than wrap back
+// to the conversation and never see it.
 func (s *Session) stepPane(delta int) {
 	s.mu.Lock()
 	s.registerPanes()
+	s.registerWorkerPane()
 	s.panes.Step(delta)
 	s.mu.Unlock()
 	s.draw()
@@ -105,15 +110,22 @@ func (s *Session) applyDelegatePane(f *Frame) {
 	}
 }
 
-// cmdPane chooses the pane that is shown: "delegate" or "main".
+// cmdPane chooses the pane that is shown: the conversation, the delegate
+// output or the worker output.
+//
+// The three panes are one vocabulary rather than two commands, since a reader
+// stepping between them with the next and previous keys should be able to name
+// the one they want to land on.
 func (s *Session) cmdPane(args []string) bool {
 	switch strings.ToLower(strings.Join(args, " ")) {
 	case "delegate", "delegates":
 		s.showDelegatePane(true)
+	case "spawn", "worker", "workers":
+		s.showWorkerPane(true)
 	case "main", "conversation", "":
 		s.showDelegatePane(false)
 	default:
-		s.appendLines("usage: /pane [main|delegate]")
+		s.appendLines("usage: /pane [main|delegate|spawn]")
 	}
 	return false
 }
