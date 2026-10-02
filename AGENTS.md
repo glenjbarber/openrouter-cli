@@ -265,6 +265,16 @@ so that a later change does not silently reverse it.
 - Only the button-event mode is enabled. The modes that also report a drag or
   every pointer movement would fill the input stream while the mouse merely
   crosses the window, and nothing here would act on what they send.
+- The SGR encoding is asked for as well as the mode. The older report carries a
+  coordinate as a single byte, and a terminal that is not asked sends it, so a
+  pane past 223 in either direction cannot be scrolled: the terminal reports the
+  last position it can express and the view stops at the edge. Terminal.app does
+  this. The encoding is a separate setting from the mode, turned on before it and
+  off after it, and the restore on the way out goes through the same path since a
+  terminal left in the SGR form reports in it to whatever runs next.
+- A copy does not depend on reporting being on or off. It travels the same path
+  as the drawing, and a reader who turned reporting off did so to select text,
+  which is the gesture a copy is.
 - The offset is a count of lines back from the newest output, and zero is the
   bottom. A line count rather than a stored history is used so that a reply
   arriving needs no separate record of what was seen: the pane is folded at
