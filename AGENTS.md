@@ -850,6 +850,23 @@ so that a later change does not silently reverse it.
   the session as well as with the answer, since a question left open at exit
   would strand the turn on a channel nobody is left to post to. A turn blocked
   there is a turn a reader reads as a hang.
+- The question is drawn as a box, closed on all four sides, above the prompt on
+  the input block. It is the one thing on the screen that asks the reader to do
+  something rather than telling them something, and a line of prose among other
+  lines of prose is read as part of the conversation. A reader who has just been
+  asked whether a program may run must not be able to mistake the question for
+  output.
+- The box is drawn with the box-drawing set rather than with pipes and hyphens,
+  which read as text, and in the same font as the rules the frame is divided by.
+- A question is folded inside the box rather than cut. The command it asks about
+  is the one part that must not be hidden, and a cut question would hide it.
+- A terminal too narrow for a box gets the bare question. A box two columns wide
+  with the text cut to nothing inside it is worse than no box.
+- The box is budgeted with the rest of the input block and only the rows the
+  budget allowed are drawn, since a box pushed off the bottom of the screen
+  takes the prompt with it and a reader with no prompt cannot answer.
+- The rows of the box are padded here rather than by the terminal, so that a
+  selection out of it is the text and not the text with a run of spaces after it.
 - The question is drawn on the input block rather than into the pane. A question
   written into the pane scrolls back into the history the moment a reply
   arrives, which is about the moment a reader answering it would need to read it
