@@ -418,3 +418,14 @@ func (s *Session) approvalListing() []string {
 	}
 	return lines
 }
+
+// setApprovalMode changes the mode outside the command.
+//
+// It exists so that the command and a test agree on what changing the mode
+// does. Clearing the remembered answers is part of it, since an answer given
+// while asking is an answer to one question.
+func (s *Session) setApprovalMode(mode approvalMode) {
+	s.mu.Lock()
+	s.approvals.setMode(mode)
+	s.mu.Unlock()
+}
