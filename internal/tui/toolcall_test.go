@@ -34,7 +34,7 @@ func TestACalledToolIsRunAndItsResultSentBack(t *testing.T) {
 		json.NewDecoder(r.Body).Decode(&body)
 		mu.Lock()
 		bodies = append(bodies, body)
-		first := len(body["messages"].([]any)) == 1
+		first := !carriesToolResult(body)
 		mu.Unlock()
 		if first {
 			io.WriteString(w, toolCallStream("list_dir", map[string]any{"path": "."}))
@@ -128,7 +128,7 @@ func TestAFailedCallStillAnswersTheModel(t *testing.T) {
 		}
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
-		first := len(body["messages"].([]any)) == 1
+		first := !carriesToolResult(body)
 		mu.Lock()
 		if !first && second == nil {
 			second = body
@@ -303,7 +303,7 @@ func TestACallIsReportedByItsSizeRatherThanItsContent(t *testing.T) {
 		}
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
-		if len(body["messages"].([]any)) == 1 {
+		if !carriesToolResult(body) {
 			io.WriteString(w, toolCallStream("read_file", map[string]any{"path": "big"}))
 			return
 		}
@@ -333,7 +333,7 @@ func TestAFailedCallIsReportedOnItsOwnLine(t *testing.T) {
 		}
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
-		if len(body["messages"].([]any)) == 1 {
+		if !carriesToolResult(body) {
 			io.WriteString(w, toolCallStream("read_file", map[string]any{"path": "absent"}))
 			return
 		}
@@ -463,4 +463,20 @@ func newToolSession(t *testing.T, baseURL, dir string, approver tools.Approver) 
 	}
 	t.Cleanup(s.Close)
 	return s
+}
+
+// carriesToolResult reports whether a request already has the answer to a call.
+//
+// The first request of a turn is told from the absence of an answer rather than
+// by the number of messages, since a request now carries a verbosity turn as
+// well and a count no longer distinguishes one round from another.
+func carriesToolResult(body map[string]any) bool {
+	messages, _ := body["messages"].([]any)
+	for _, entry := range messages {
+		m, _ := entry.(map[string]any)
+		if m["role"] == openrouter.RoleTool {
+			return true
+		}
+	}
+	return false
 }

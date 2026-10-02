@@ -38,6 +38,11 @@ type rawFile struct {
 	// setting, since the decision is settled per session by where the
 	// session is running and by whether the reader can select text.
 	Mouse bool `json:"OPENROUTER_MOUSE"`
+	// Verbosity is how much the model is asked to answer with, from 0 to 6. A
+	// file that does not set it leaves the client at its own default, since a
+	// preference absent is a preference not expressed rather than a preference
+	// of none.
+	Verbosity *int `json:"OPENROUTER_VERBOSITY"`
 	// Tools are the approval rules, read from OPENROUTER_TOOLS. A rule
 	// permits some programs in a directory without asking, which is the
 	// only thing in the file that grants a capability the client would
@@ -66,6 +71,11 @@ type Config struct {
 	// only outside tmux, since inside tmux the drag that begins a selection
 	// is the one gesture a reader is most likely to want.
 	Mouse bool
+	// Verbosity is the level the file asks for, nil where it does not say.
+	// It is a pointer rather than an integer so that a file asking for level
+	// zero is told apart from a file that says nothing: zero is the most
+	// terse level there is and is a preference in its own right.
+	Verbosity *int
 	// Tools are the approval rules the file carries, in the order they were
 	// written. The order is kept rather than reduced to one resolved set,
 	// since which rule matched is what a reader needs to be able to see.
@@ -115,6 +125,10 @@ type ErrNoAPIKey struct {
 	// same reason: a reader whose key has not been entered yet is still talking
 	// to whichever endpoint the file names.
 	URLBase string
+	// Verbosity is the level the file asks for, carried with the error on the
+	// same reasoning as the model and the endpoint: a preference dropped with
+	// the key would make a file that was read look as though it had not been.
+	Verbosity *int
 	// Tools are the approval rules the file carries. They travel with the
 	// error on the same reasoning as the model and the endpoint: a rule is
 	// not a credential, and dropping it would make a file that was read look
@@ -270,14 +284,15 @@ func parse(path string) (*Config, error) {
 	unset := strings.TrimSpace(raw.APIKey) == ""
 
 	cfg := &Config{
-		APIKey:  raw.APIKey,
-		Model:   strings.TrimSpace(raw.Model),
-		Bell:    raw.Bell,
-		URLBase: resolveURLBase(raw.URLBase),
-		Path:    path,
-		Skipped: raw.SetupKey && unset,
-		Mouse:   raw.Mouse,
-		Tools:   raw.Tools,
+		APIKey:    raw.APIKey,
+		Model:     strings.TrimSpace(raw.Model),
+		Bell:      raw.Bell,
+		URLBase:   resolveURLBase(raw.URLBase),
+		Path:      path,
+		Skipped:   raw.SetupKey && unset,
+		Mouse:     raw.Mouse,
+		Tools:     raw.Tools,
+		Verbosity: raw.Verbosity,
 	}
 
 	if unset {
@@ -289,12 +304,13 @@ func parse(path string) (*Config, error) {
 			return cfg, nil
 		}
 		return nil, &ErrNoAPIKey{
-			Path:    path,
-			Bell:    raw.Bell,
-			Model:   cfg.Model,
-			Mouse:   raw.Mouse,
-			URLBase: cfg.URLBase,
-			Tools:   raw.Tools,
+			Path:      path,
+			Bell:      raw.Bell,
+			Model:     cfg.Model,
+			Mouse:     raw.Mouse,
+			URLBase:   cfg.URLBase,
+			Tools:     raw.Tools,
+			Verbosity: raw.Verbosity,
 		}
 	}
 	return cfg, nil

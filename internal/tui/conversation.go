@@ -203,11 +203,18 @@ func hostname() string {
 // over whole rather than re-derived, so that the request sent on the second
 // round is the conversation as it has actually been built rather than as it
 // would look with the calls and their answers left out.
-func (c *Conversation) PendingMessages(msgs []openrouter.Message) []openrouter.Message {
-	out := make([]openrouter.Message, 0, len(c.messages)+len(msgs))
+// PendingMessages builds the request from the conversation and what this turn
+// has added to it, at the level the reader has asked for.
+//
+// The verbosity turn is added to the request and not to the conversation. It is
+// an instruction about how to answer rather than part of what was said, so
+// recording it would put an instruction into the history a later turn replays
+// and into every save of the session.
+func (c *Conversation) PendingMessages(msgs []openrouter.Message, level int) []openrouter.Message {
+	out := make([]openrouter.Message, 0, len(c.messages)+len(msgs)+1)
 	out = append(out, c.messages...)
 	out = append(out, msgs...)
-	return out
+	return verbosityInsert(out, level)
 }
 
 // AmendLastUser replaces the content of the last user turn in the given slice.
