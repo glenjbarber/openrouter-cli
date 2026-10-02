@@ -2,6 +2,7 @@ package tools
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -423,8 +424,11 @@ func TestGitWithoutARepositoryIsRefused(t *testing.T) {
 	if err == nil {
 		t.Fatal("the tools were offered for a directory in no repository")
 	}
-	if !strings.Contains(err.Error(), "no git repository") {
-		t.Errorf("the refusal did not say there is no repository: %v", err)
+	if !errors.Is(err, ErrNotRepository) {
+		t.Errorf("the refusal was not ErrNotRepository: %v", err)
+	}
+	if strings.Contains(err.Error(), "fatal") || strings.Contains(err.Error(), "(null)") {
+		t.Errorf("the refusal carried the raw text git printed: %v", err)
 	}
 }
 

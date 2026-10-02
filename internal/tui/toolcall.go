@@ -129,11 +129,18 @@ func toolsAt(dir string, approver tools.Approver) *toolSet {
 	// the shell as well, which is a tool that does not care whether the tree
 	// is a repository at all, and a reader outside one would find the model
 	// unable to build anything.
+	//
+	// A directory in no repository is left without the tool and without a
+	// message: the model is never offered the tool, so it cannot invoke it,
+	// and the reader is not shown the fatal line git printed. Any other
+	// failure to resolve the repository is still reported.
 	git, err := tools.NewGit(dir)
-	if err != nil {
+	switch {
+	case errors.Is(err, tools.ErrNotRepository):
+	case err != nil:
 		t.problem = fmt.Sprintf("no git tool: %v, so the model cannot read the "+
 			"repository", err)
-	} else {
+	default:
 		t.merge(gitToolLabel, git)
 	}
 	// The shell is offered last, since it is the tool that runs a program on
