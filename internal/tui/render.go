@@ -523,9 +523,16 @@ func render(f Frame, height, width int) ([]string, int, int) {
 	// budget reserves a row only when a row will actually be drawn.
 	hints := hintLine(f.Hints, width)
 
-	// The question is rendered once, on the same terms as the hint row, so
-	// that the budget reserves a row for it only when one will be drawn.
+	// The question is built as a box on the same terms as the hint row is
+	// built, so that the budget reserves its rows only when one will be drawn.
+	// The bare line is kept as well, since a terminal too narrow for a box
+	// falls back on it and the fallback is decided here rather than at the
+	// point of drawing, where the room left is not known.
 	confirm := confirmLine(f, width)
+	box := confirmBox(f, width)
+	if confirm != "" && len(box) == 0 {
+		box = []string{confirm}
+	}
 
 	// The rows below the pane are the status bar, a blank, the rule, the
 	// pasted rows, the prompt, and a blank. The pane is given what remains, so
@@ -567,7 +574,7 @@ func render(f Frame, height, width int) ([]string, int, int) {
 	// question is a caption lost for a moment, while a question that gives way
 	// to a hint is a decision the reader cannot see being asked of them,
 	// which is the one failure here worth costing a row for.
-	inputRows += confirmRows(confirm, height-inputRows)
+	inputRows += confirmBoxRows(box, height-inputRows)
 
 	// The header is the model name, a rule, and the status bar. It is drawn
 	// above the conversation and outside the scrolled slice, so it stays put
@@ -785,6 +792,16 @@ func render(f Frame, height, width int) ([]string, int, int) {
 	if hints != "" && len(body)+2 <= height {
 		body = append(body, hints)
 	}
+	// The box goes above the prompt, and after the hint row, since a hint is a
+	// caption for the prompt and a question is a different thing entirely.
+	// Only the rows the budget allowed are drawn, so a terminal with no room
+	// gets the prompt rather than a box that has pushed it off.
+	for i, line := range box {
+		if i >= confirmBoxRows(box, height-len(body)) {
+			break
+		}
+		body = append(body, line)
+	}
 	body = append(body, indent(promptMark, "", confirmInput(f), width))
 
 	// The row below the prompt is a rule at the very bottom of the frame, with
@@ -857,6 +874,64 @@ func confirmLine(f Frame, width int) string {
 	return truncate(f.Confirm, width)
 }
 
+// The runes a box is drawn from.
+//
+// They are the box-drawing set rather than ASCII, since a box made of pipes and
+// hyphens reads as text and a box reads as a box. They are what a terminal has
+// in the same font as the rule, so a frame divided by rules and boxed around a
+// question is drawn in one hand.
+const (
+	boxTopLeft     = "┌"
+	boxTopRight    = "┐"
+	boxBottomLeft  = "└"
+	boxBottomRight = "┘"
+	boxHorizontal  = "─"
+	boxVertical    = "│"
+)
+
+// confirmBox is the question drawn as a box, one string per row.
+//
+// It is a box rather than a marked line because the question is the one thing
+// on the screen that asks the reader to do something rather than telling them
+// something. A line of prose among other lines of prose is read as part of the
+// conversation, and a reader who has just been asked whether a program may run
+// must not be able to mistake the question for output.
+//
+// The box is drawn on the input block rather than in the pane, since a question
+// written into the pane scrolls back into the history the moment a reply
+// arrives, which is about the moment a reader answering it would need to read it
+// again.
+func confirmBox(f Frame, width int) []string {
+	if f.Confirm == "" {
+		return nil
+	}
+	// A terminal too narrow for a box gets the bare question rather than a
+	// box two columns wide with the text cut to nothing inside it.
+	if width < 8 {
+		return []string{truncate(f.Confirm, width)}
+	}
+
+	// The text is inset by one column on each side, so the box has air inside
+	// it and a border does not read as part of the words.
+	inner := width - 4
+	if inner < 1 {
+		inner = 1
+	}
+
+	lines := []string{boxTopLeft + strings.Repeat(boxHorizontal, width-2) + boxTopRight}
+	// The question is folded rather than truncated, so a long one is read in
+	// full inside the box. A cut question would hide the command it is asking
+	// about, which is the one part that must not be hidden.
+	for _, wrapped := range WrapBlock(f.Confirm, inner) {
+		lines = append(lines, boxRow(wrapped, inner))
+	}
+	if f.ConfirmChoice != "" {
+		lines = append(lines, boxRow("> "+f.ConfirmChoice, inner))
+	}
+	return append(lines,
+		boxBottomLeft+strings.Repeat(boxHorizontal, width-2)+boxBottomRight)
+}
+
 // confirmRows is the single row a question takes, or none when there is no room.
 //
 // The row is budgeted with the rest of the input block rather than taken from
@@ -868,6 +943,33 @@ func confirmRows(line string, room int) int {
 		return 0
 	}
 	return 1
+}
+
+// boxRow draws one line of text inside a box, padded to the box width.
+//
+// The padding is added here rather than by the terminal, so that a selection
+// out of the box is the text and not the text with a run of spaces after it. The
+// row is as wide as the border above and below it, which is what makes the box
+// a box rather than a ragged edge.
+func boxRow(text string, inner int) string {
+	text = truncate(text, inner)
+	pad := inner - displayWidth(text)
+	if pad < 0 {
+		pad = 0
+	}
+	return boxVertical + " " + text + strings.Repeat(" ", pad) + " " + boxVertical
+}
+
+// confirmBoxRows is what a boxed question takes, or none when there is no room.
+//
+// The question is budgeted rather than drawn past the budget, since a box
+// pushed past the bottom of the screen takes the prompt with it and a reader
+// with no prompt cannot answer the question it was asked.
+func confirmBoxRows(lines []string, room int) int {
+	if len(lines) == 0 || room < 1 {
+		return 0
+	}
+	return minInt(len(lines), room)
 }
 
 // confirmInput returns what the input line shows while a question is open.

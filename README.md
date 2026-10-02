@@ -198,6 +198,11 @@ path is doubled first so it cannot be read as a replacement. `/autosave now`
 writes one at once. It is refused in cognito and in a thread, since both
 promise nothing is recorded.
 
+A question asking whether a program may run is drawn as a box above the prompt,
+since it is the one thing on the screen that asks you to do something rather
+than telling you something. A long question is folded inside it, and a terminal
+too narrow for a box gets the bare question.
+
 `/copy` writes the last reply to the clipboard through the terminal, as plain
 text rather than as the pane has folded it for display. A reply is the whole
 exchange: if the model ran a build and reported what came back, the call and its

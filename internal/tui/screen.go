@@ -44,9 +44,12 @@ type Screen struct {
 // defined, since a sequence emitted without a reason is a sequence that can
 // outlive the interface and leave a terminal looking wrong.
 const (
-	seqEnterAlt  = "\x1b[?1049h"
-	seqExitAlt   = "\x1b[?1049l"
-	seqHideCur   = "\x1b[?25l"
+	seqEnterAlt = "\x1b[?1049h"
+	seqExitAlt  = "\x1b[?1049l"
+	// 25 is the mode that shows and hides the cursor. It is written at startup
+	// and on the way out and nowhere else, since the client draws no caret of
+	// its own and a terminal with the cursor shown on the alternate screen is a
+	// terminal with a blinking caret wherever it was last left.
 	seqShowCur   = "\x1b[?25h"
 	seqClear     = "\x1b[2J"
 	seqClearLine = "\x1b[K"
@@ -119,7 +122,16 @@ func NewScreen(out, in *os.File) (*Screen, error) {
 		os.Exit(1)
 	}()
 
-	s.write(seqEnterAlt + seqHideCur + seqClear + seqHome + seqPasteOn)
+	// The cursor is shown rather than hidden, and is left blinking rather than
+	// made steady. The client draws no caret of its own: it places the terminal
+	// one on the prompt row on every paint, and a terminal that blinks it
+	// blinks it at whatever rate the reader has configured in their profile.
+	//
+	// Driving the blink here instead would mean writing the show and hide
+	// sequences on a timer, which is a frame the client emits for no reason
+	// and a rate that disagrees with every terminal the reader already has
+	// set. A terminal configured not to blink is a reader who asked for that.
+	s.write(seqEnterAlt + seqClear + seqHome + seqPasteOn)
 	if err := s.refreshSize(); err != nil {
 		s.Close()
 		return nil, err
