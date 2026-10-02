@@ -1,8 +1,10 @@
+In a non-repository directory:
+no git tool: no git repository: fatal: not a git repository: (null), so the model cannot read the repository
+Do not invoke `git` tooling if the directory is not a repository.
 
-Provider: openrouter.ai | Model: stealth/space-bunny-alpha | Status: idle | Credits: - | Context: 0% | In: 557 | Out: 129 | claude1.lab3.home.arpa
-> hello.
-{"isNewTopic":true,"title":"Friendly Greeting"}
-> how are you?
-I’m doing well, thanks! How are you?
-> I am doing well.
-{"isNewTopic":false,"title":null}
+Ask for permission to read the current directory when starting. Mark a flag in
+`.openrouter-cli.json` with the current directory as "trusted".
+
+Make the main screen pane 0.
+Open a new pane for `/delegate` commands and their responses.
+`tmux`-style `window next`/`window previous` bindings.

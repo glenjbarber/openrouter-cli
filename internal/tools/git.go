@@ -124,16 +124,22 @@ var gitPathspec = map[string]bool{
 // gitNameOnly is the set of subcommands that create what a bare word names,
 // which is why a bare word is refused after them.
 //
-// `git branch new` creates a branch, `git tag v1` creates a tag,
-// `git reflog expire` discards entries, and `git worktree add` creates a
-// checkout. The forms of these that only read pass everything as an option, so
-// refusing a bare word costs a model one retry rather than a repository that
-// changed while it was looking.
+// `git branch new` creates a branch, `git tag v1` creates a tag, and
+// `git reflog expire` discards entries. The forms of these that only read pass
+// everything as an option, so refusing a bare word costs a model one retry
+// rather than a repository that changed while it was looking.
+//
+// worktree is not here, and that is a different shape rather than an omission.
+// branch, tag and reflog are the same word whether they read or write, so a
+// bare word after them names something git creates. worktree is a verb with
+// subverbs under it, `list`, `add`, `remove`, `prune` and the rest, and its
+// argument is a path rather than a name: `git worktree add build/x` is the
+// whole of what it is for. Refusing a path there would leave the subcommand
+// with nothing it could do.
 var gitNameOnly = map[string]bool{
-	"branch":   true,
-	"tag":      true,
-	"reflog":   true,
-	"worktree": true,
+	"branch": true,
+	"tag":    true,
+	"reflog": true,
 }
 
 // gitRefused is the set of options that write a file, run a program, or
@@ -252,7 +258,7 @@ func (g *gitTools) call(raw json.RawMessage) (string, error) {
 	if args.Args == nil {
 		return "", missingArg("args")
 	}
-	argv, err := gitArgv(*args.Args)
+	argv, err := g.gitArgv(*args.Args)
 	if err != nil {
 		return "", err
 	}
@@ -269,6 +275,15 @@ func (g *gitTools) call(raw json.RawMessage) (string, error) {
 // option such as -C or --git-dir is refused by being neither: a tool that
 // pointed git at another repository would not be the tool the session offered.
 func gitArgv(args []string) ([]string, error) {
+	return newGitTools("").gitArgv(args)
+}
+
+// gitArgv turns the arguments a model gave into the arguments git is run with.
+//
+// It is a method rather than a function because the worktree check is given the
+// repository root, so the refusal can name the boundary it holds to rather
+// than only saying that something was outside it.
+func (g *gitTools) gitArgv(args []string) ([]string, error) {
 	if len(args) == 0 {
 		return nil, errors.New("no git arguments were given, and the first of them is the subcommand")
 	}
@@ -279,6 +294,17 @@ func gitArgv(args []string) ([]string, error) {
 			sub, permittedList())
 	}
 	rest := args[1:]
+
+	// worktree is checked against the repository root before anything else,
+	// since it is the one permitted subcommand whose arguments name directories
+	// and remove them. The guard is worktreeSafe rather than a case here, so
+	// that the rules about a worktree live in one place with the reasons for
+	// them.
+	if sub == gitWorktree {
+		if err := worktreeSafe(rest, g.repo); err != nil {
+			return nil, err
+		}
+	}
 
 	if second, ok := gitSecond[sub]; ok {
 		if len(rest) == 0 || !slices.Contains(second, rest[0]) {
@@ -318,6 +344,10 @@ func gitArgv(args []string) ([]string, error) {
 		return append(append([]string{sub}, opts...), paths...), nil
 	}
 }
+
+// newGitTools returns a gitTools carrying only the repository root, for the
+// tests and for the argument rules that do not need anything else.
+func newGitTools(repo string) *gitTools { return &gitTools{repo: repo} }
 
 // gitSplit divides what follows a subcommand into the arguments git reads as
 // options and the arguments it reads as paths, refusing the options the tool

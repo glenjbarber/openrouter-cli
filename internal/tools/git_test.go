@@ -99,6 +99,145 @@ func TestGitStatusReadsTheTree(t *testing.T) {
 	}
 }
 
+// TestGitPermitsTheSubcommandsThisRepositoryNeeds checks the three added to
+// the allowlist, since the set is what bounds what a model may reach and a
+// name missing from it is a subcommand the model cannot use at all.
+//
+// The argument list is checked rather than the command being run. A push in a
+// fixture with no remote fails on its own terms rather than on anything the
+// tool did, so running it would test git rather than the allowlist.
+func TestGitPermitsTheSubcommandsThisRepositoryNeeds(t *testing.T) {
+	for _, args := range [][]string{
+		{"commit", "-m", "a commit"},
+		{"push"},
+		{"push", "--force"},
+		{"worktree", "list"},
+		{"worktree", "add", "sub", "HEAD"},
+		{"worktree", "remove", "sub"},
+		{"worktree", "prune"},
+	} {
+		argv, err := gitArgv(args)
+		if err != nil {
+			t.Errorf("git %s was refused: %v", strings.Join(args, " "), err)
+			continue
+		}
+		if argv[0] != args[0] {
+			t.Errorf("git %s ran as %s", strings.Join(args, " "), strings.Join(argv, " "))
+		}
+	}
+}
+
+// TestGitWorktreeRefusesAWildcard checks the guard on the one form of the
+// worktree workflow that reaches past the checkout it was named with, since
+// `worktree remove *` is a pattern git matches every checkout against and a
+// worktree that is removed is not put back by the next command.
+//
+// The refusal is checked through the tool rather than against gitArgv, since
+// the guard lives where the repository root is known. A refusal after the fact
+// would still have removed them.
+func TestGitWorktreeRefusesAWildcard(t *testing.T) {
+	s, _ := gitFixture(t)
+
+	for _, args := range []string{
+		`{"args":["worktree","remove","*"]}`,
+		`{"args":["worktree","remove","--force","*"]}`,
+		`{"args":["worktree","add","build/*"]}`,
+		`{"args":["worktree","remove","sub/?"]}`,
+		`{"args":["worktree","remove","[ab]"]}`,
+	} {
+		err := mustFail(t, call(t, s, gitTool, args))
+		if !strings.Contains(err.Error(), "wildcard") {
+			t.Errorf("%s was refused without naming the wildcard: %v", args, err)
+		}
+	}
+
+	// The fixture holds one checkout, the repository itself. Rows are counted
+	// rather than fields, since git prints the listing as a padded table and
+	// counting the whitespace separated pieces would count the columns.
+	worktrees := mustText(t, call(t, s, gitTool, `{"args":["worktree","list"]}`))
+	if rows := strings.Count(strings.TrimRight(worktrees, "\n"), "\n") + 1; rows > 1 {
+		t.Errorf("the fixture holds %d checkouts, want the one it was made with: %q",
+			rows, worktrees)
+	}
+}
+
+// TestGitWorktreeRefusesAPathLeavingTheRepository checks the containment, since
+// the whole purpose of the subcommand is to name a directory and that is the
+// one place it could name one outside the tree the tools are held to.
+func TestGitWorktreeRefusesAPathLeavingTheRepository(t *testing.T) {
+	s, _ := gitFixture(t)
+
+	for _, args := range []string{
+		`{"args":["worktree","remove","../elsewhere"]}`,
+		`{"args":["worktree","add","/tmp/openrouter-should-not-exist"]}`,
+		`{"args":["worktree","move","sub","../elsewhere"]}`,
+	} {
+		err := mustFail(t, call(t, s, gitTool, args))
+		if !strings.Contains(err.Error(), "outside") {
+			t.Errorf("%s was refused without naming the containment: %v", args, err)
+		}
+	}
+	if _, err := os.Stat("/tmp/openrouter-should-not-exist"); err == nil {
+		t.Error("a worktree was created outside the repository")
+	}
+}
+
+// TestGitWorktreeRefusesForce checks the one option that discards rather than
+// refuses, since a worktree holding changes a reader was working in is not
+// restored by removing it.
+func TestGitWorktreeRefusesForce(t *testing.T) {
+	s, _ := gitFixture(t)
+
+	for _, args := range []string{
+		`{"args":["worktree","remove","--force","sub"]}`,
+		`{"args":["worktree","remove","-f","sub"]}`,
+	} {
+		err := mustFail(t, call(t, s, gitTool, args))
+		if !strings.Contains(err.Error(), "discards local changes") {
+			t.Errorf("%s was refused without giving the reason: %v", args, err)
+		}
+	}
+}
+
+// TestGitRefusesASubcommandThatWrites checks the allowlist against the
+// subcommands that would change the repository and are not on it, and that
+// nothing was run: a refusal after the fact would still have made the change.
+//
+// commit, push and worktree are absent from the list because they are
+// permitted. Every other writing subcommand is here, so the set is bounded by
+// more than the three names that were added to it.
+func TestGitRefusesASubcommandThatWrites(t *testing.T) {
+	s, _ := gitFixture(t)
+	before := mustText(t, call(t, s, gitTool, `{"args":["rev-parse","HEAD"]}`))
+
+	for _, c := range []struct{ args, sub string }{
+		{`{"args":["add","file"]}`, "add"},
+		{`{"args":["fetch"]}`, "fetch"},
+		{`{"args":["reset","--hard","HEAD"]}`, "reset"},
+		{`{"args":["checkout","-b","another"]}`, "checkout"},
+		{`{"args":["apply","/dev/null"]}`, "apply"},
+		{`{"args":["gc"]}`, "gc"},
+		{`{"args":["merge","feature"]}`, "merge"},
+	} {
+		err := mustFail(t, call(t, s, gitTool, c.args))
+		if !strings.Contains(err.Error(), "not permitted") {
+			t.Errorf("git %s was refused without saying so: %v", c.sub, err)
+		}
+		if !strings.Contains(err.Error(), c.sub) {
+			t.Errorf("the refusal for git %s did not name the subcommand: %v", c.sub, err)
+		}
+	}
+
+	after := mustText(t, call(t, s, gitTool, `{"args":["rev-parse","HEAD"]}`))
+	if before != after {
+		t.Errorf("the repository moved from %q to %q", before, after)
+	}
+	branches := mustText(t, call(t, s, gitTool, `{"args":["branch","--list"]}`))
+	if strings.Contains(branches, "another") {
+		t.Errorf("a branch was created: %q", branches)
+	}
+}
+
 // TestGitRefusesAnOptionBeforeTheSubcommand checks that a global option is
 // refused by not being a subcommand, since one that redirected git at another
 // repository would not be the tool the session offered.
@@ -119,7 +258,7 @@ func TestGitRefusesAnOptionBeforeTheSubcommand(t *testing.T) {
 
 // TestGitRefusesAnOptionThatWritesOrRuns checks the option table against the
 // forms that write a file or run a program, each of which is spelled the same
-// way whichever read-only subcommand carries it.
+// way whichever read-only command carries it.
 func TestGitRefusesAnOptionThatWritesOrRuns(t *testing.T) {
 	s, dir := gitFixture(t)
 
@@ -259,7 +398,6 @@ func TestGitRefusesTheSubcommandItCannotRun(t *testing.T) {
 	for _, args := range []string{
 		`[]`,
 		`["nosuchsubcommand"]`,
-		`["merge","x"]`,
 		`["branch","--list","extra"]`,
 		`["log","--output=notes"]`,
 		`["log","-o","notes"]`,
