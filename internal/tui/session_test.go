@@ -20,7 +20,7 @@ import (
 var requiredNames = []string{
 	"/help", "/clear", "/quit", "/exit", "/connect", "/key", "/search",
 	"/models", "/freemodels", "/model", "/new", "/bell", "/cognito",
-	"/verbose", "/delegate", "/pane", "/btw", "/main", "/compact", "/mouse", "/info",
+	"/verbose", "/delegate", "/pane", "/spawn", "/btw", "/main", "/compact", "/mouse", "/info",
 	"/save", "/load", "/tools", "/approve", "/autosave", "/permission", "/copy", "/verbosity", "/color",
 }
 
