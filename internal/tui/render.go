@@ -385,6 +385,10 @@ type Frame struct {
 	Status Status
 	// Reply holds the messages exchanged so far.
 	Reply []string
+	// Kinds runs parallel to Reply and records what each entry is, as small
+	// integers, so that colour can be chosen without guessing from the text. A
+	// missing or short Kinds means the entries it does not reach are plain.
+	Kinds []entryKind
 	// Input is the line being composed, without the prompt.
 	Input string
 	// Hint is an optional message shown in place of the reply when the pane is
@@ -667,8 +671,15 @@ func renderStyled(f Frame, height, width int) ([]string, [][]span, int, int) {
 	// An entry may itself span several lines, since a reply is stored whole so
 	// that a fenced code block stays recognisable.
 	reply := make([]string, 0, len(f.Reply)*2)
-	for _, entry := range f.Reply {
-		reply = append(reply, WrapBlock(entry, width)...)
+	// replySpans runs beside reply, one list for each row. An entry that folds
+	// to several rows has its spans mapped onto all of them.
+	replySpans := make([][]span, 0, len(f.Reply)*2)
+	for i, entry := range f.Reply {
+		tag := f.kindAt(i)
+		for j, row := range WrapBlock(entry, width) {
+			reply = append(reply, row)
+			replySpans = append(replySpans, entrySpans(tag, row, j == 0))
+		}
 	}
 
 	if f.Partial != "" {
@@ -677,6 +688,8 @@ func renderStyled(f Frame, height, width int) ([]string, [][]span, int, int) {
 		// well matters for a code block: an unfinished reply is not yet known
 		// to contain a fence, so folding it separately would reflow code that
 		// must keep its own lines.
+		// The partial is model text, so it is a reply entry and takes no span,
+		// which is what the entry it becomes when the stream ends takes too.
 		reply = append(reply, WrapBlock(f.Partial, width)...)
 	}
 	if f.Delegate != "" {
@@ -708,6 +721,11 @@ func renderStyled(f Frame, height, width int) ([]string, [][]span, int, int) {
 		}
 		reply = append(append([]string{}, reply...), twiddleLine)
 	}
+	// Every row added after the entries carries no span, so the list is padded
+	// to the rows. The twiddle is coloured by the screen, not by a span.
+	for len(replySpans) < len(reply) {
+		replySpans = append(replySpans, nil)
+	}
 	if len(reply) == 0 && f.Hint != "" {
 		// The hint is drawn as written rather than folded. Folding pads a
 		// short line to the full width, which leaves a multi-line hint ragged
@@ -715,6 +733,7 @@ func renderStyled(f Frame, height, width int) ([]string, [][]span, int, int) {
 		hint := strings.Split(strings.TrimRight(f.Hint, "\n"), "\n")
 		reply = make([]string, len(hint))
 		copy(reply, hint)
+		replySpans = make([][]span, len(reply))
 	}
 	// The offset is applied before the newest lines are kept, so that
 	// scrolling reveals lines that were previously off the pane rather than
@@ -768,19 +787,33 @@ func renderStyled(f Frame, height, width int) ([]string, [][]span, int, int) {
 
 	if f.Scroll > 0 {
 		reply = reply[:len(reply)-f.Scroll]
+		replySpans = replySpans[:len(reply)]
 	}
 	if len(reply) > paneHeight {
 		reply = reply[len(reply)-paneHeight:]
+		replySpans = replySpans[len(replySpans)-paneHeight:]
 	}
 	for len(body) < headerRows+paneHeight {
 		var line string
+		var lineSpans []span
 		if i := len(body) - headerRows; i < len(reply) {
 			line = reply[i]
+			lineSpans = replySpans[i]
 		}
 		// A folded line already fits. One that came from a code block may
 		// not, and is cut rather than allowed to wrap, since a wrapped code
 		// line would push the rest of the frame down.
-		put(truncate(line, width))
+		cut := truncate(line, width)
+		if cut != line {
+			// The spans are cut with the row. The ellipsis the cut adds is
+			// not part of what the spans were made for.
+			n := len(cut)
+			if strings.HasSuffix(cut, ellipsis) {
+				n -= len(ellipsis)
+			}
+			lineSpans = clipSpans(lineSpans, n)
+		}
+		put(cut, lineSpans...)
 	}
 
 	// The input box is separated from the conversation by a blank row and a

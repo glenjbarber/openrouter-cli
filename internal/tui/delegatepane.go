@@ -99,6 +99,9 @@ func (s *Session) applyDelegatePane(f *Frame) {
 	}
 	f.Title = delegateTitle
 	f.Reply = append([]string(nil), s.dpane.lines...)
+	// The records belong to the main pane. The delegate lines are plain, and a
+	// record left in place would colour them by the position of another entry.
+	f.Kinds = nil
 	f.Delegate = s.dpane.partial
 	f.Partial = ""
 	f.Spinner = ""

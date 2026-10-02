@@ -134,6 +134,9 @@ type Session struct {
 	// restore rather than rebuilding from the conversation, which is folded
 	// at render time and so cannot be turned back into lines here.
 	searchReply []string
+	// searchKinds is the record of each entry of searchReply, held aside with
+	// it so that closing the search restores the colour the entries had.
+	searchKinds []entryKind
 	// searchScroll is the offset the reader held before the search moved the
 	// view. It is restored when the search closes, since a search that leaves
 	// the reader somewhere else would move the view out from under them.
@@ -549,15 +552,13 @@ func (s *Session) addReply(lines ...string) {
 	if len(lines) == 0 {
 		return
 	}
-	s.mu.Lock()
-	s.frame.Reply = append(s.frame.Reply, lines...)
-	s.mu.Unlock()
+	s.addReplyTagged(entryKind{}, lines...)
 }
 
 // clearReply empties the reply pane.
 func (s *Session) clearReply() {
 	s.mu.Lock()
-	s.frame.Reply = nil
+	s.replaceReply(nil)
 	s.mu.Unlock()
 }
 
@@ -568,12 +569,25 @@ func (s *Session) clearReply() {
 // the renderer sees no block and folds code that must not be folded. The
 // renderer folds what it is given, so what it is given has to carry the whole
 // reply.
+//
+// The text is the client's own, a listing or a confirmation, and is recorded as
+// a notice. Text a model wrote goes through appendModelText instead.
 func (s *Session) appendLines(text string) {
 	text = strings.TrimRight(text, "\n")
 	if text == "" {
 		return
 	}
-	s.addReply(text)
+	s.addReplyKind(kindNotice, text)
+}
+
+// appendModelText adds text a model wrote to the reply pane, recorded as a
+// reply so that nothing about it is taken from what it says.
+func (s *Session) appendModelText(text string) {
+	text = strings.TrimRight(text, "\n")
+	if text == "" {
+		return
+	}
+	s.addReplyKind(kindReply, text)
 }
 
 // Note adds a line to the reply pane, for a message the client generates such
@@ -831,7 +845,7 @@ func (s *Session) command(line string) bool {
 		}
 		return c.run(s, args[1:])
 	}
-	s.addReply("unknown command: " + name)
+	s.addReplyKind(kindFailure, "unknown command: "+name)
 	return false
 }
 
@@ -1259,7 +1273,7 @@ func (s *Session) connect() {
 
 	usage, err := s.client.KeyUsage(ctx)
 	if err != nil {
-		s.addReply("connect failed: " + err.Error())
+		s.addReplyKind(kindFailure, "connect failed: "+err.Error())
 		return
 	}
 
@@ -1279,7 +1293,7 @@ func (s *Session) showUsage() {
 
 	usage, err := s.client.KeyUsage(ctx)
 	if err != nil {
-		s.addReply("usage failed: " + err.Error())
+		s.addReplyKind(kindFailure, "usage failed: "+err.Error())
 		return
 	}
 	s.conv.usage = *usage
@@ -1307,7 +1321,7 @@ func (s *Session) filterKey() {
 		s.modelList = nil
 		s.modelFilter = ""
 		s.dropModelCycle()
-		s.frame.Reply = nil
+		s.replaceReply(nil)
 		s.mu.Unlock()
 		return
 	}
@@ -1329,7 +1343,7 @@ func (s *Session) beginModelList(keep func(openrouter.Model) bool) {
 
 	models, err := s.client.Models(ctx)
 	if err != nil {
-		s.appendLines("models failed: " + err.Error())
+		s.addReplyKind(kindFailure, "models failed: "+err.Error())
 		return
 	}
 	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
@@ -1395,7 +1409,7 @@ func (s *Session) pane() {
 	lines = append(lines, "filter: "+filter+"_", "Tab cycles, Enter to choose, Esc to leave")
 
 	s.mu.Lock()
-	s.frame.Reply = lines
+	s.replaceReply(lines)
 	s.mu.Unlock()
 }
 
@@ -1501,7 +1515,7 @@ func (s *Session) modelListKey(b byte) {
 		s.modelList = nil
 		s.modelFilter = ""
 		s.dropModelCycle()
-		s.frame.Reply = nil
+		s.replaceReply(nil)
 		s.mu.Unlock()
 		s.draw()
 	case keyTab:
@@ -1793,11 +1807,13 @@ func (s *Session) send(ctx context.Context, conv *Conversation, line string) {
 	defer s.paintFinal()
 
 	if msg := s.credentialProblem(); msg != "" {
-		s.addReply("> "+line, msg)
+		s.addReply("> " + line)
+		s.addReplyKind(kindNotice, msg)
 		return
 	}
 	if conv.Model() == "" {
-		s.addReply("> "+line, "(no model is selected: /model NAME)")
+		s.addReply("> " + line)
+		s.addReplyKind(kindNotice, "(no model is selected: /model NAME)")
 		return
 	}
 
@@ -1877,9 +1893,9 @@ func (s *Session) send(ctx context.Context, conv *Conversation, line string) {
 		// would tell the reader that something broke when they had asked for it.
 		stopReport := func() {
 			if reply.Len() > 0 {
-				s.addReply(strings.TrimRight(reply.String(), "\n"))
+				s.addReplyKind(kindReply, strings.TrimRight(reply.String(), "\n"))
 			}
-			s.addReply("(stopped)")
+			s.addReplyKind(kindFailure, "(stopped)")
 		}
 
 		err := s.client.Chat(ctx, openrouter.ChatRequest{
@@ -1901,9 +1917,9 @@ func (s *Session) send(ctx context.Context, conv *Conversation, line string) {
 				// text is kept: it is usually more useful than an error alone.
 				failed = true
 				if reply.Len() > 0 {
-					s.addReply(strings.TrimRight(reply.String(), "\n"))
+					s.addReplyKind(kindReply, strings.TrimRight(reply.String(), "\n"))
 				}
-				s.addReply("(error) " + e.Err.Error())
+				s.addReplyKind(kindFailure, "(error) "+e.Err.Error())
 				return
 			}
 			if e.Done {
@@ -1926,7 +1942,7 @@ func (s *Session) send(ctx context.Context, conv *Conversation, line string) {
 				stopReport()
 				return
 			}
-			s.addReply("(error) " + err.Error())
+			s.addReplyKind(kindFailure, "(error) "+err.Error())
 			return
 		}
 
@@ -1959,7 +1975,7 @@ func (s *Session) send(ctx context.Context, conv *Conversation, line string) {
 			// since that line is the question. Overwriting it loses the
 			// exchange and makes the pane show a reply with nothing that
 			// prompted it.
-			s.appendLines(withResponseRule(text))
+			s.appendModelText(withResponseRule(text))
 			// The bell rings once the reply has finished arriving rather
 			// than when the request was sent, since the point of it is to say
 			// the answer is ready.
@@ -1982,15 +1998,15 @@ func (s *Session) send(ctx context.Context, conv *Conversation, line string) {
 		// shown while it arrives would vanish under the answer to the calls it
 		// asked to make.
 		if reply.Len() > 0 {
-			s.appendLines(strings.TrimRight(reply.String(), "\n"))
+			s.appendModelText(reply.String())
 		}
 
 		if round == maxToolRounds-1 {
 			// The turn is stopped rather than cut short silently. A reader
 			// shown a reply with no explanation has been given a turn that
 			// ended for a reason nothing said.
-			s.addReply("(stopped: the model is still asking for tools, and the turn " +
-				"reached its limit of " + itoa(maxToolRounds) + " requests)")
+			s.addReplyKind(kindFailure, "(stopped: the model is still asking for tools, "+
+				"and the turn reached its limit of "+itoa(maxToolRounds)+" requests)")
 			return
 		}
 

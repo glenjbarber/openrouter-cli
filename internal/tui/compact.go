@@ -177,7 +177,7 @@ func (s *Session) compact(manual bool) {
 
 	summary, err := Summarise(s.ctx, s.client, s.conv.Model(), toSummarise)
 	if err != nil {
-		s.addReply("(error) " + err.Error())
+		s.addReplyKind(kindFailure, "(error) "+err.Error())
 		return
 	}
 

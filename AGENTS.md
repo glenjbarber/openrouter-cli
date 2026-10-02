@@ -1463,6 +1463,32 @@ so that a later change does not silently reverse it.
 - A routine successful tool line is dimmed, and dim wins over the colour of the
   tool. A failure and an approval prompt keep full strength, since they are the
   lines a reader must not skim past.
+- What a reply entry is travels beside it in `Frame.Kinds`, which runs parallel
+  to `Frame.Reply`.
+  Each record is a small integer kind, the identity role of a tool, and an ok
+  flag, and never a string that holds an escape.
+  The client writes the record at the moment it writes the entry, through
+  `addReplyKind` and `addReplyTagged`.
+  `addReply` stays and records a plain entry, and a missing or short `Kinds`
+  means plain.
+- The kind is never guessed from the text of an entry.
+  A prefix such as `[fs]` or `(error)` is something a model can write as easily
+  as the client can, so a guess would colour a sentence a model chose to begin
+  that way as though the client had said it.
+  Model text is recorded as a reply and takes no colour of its own in this
+  form.
+- Every write that replaces `Frame.Reply` resets or trims `Frame.Kinds` with it,
+  through `replaceReply`, `clearReply` and `syncKinds`.
+  The search and the model listing replace the pane and restore it afterwards,
+  and the delegate pane swaps in lines of its own, so a stale record would
+  colour the wrong rows.
+- One entry may fold to several rows.
+  The spans of the entry are mapped onto every one of its rows.
+  A failure takes the failure role on the whole line, a routine successful tool
+  line is dimmed whole, and a tool failure names its tool in the identity colour
+  on the label.
+  The streaming partial and the entry it becomes are both replies, so the colour
+  does not change when the stream ends.
 
 ### Echo
 
