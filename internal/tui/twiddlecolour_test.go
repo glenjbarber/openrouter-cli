@@ -191,9 +191,9 @@ func TestAShortPaneKeepsTheTwiddleThroughAnyScroll(t *testing.T) {
 	}
 }
 
-// The colour reaches the twiddle and stops, so the word beside it and anything
-// a reader selects is not carrying a sequence out of the terminal.
-func TestTheSequenceIsWrittenAroundTheFigureOnly(t *testing.T) {
+// The colour covers the whole row, the twiddle and the word beside it, and is
+// reset before the next row so that it does not run on into whatever follows.
+func TestTheSequenceCoversTheWholeRow(t *testing.T) {
 	sc, read := screenCapture(t)
 
 	rows := []string{"before", "⠋ thinking", "after"}
@@ -205,25 +205,57 @@ func TestTheSequenceIsWrittenAroundTheFigureOnly(t *testing.T) {
 		t.Fatalf("no colour was written at all: %q", got)
 	}
 	rest := got[marker:]
+
+	// The word is inside the colour, since the point of the row is that the
+	// whole indicator is drawn as one thing.
 	figureAt := strings.Index(rest, "⠋")
-	resetAt := strings.Index(rest, seqResetAttr)
-	if figureAt < 0 {
-		t.Fatalf("the figure is missing: %q", got)
+	wordAt := strings.Index(rest, "thinking")
+	if figureAt < 0 || wordAt < 0 {
+		t.Fatalf("the row is missing from what was written: %q", got)
 	}
+	if wordAt < figureAt {
+		t.Errorf("the word was written before the figure: %q", got)
+	}
+
+	resetAt := strings.Index(rest, seqResetAttr)
 	if resetAt < 0 {
 		t.Fatalf("the colour was never reset: %q", got)
 	}
-	if resetAt < figureAt {
-		t.Errorf("the colour was reset before the figure: %q", got)
+	if resetAt < wordAt {
+		t.Errorf("the colour was reset before the word beside the twiddle: %q", got)
 	}
-	if !strings.Contains(rest[resetAt:], "thinking") {
-		t.Error("the word beside the twiddle is missing, so it was not drawn")
+
+	// The reset has to come before the next row is drawn, or the colour runs
+	// on into whatever the frame drew after it. The line break and the next
+	// row's own reset sit between them, so what is checked is that the
+	// sequence ends at the reset rather than that nothing follows it.
+	tail := rest[resetAt:]
+	next := strings.Index(tail, "after")
+	if next < 0 {
+		t.Fatalf("the row after the twiddle was not drawn: %q", got)
+	}
+	if strings.Contains(tail[:next], "\x1b[38;5;") {
+		t.Errorf("the colour ran on into the next row: %q", tail[:next])
+	}
+}
+
+// The row is built as plain text whatever the colour is doing, so a selection
+// out of the pane carries the characters and not the sequence. This is what
+// makes colouring the word beside the twiddle safe.
+func TestTheTwiddleRowIsStillPlainTextForASelection(t *testing.T) {
+	rows := Render(Frame{Spinner: spinnerFrames[0], Partial: "a"}, 24, 80)
+
+	for _, row := range rows {
+		if strings.Contains(row, "thinking") && strings.Contains(row, "\x1b") {
+			t.Errorf("the twiddle row carries an escape: %q", row)
+		}
 	}
 }
 
 // The braille figures are several bytes each, so a count of columns rather than
 // of bytes would cut one in half and the terminal would draw the tail of it as
-// text. The figure travels as text for that reason.
+// text. The figure travels as text for that reason, and the whole row is written
+// rather than a slice of it.
 func TestTheFigureIsNotCutInHalf(t *testing.T) {
 	sc, read := screenCapture(t)
 

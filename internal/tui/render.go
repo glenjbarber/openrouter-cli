@@ -986,7 +986,9 @@ type tint struct {
 	// sequence is written before the figure and reset immediately after it,
 	// so the colour reaches the twiddle alone.
 	sequence string
-	// figure is the leading text of the row in colour, which is the twiddle.
+	// figure is the leading text of the row the colour applies to, which is
+	// the twiddle. It is what decides whether the row is the one to colour,
+	// rather than the index alone.
 	//
 	// It is the text rather than a count of columns, because the twiddle is
 	// drawn from braille figures and those are several bytes each. A count of
@@ -1017,10 +1019,16 @@ func (s *Screen) DrawTinted(lines []string, t tint) {
 			// row. The row holds the twiddle and the word beside it, and the
 			// word is prose a reader copies out, so colouring it would put a
 			// sequence into a selection.
+			// The colour covers the whole row, the twiddle and the word
+			// beside it alike. The row is an indicator rather than prose: it
+			// is written by the client rather than by a model, it is on
+			// screen only while work is in progress, and the next frame
+			// replaces it. A reader copying it out takes the characters and
+			// not the colour either way, since the sequence is written here
+			// and is not part of the row.
 			s.write(t.sequence)
-			s.write(t.figure)
+			s.write(line)
 			s.write(seqResetAttr)
-			s.write(line[len(t.figure):])
 			continue
 		}
 		s.write(line)
