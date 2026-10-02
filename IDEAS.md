@@ -9,73 +9,10 @@ Research notes on features to consider live outside the repository, at
 `build/openrouter-cli-worktrees/ideas/`. What is here is the state of the work
 itself.
 
-## Last updated
-
-After the completion, markdown and hint row landed, the whole of the work was
-rewritten twice before any of it was pushed: once to add a missing
-`Co-Authored-By: Space Bunny Alpha` trailer to the completion and markdown merge
-commits, and once after the audit to drop five housekeeping merges the workers
-had made to catch a feature branch up with main. Nothing was pushed before
-either, so nothing was rewritten on a remote. The merge hashes named below are
-the current ones.
-
-The audit is done, all six areas merged and gated. It is recorded at the end of
-this file, along with what it found and did not fix. Two pieces of work have
-been taken back off `main`, and each is recorded at the end of this file: The
-withdrawn file upload, and The withdrawn model-list cache.
-
-Tab completion, markdown rendering, and the key hint row have landed, each
-merged with `--no-ff` behind `make lint`, `make check`, and `make crossbuild`,
-each built in a worktree on its own branch, and each verified after the merge
-rather than before it.
-
-**The worktrees this file described did not exist on this host.** There was no
-`build/openrouter-cli-worktrees`, no `hintrow` source, and no uncommitted `hintrow`,
-`completion`, or `markdown` code to recover: no stash, no dangling objects, and
-nothing anywhere under `/Users/gjb`. The three remote branches all pointed at
-commits already merged into `main`, so they never carried the work. The
-`hintrow` files described below existed on another machine and were gone. The
-hint row has since been written again from its description and has landed. The
-`completion` and `markdown` work was written again before it landed.
-
-The instruction search is blocked on a decision. The audit is done, so the
-backlog it recorded is the open work rather than work waiting behind it. Three
-of the findings it left unfixed have now been read, one worker each, read only:
-the instruction search itself, the compaction contradiction, and the credential
-on a redirect. What each pass established is written down under Three findings
-read in detail, near the end of this file.
-
-This pass also corrected two statements in this file that had been left behind
-by the work landing: a paragraph still describing `completion` and `markdown`
-as unlanded after both had merged, and a sentence saying the audit had not
-started after all six areas had merged. A record that contradicts itself is a bug
-in the record, as the ground rule at the top says.
-
-Choices made during implementation that the maintainer has not confirmed are
-recorded under Awaiting confirmation.
-
-Two read-only audits were run after that, against the configuration layer and
-against the command surface. Both have landed their findings here and are at the
-end of this file. Neither changed a line of code or of documentation.
-
-The configuration audit found one defect, which is a missing branch in the
-default write and is the only finding in either audit that is a defect against
-the record rather than a question. It also found a mechanism the record
-describes in detail and the code does not have at all, a first-time setup
-prompt that nothing implements, and three passages that contradict either the
-code or each other.
-
-The command audit found that the command table, the completion set, the hint
-row, and the packaging directories all hold, and recorded five divergences,
-the serious one being that the usage text omits the command the code twice
-tells the reader to use.
-
-The scanning toolchain finding already recorded above was extended rather
-than repeated: the CI workflow runs none of the six either, so the merge gate
-has never run them.
-
-Nothing was pushed. The instruction stands that the maintainer handles
-pushes.
+An item `AGENTS.md` settles is not repeated here as a section. The table under
+Shipped carries the merge hashes, which is what a reader needs, and prose
+restating a settled decision is where the drift this file warns about above
+comes from.
 
 ## Ground rules
 
@@ -124,52 +61,7 @@ resumed against a model that cannot. All four are listed as open in
 that matters: the `Approval` field was removed from the status bar on the
 grounds that the client had no tools, and this is the moment it would come back.
 
-### A conversation can be saved to a file of its own
-
-`/save NAME` writes the conversation to `~/.openrouter-cli/sessions/NAME.db`
-and `/load NAME` resumes it. A saved file is also a bootstrap document, so
-`--bootstrap NAME.db` begins a session from a conversation rather than from
-prose for one.
-
-**The file is a SQLite database**, so that it can be read afterwards by any
-tool rather than only by this client. The driver is `modernc.org/sqlite`
-because it is pure Go: `make crossbuild` sets `GOOS` without `CGO_ENABLED`,
-so a driver that compiles C would produce a binary that builds for every
-target and then fails at the first query.
-
-**SETTLED DragonFly was dropped.** The pure Go driver carries an emulation of
-the C library and that emulation has no DragonFly in it, so `make crossbuild`
-failed for that target. Cgo was raised as the way out and measured rather than
-assumed: `mattn/go-sqlite3` builds and runs on the host, but `CC` is `cc` for
-every foreign `GOOS` and no cross C toolchain is installed, so `runtime/cgo`
-fails for freebsd, linux, netbsd, openbsd and dragonfly alike, and a
-cross-build gate that cannot cross-build stops meaning anything. There is no
-newer pure Go driver to bump to either, the newest `modernc.org/libc` being the
-version already in the tree. `github.com/ncruces/go-sqlite3` does build on
-every remaining target with no cgo, and was not taken: 12.4 MB against 2.9 MB
-for two tables is a size the maintainer declined over a sixth platform. The
-target, its build tags and the fallback that answered that it had no driver are
-all gone.
-
-**PROVISIONAL** The choices below are the implementer's, not the maintainer's.
-
-- A save is refused in-cognito and inside a thread, since both record nothing
-  and a file would break that rather than record it.
-- A save under a name already taken asks, and only an explicit yes replaces.
-  Anything else writes beside it under a name carrying the epoch.
-- A save may be taken while a model works and holds what has been recorded; the
-  turn in flight is not in it.
-- A model the reader chose wins over the one the file carries.
-- `/load` shows the turns it restored rather than replacing the pane silently.
-
-The free-model allowance was listed here as not written, which was wrong and is
-now contradicted by a test in `internal/saved`: the allowance type is an alias
-for an anonymous struct, so the whole usage value round-trips through the
-database. It is written and read back.
-
-Checked with unit and integration tests, the race detector, the cross-build on
-all six targets, and a real pty: `/save`, a second `/save` under the same name
-declined, and `/load` all behaved, and the file opens in any SQLite tool.
+Nothing was pushed. The instruction stands that the maintainer handles pushes.
 
 ## In progress
 
@@ -199,7 +91,7 @@ search, or correct `AGENTS.md` to match the code. An `/update` command has
 nothing to re-read until one of those is done.
 
 **Recommendation: build the search.** The documentation reads as designed
-behaviour rather than a stray paragraph, and `internal/bootstrap/resolve.go`
+behaviour rather than as a stray paragraph, and `internal/bootstrap/resolve.go`
 already implements the cross-device symlink rule the section describes, so the
 helper was written with this search in mind and nothing calls it. The convention
 is live in practice: a session in a repository holding an `AGENTS.md` has that
@@ -207,105 +99,7 @@ file loaded as instructions, and a client that does not read it is misleading.
 The decision is recorded under Open decisions in `AGENTS.md` and is the
 maintainers to confirm.
 
-## Not started
-
-Written but not landed. The checkout exists and holds the work.
-
-| Worktree | Branch | Subject |
-| --- | --- | --- |
-| none | none | Nothing remains in this section. |
-
-`completion` and `markdown` were listed here with uncommitted work in their
-worktrees. Both have landed, see Shipped: the completion table as `4a8cb83` and
-the markdown renderer as `4152bf7`, each with tests, which the unlanded work had
-none of. The uncommitted code was not recoverable on this host, so both were
-written again from the description above.
-
-`cmdqueue`, `mfilterfix`, `noninteractive`, `stopcancel`, and `instructions` held
-no changes and were removed, along with their branches. Nothing referenced them
-and none had been pushed. A checkout with no changes is a stale one rather than
-work in progress, and the distinction is recorded under Worktrees in
-`AGENTS.md`.
-
 ## Notes
-
-### The two session captures
-
-`notes.txt` and `notes2.txt` were session captures, not project files. Both
-were read, and what they carried was written down here. Both were then
-deleted, since a capture left in the checkout is noise that a later reader
-would have to work out was not part of the project.
-
-`notes.txt` carried a status line and a three-line greeting exchange. The
-status line is the one the client draws, showing `Credits: -` against a key
-whose limit the endpoint had not reported and `Context: 0%` against an empty
-conversation, which is what the record under Interface already says happens
-when a field has no value yet. The `{"isNewTopic":...}` lines interleaved with
-the exchange belong to a topic-tagging sidecar and not to this project, and
-nothing in them describes the client. Nothing from that file needed to be
-recorded beyond the confirmation.
-
-`notes2.txt` carried one defect report and one backlog item. The backlog item
-is the file upload, recorded below. The defect is the next entry.
-
-### A reply that arrives and is never drawn
-
-Raised by the maintainer, from `notes2.txt`. This is a defect, not an
-observation to be tested, and it is the most serious thing found so far.
-
-What was reported: a message was sent, the twiddle appeared, and then nothing
-else was drawn. The pane sat on the last twiddle frame until text was typed,
-at which point the whole reply appeared at once. Turning the bell on with
-`/bell` confirmed the reply had in fact been returned, since the bell is rung
-when a reply finishes arriving rather than when the request is sent. So the
-reply was there and the interface was not showing it, which means the client
-stopped drawing rather than stopped receiving.
-
-The mechanism follows from `internal/tui/session.go`, and it is a gap rather
-than a fault in any one line:
-
-- `paint` coalesces. A repaint asked for within `minPaintInterval`, which is
-  40 milliseconds, sets `paintPending` and returns without drawing.
-- `paintDue` is what flushes that. It is called from exactly one place, which
-  is `stream`, and `stream` runs once per streamed delta.
-- When the stream ends, `send` runs its deferred cleanup, clearing `Busy` and
-  `Partial`, and then `endWork`, which stops the spinner goroutine, clears
-  `Spinner` from the frame, and calls `draw`.
-- That final `draw` arrives within 40 milliseconds of the last delta's paint,
-  so it is deferred rather than drawn. Nothing is left to flush it: the delta
-  stream has ended, so `stream` will not be called again, and the spinner has
-  been stopped, so the goroutine that would have drawn on the next tick is
-  gone.
-- The frame carrying the reply in place, the status back to `idle`, and no
-  twiddle is therefore never written. The next keystroke repaints, and the
-  reply appears at once, which is what was seen.
-
-What this means for the record. The rule under Repainting, that a repaint
-inside the interval is deferred rather than refused so that nothing is lost,
-is right, and the deferred repaint has no owner once the thing that asked for
-it has stopped. The fix is not to stop deferring, since the bound on the
-repaint rate is what makes a fast reply readable. It is to make sure a
-deferred repaint is always owed a flush by something that is still running,
-and that the end of a turn is not itself allowed to be the thing that is
-deferred.
-
-This is recorded before it is fixed. It is the first thing the audit takes up,
-and a test that fails on the current code is what decides the fix.
-
-**Fixed.** The audit took it up first, and the fix is merged. A folded repaint
-is now owned by a timer rather than by whatever asks for a repaint next, and every
-exit from a turn ends on a repaint of its own that draws whatever the rate bound
-says. The bound is unchanged: it is what makes a fast reply readable, and the end
-of a turn is a bounded number of extra repaints rather than an unbounded rate. A
-repaint owed when the session closes is dropped rather than written.
-
-**The superseded branch.** `wip/repaint-as-landed` holds an earlier fix for this
-same defect, written before the audit took it up. It is not in the history of
-`main` and is not to be merged: the same fix landed by the session audit, under
-a different field name and with its own tests, so merging the branch would land
-a second timer for one job. It is kept rather than deleted alongside the
-withdrawn branches, since all three were taken off `main` and should be read
-together: `feature/upload-withdrawn` and `feature/model-list-cache-withdrawn`.
 
 ### Accepting a large paste with Ctrl-J
 
@@ -336,8 +130,8 @@ What is not known, and is the reason this is a note rather than a task:
   `Ctrl-J` as `0x0a`, which is the same byte as `\n`, so it is already handled
   as a submit key rather than being a separate case.
 - If that holds, the idea is not new behaviour but a discovery problem rather
-  than a code change: a reader has to know the key works. The hint row, which
-  is unfinished, is where that would be named.
+  than a code change: a reader has to know the key works. The hint row is where
+  that would be named.
 - A large paste is already cut for display, at `maxPasteRows`, with the
   remainder reported. Whether the reader is losing track of a large paste is
   therefore about the report rather than about the submit key.
@@ -345,47 +139,82 @@ What is not known, and is the reason this is a note rather than a task:
 So the first question is not what to build but whether this is already true.
 That needs a terminal to try it in, which is the part that has not been done.
 
-### The input field should always show something is happening
+### The prompt should always show something is happening
 
 Raised by the maintainer. Recorded as an intent, not as a settled decision,
 because what the indicator should be is not yet chosen.
 
-The prompt should always be doing something, so that a reader can tell at a
-glance that the program has not died.
-
 The reason it is wanted is that an idle interface and a hung one look identical
 from the outside. Everything the client draws stops while nothing is happening,
 so a crash, a wedged request, or a terminal that has stopped reading all look
-the same as a session that is simply waiting for a message. A reader who has
-just sent something and sees nothing move has no way to tell those apart.
+the same as a session that is simply waiting for a message.
 
-What already exists, and what the work has to fit around:
+Two indicators have been proposed for the same row, and the decision is whether
+they are alternatives or complements.
+
+**The resting indicator, on an idle prompt.** What already exists and what the
+work has to fit around:
 
 - The status bar reads `Working` while a request is in flight and `idle`
   otherwise. That covers a request but not an idle prompt.
 - A twiddle runs while work is in progress. It is the closest thing to an
   always-on indicator that the client has.
-- The hint row, which is unfinished, is state-dependent and changes with what
-  the interface is doing. It is the natural place for a resting indicator,
-  since a row that always shows something is the point of it.
+- The hint row is state-dependent and changes with what the interface is doing.
+  It is the natural place for a resting indicator, since a row that always shows
+  something is the point of it.
 - The input field is drawn by the line editor with echo disabled, so whatever
   appears there is chosen by the renderer rather than by the terminal.
 
-What is not chosen, and is what the decision needs to settle:
+What is not chosen:
 
 - Whether the indicator lives in the input field itself, as a caret or a
   character that moves, or beside it as a hint-row entry. The maintainer said
   the input field, so that is the default unless there is a reason against it.
-- What moves, and at what rate. A twiddle that turns while idle reads as work
-  in progress, which is the opposite of what is wanted, so the indicator has to
-  look unlike the in-progress one.
 - Whether it pauses when the session is genuinely idle or when nothing has been
   typed. A reader composing a message is not waiting on the program, so an
   indicator that moves while they type is noise.
 - Cost. An always-moving indicator repaints at its interval whether or not
-  anything changed, and the repaint rate is currently bounded to keep a fast
-  reply readable. An idle loop has to respect the same bound rather than
-  waking the terminal more often than the frame rate allows.
+  anything changed, and the repaint rate is bounded to keep a fast reply
+  readable. An idle loop has to respect the same bound.
+
+**A horizontally-rotating bar, in place of the braille twiddle, while work is in
+progress.** The maintainer asked for this after the immediate fixes. It is
+feasible, and the colour work is smaller than it looks: `twiddleTint` at
+`internal/tui/twiddlecolour.go` is a pure function of the step, so a scroll is
+the same ramp sampled at an offset per column, where column *i* takes
+`twiddleTint(step-i)`. The ramp, the floor, the cube quantisation, and the
+timing all stay as they are.
+
+What has to change is the plumbing. `Frame.Tint` is one sequence for the whole
+row and `DrawFrame` writes it before the line and resets after, so per-column
+means the screen writes one sequence per cell and resets at the end of the row.
+Both are in package `tui`, so the screen can call `twiddleTint` directly and the
+frame need not carry a slice.
+
+Three constraints:
+
+- The row must leave the renderer as plain text, which is why the tint is
+  carried and applied rather than written into the row. Finding the row before
+  drawing is safer than matching it, since a bar of dashes makes a whole-row
+  comparison fragile against a reply that happens to collide.
+- Selection stays clean, on the reasoning already settled under Progress in
+  `AGENTS.md`: a sequence the client writes over a row it owns is not copied
+  out of it.
+- Width must bound the gradient, so the ramp cannot run past the pane, and a
+  frame-bound test has to cover that.
+
+Cost is about eight bytes per column, on one row, at the existing 40 ms repaint
+bound. The twiddle figure itself is unaffected. Roughly fourteen tests in
+`internal/tui/twiddlecolour_test.go` assert against `Frame.Tint` as a single
+sequence, so this is not a small edit, and it needs a new line in the Progress
+section of `AGENTS.md`, since one sequence covering the whole row is settled
+there.
+
+**Whether the bar replaces the braille twiddle or sits beside it** is not
+chosen, and the choice changes both the tests and the Progress section of
+`AGENTS.md`. If it replaces it, the resting indicator has to look unlike the
+in-progress one, since a twiddle that turns while idle reads as work in
+progress, which is the opposite of what is wanted.
 
 ### A spinner shown on the final token
 
@@ -400,31 +229,13 @@ finished rather than that it has stopped.
 Small, and no decision needed beyond whether the gap is ever long enough to be
 worth drawing.
 
-### The lesson from the pty test
-
-Found and fixed. Recorded because the mistake is easy to repeat and the gate
-that now catches it is worth knowing about.
-
-`internal/tui/pty_bsd_test.go` was written for the resize fix and tagged for the
-whole BSD family, but it names `syscall.TIOCPTMASTER`, which only FreeBSD
-carries. It broke darwin, netbsd, openbsd, and dragonfly.
-
-`make crossbuild` passed the whole time, because `go build` does not typecheck
-test files. It was caught only by running `GOOS=linux go vet ./...` by hand
-while checking whether a push was safe. Had that not been checked, continuous
-integration would have failed it after the push instead.
-
-`make crossbuild` now runs `go vet` as well as `go build` for every target. The
-helper is FreeBSD-only and the other platforms skip. Both facts are recorded
-under Build in `AGENTS.md`.
-
 ## Awaiting confirmation
 
 The record settles that rendered output is plain text and that a terminal
 selection yields it with no escape sequence and no padding. It does not settle
 how a construct should look within that plain text. The following were chosen
 during implementation and are marked `PROVISIONAL` at each site in the source.
-Each is the maintainer's to confirm or reverse.
+Each is the maintainers to confirm or reverse.
 
 Markdown, in `internal/tui/markdown.go`:
 
@@ -461,7 +272,7 @@ Completion, in `internal/complete`:
    staying silent, so that Tab always says something.
 6. The candidate listing is one multi-line pane entry rather than one entry per
    candidate, since search folds on stored entry boundaries. The heading wording
-   is the implementer's and is not specified anywhere.
+   is the implementers and is not specified anywhere.
 
 ### The scanning toolchain is described but absent
 
@@ -504,8 +315,7 @@ A second audit later confirmed the above against the CI workflow rather than
 only the Makefile, and spelled out the consequence. The workflow invokes none
 of the six either, so the merge gate is three targets and none of them runs a
 scanner beyond `go vet`. Neither a local gate nor a push has run the toolchain
-either document describes. It is recorded at the end of this file, under The
-command surface was audited against the record.
+either document describes.
 
 ### A command argument is discarded rather than used
 
@@ -524,70 +334,67 @@ choice, and it has not been made:
    Enter key would behave differently for the same text unless one of the two
    is changed.
 2. Whether a search opened with a query should still be incremental, so that
-   typing appends to it. The caret sits after the filter, so appending must
-   be done by placing the caret rather than by writing to the end of the buffer, or
+   typing appends to it. The caret sits after the filter, so appending must be
+   done by placing the caret rather than by writing to the end of the buffer, or
    a caret moved left would have the text appended past it.
 3. How the remainder of the line is split, given there is no argument grammar.
    `/models gpt` is unambiguous and `/delegate` takes a whole sentence, so the
    two cannot be split by the same rule without one of them being wrong.
-4. Whether `/search` and `/models` should complete their arguments. Completion
-   deliberately completes none, since the record gives no argument grammar beyond
-   `/model [NAME]` and `/delegate QUESTION`.
 
-Question four has since been answered for the overlay rather than for the
-command line. Tab completes the model filter and cycles through what it matched,
-so a reader no longer types a whole identifier to choose one. The argument
-supplied on the command line is still discarded, and questions one to three
-stand as they are. The search still takes no completion, since its filter is a
-word of prose rather than the name of a thing to be chosen.
+Tab completes the model filter and cycles through what it matched, so a reader no
+longer types a whole identifier to choose one. The argument supplied on the
+command line is still discarded, and questions one to three stand as they are.
+The search takes no completion, since its filter is a word of prose rather than
+the name of a thing to be chosen.
 
 Recording this rather than implementing it: the record completes `/search` as
 filtering the pane as the query is typed, and says nothing about a query
-supplied with the command, and the four questions above are not answerable from
+supplied with the command, and the three questions above are not answerable from
 what it does say.
 
 ## Backlog
 
-### The file upload
+### An urgent queued message bypasses the queue
 
-Raised by the maintainer, from `notes2.txt`. Not started, and no worktree
-exists. An `/upload` that sends a file to the model through the OpenRouter
-Files API.
+Raised by the maintainer. An intent rather than a decision, and it contradicts a
+settled one.
 
-The design has not been settled, and the pieces below are what the decision
-needs rather than a decision already taken.
+Enter queues a line while a model is working, and `AGENTS.md` settles that a
+queued line waits for the request ahead of it, one line at a time. The maintainer
+wants the queue split into two buckets: a message marked urgent goes out at once
+by interrupting the model, and a message that is not waits its turn as it does
+now. The default is a timer of five seconds, at which point a message is treated
+as urgent and sent.
 
-The client executes nothing and has no tools, so there is no file browser and
-no way to attach a file that the reader did not name. The file is therefore
-taken as an argument, which makes the command read as
-`/upload PATH`, and the question that follows is what the pane shows
-afterwards: the identifier the endpoint returns, since that is what a later
-turn refers to, and the size, since a reader who cannot see the size cannot
-tell a wrong file from the right one.
+**This is a change to the record rather than an addition to it,** so it belongs
+under Open decisions in `AGENTS.md` alongside the line it contradicts, and not
+only here.
 
-What the file becomes in a message is the same question. The Files API stores
-a file and returns an identifier, and a later turn refers to that identifier
-rather than carrying the bytes, so an upload is a reference the backend holds
-rather than conversation state. That has a consequence worth settling before
-the code is written: whether the reference survives `/new`, since `/new` clears
-the conversation and keeps only the bootstrap document.
+What the decision needs:
 
-The model matters as much as the command. A turn carrying a file part is
-refused by a model that does not accept one, which is a different failure from
-a rejected file and would read as the upload having failed.
-
-`/upload` has no argument grammar in the record beyond the two commands the
-completion section names, so completing a path would be guessing, the same
-reason command arguments are not completed.
+1. What marks a message urgent. A key held while composing is one way, and a
+   prefix typed into the line is another, and the two are not the same thing to
+   a reader.
+2. Whether the five seconds is counted from the message being queued or from
+   the model being interrupted. A reader who typed a long message and reached
+   for a key would have it interrupted on the first reading, which is a real
+   hazard rather than an edge case.
+3. What an urgent message does to a turn in flight. It arrives as an update to
+   the request it was answering, on the terms escape already uses, so the
+   question is whether it displaces a queue that has not gone out or joins it.
+4. Whether urgency survives being drawn. The queue is shown above the prompt and
+   marked as queued, so a reader watching two messages cannot tell which is about
+   to interrupt and which is not.
+5. Whether the timer is cancelled when the request ahead ends. A model that
+   answers in four seconds and a timer of five means the message never becomes
+   urgent and goes out as an ordinary question, which is a different result
+   from one that was always going to be urgent.
 
 ### Ctrl-C cancels a queued message
 
-Raised by the maintainer. An intent rather than a decision.
-
-Enter queues a line while a model is working, and escape stops the model and
-sends the queued line and the composed line as an update to the request it was
-answering. A third key is wanted: one that removes a queued line without sending
-it.
+Raised by the maintainer. An intent rather than a decision. Not started, and no
+worktree exists. A cancel is the companion to the entry above: where that one
+sends a queued message early, this one removes one without sending it at all.
 
 The key collides with what it already does. Ctrl-C abandons a line being
 composed, and on an idle prompt with nothing in hand it ends the session. A
@@ -610,6 +417,37 @@ The stop settles who acts on the queue: `stopTurn` claims it under the session
 lock so that a turn ending at the same moment cannot drain it as well. A cancel
 reaching the queue has to take the same lock, or the two compete for the same
 lines.
+
+### The file upload
+
+Raised by the maintainer, from `notes2.txt`. Not started, and no worktree
+exists. An `/upload` that sends a file to the model through the OpenRouter
+Files API.
+
+The design has not been settled, and the pieces below are what the decision
+needs rather than a decision already taken.
+
+The client executes nothing and has no tools, so there is no file browser and
+no way to attach a file that the reader did not name. The file is therefore
+taken as an argument, which makes the command read as `/upload PATH`, and the
+question that follows is what the pane shows afterwards: the identifier the
+endpoint returns, since that is what a later turn refers to, and the size, since
+a reader who cannot see the size cannot tell a wrong file from the right one.
+
+What the file becomes in a message is the same question. The Files API stores
+a file and returns an identifier, and a later turn refers to that identifier
+rather than carrying the bytes, so an upload is a reference the backend holds
+rather than conversation state. That has a consequence worth settling before
+the code is written: whether the reference survives `/new`, since `/new` clears
+the conversation and keeps only the bootstrap document.
+
+The model matters as much as the command. A turn carrying a file part is
+refused by a model that does not accept one, which is a different failure from
+a rejected file and would read as the upload having failed.
+
+`/upload` has no argument grammar in the record beyond the two commands the
+completion section names, so completing a path would be guessing, the same
+reason command arguments are not completed.
 
 ### A click copies an entire block
 
@@ -685,3 +523,63 @@ What is worth saying before the design is chosen is that this is not only a
 clipboard question. A block is something the pane does not currently have, so the
 idea is two pieces of work at once: deciding where a block begins and ends, and
 deciding what puts it on the clipboard. The second is the smaller of the two.
+
+### An alias for a common command
+
+Raised by the maintainer, and asked for as a way of speeding up a test run. An
+`/alias NAME ...` command that stands in for a longer line, so a task repeated
+across many turns is typed once.
+
+**Where the aliases are stored is not settled, and the obvious place is the wrong
+one.** The maintainer asked for `~/.openrouter-cli.json`, which is the
+configuration file. `AGENTS.md` settles that the configuration holds the
+credential, is mode `0600`, and is treated as read-only outside setup, and it
+records that the approval rules were deliberately kept in a sibling file rather
+than in it: a reader editing rules should not have to open a file whose mode they
+have to get right, and a command rewriting one could damage the key in it. The
+same reasoning applies to an alias command that writes.
+
+So the shape of the decision:
+
+1. A sibling file beside the configuration, following the pattern
+   `config.LoadRules` already establishes, or a table inside the configuration
+   itself. The first keeps the credential file out of the path of a command that
+   writes.
+2. Whether an alias expands to text or is a name the dispatcher resolves. Text
+   is simpler and shows the reader what will be sent; a resolved name is one more
+   entry in a table that already has to stay in step with the command list.
+3. Whether an alias can name another alias, and what stops a cycle.
+4. Whether an alias survives a name that stops existing, since a command can be
+   renamed or removed while an alias naming it is still in the file.
+5. Whether an alias may be a queue or a stop rather than a question, since an
+   alias standing in for a keypress is a different thing from one standing in for
+   a line.
+
+### `gh` on the shell allowlist
+
+Raised by the maintainer. An intent rather than a decision. The allowlist is
+`shellPermitted` in `internal/tools/shell.go`, and the program list is spelled
+out in prose in the tool schema in the same file, so adding one is three edits
+and a test rather than one.
+
+**The question is whether a program that writes belongs on it.** Every current
+entry is read-only or a build tool: `git log`, `grep`, `find`, `go build`. `gh`
+is not, since `gh pr create` and `gh issue close` change things, and `AGENTS.md`
+records the git tool as an allowlist precisely because a blocklist is defeated
+by every subcommand nobody thought of. The same argument cuts both ways: a
+program on the list is not thereby permitted to run, since `/approve` already
+settles that a call is asked about, and a mode of `allow` is a reader saying so
+deliberately.
+
+What the decision needs:
+
+1. Whether `gh` is on the list whole, or whether the list grows a way to permit
+   a subcommand rather than a program. A subcommand list is a second allowlist
+   and the drift argument against it applies with more force, since `gh` has far
+   more subcommands than git.
+2. Whether a mode of `allow` should reach it. A reader allowing the build tools
+   is not the same as allowing something that pushes, and `AGENTS.md` settles
+   that a mode of allow does not widen the allowlist, so the question is whether
+   `gh` should be excluded from that mode rather than covered by it.
+3. What the pane shows. A call line names the program and its arguments, and
+   `gh pr create --title ... --body ...` is a long argument to draw on one row.
