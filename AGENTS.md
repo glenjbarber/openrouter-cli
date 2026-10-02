@@ -3,6 +3,9 @@
 Editing notes and settled decisions for this repository. This file is the record
 of why the project is shaped as it is. It is read before any change is made.
 
+## BE ADVISED
+The code in this repository directly affects you, so do not break it.
+
 ## Editing rules
 
 These rules are carried over from `~/agents.md` and apply to every file in this
