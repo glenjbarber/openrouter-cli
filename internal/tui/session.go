@@ -1031,6 +1031,11 @@ func (s *Session) completeLine(line string) string {
 	// so completing it yields that command again and the reader would never
 	// reach the second match at all.
 	if s.cycleNext(res) {
+		// The candidates are listed again as well as cycled, so the position
+		// in the set is on screen while the reader moves through it. The model
+		// filter does the same: it re-renders its listing on every cycle so
+		// the count in its heading follows the choice.
+		s.showCandidates(res)
 		return s.cycleLine(res)
 	}
 
@@ -1089,12 +1094,11 @@ func (s *Session) cycleNext(res complete.Result) bool {
 	if res.Prefix != s.completedPrefix && !s.holdingName(res.Prefix) {
 		return false
 	}
-	if s.completedAt+1 >= len(s.completedNames) {
-		// The last match is where it stays, since wrapping round would put the
-		// reader back at a word they had already been offered and moved past.
-		return false
-	}
-	s.completedAt++
+	// The cycle wraps round, as the model filter does, so that a reader
+	// pressing Tab past the last match comes back to the first. A reader who
+	// has seen the whole set and presses Tab again is asking to start over
+	// rather than being handed a key that has stopped doing anything.
+	s.completedAt = (s.completedAt + 1) % len(s.completedNames)
 	return true
 }
 
@@ -1151,8 +1155,23 @@ func (s *Session) showCandidates(res complete.Result) {
 			width = len(c.Name)
 		}
 	}
+
+	s.mu.Lock()
+	at := s.completedAt
+	held := len(s.completedNames)
+	s.mu.Unlock()
+
+	head := res.Set + " matching " + res.Prefix
+	if held > 0 {
+		// The position is stated in the heading rather than marked against a
+		// row, as it is for the model filter. The line already holds the
+		// choice, so a marker would repeat what the reader can see, while the
+		// heading says which of the set they are on.
+		head += fmt.Sprintf(" [%d of %d]", at+1, held)
+	}
+
 	lines := make([]string, 0, len(res.Candidates)+1)
-	lines = append(lines, res.Set+" matching "+res.Prefix)
+	lines = append(lines, head)
 	for _, c := range res.Candidates {
 		lines = append(lines, fmt.Sprintf("%-*s  %s", width, c.Name, c.Description))
 	}
