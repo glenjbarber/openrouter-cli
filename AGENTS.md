@@ -1224,9 +1224,27 @@ so that a later change does not silently reverse it.
 - The frame is cut to the height rather than padded up to a minimum. Writing
   rows the terminal does not have is what causes the overflow, so the answer
   is fewer rows rather than a frame insisting on its own.
-- The header yields before the prompt does. The title is the first row
-  dropped, since the pane is what a reader is reading and the status bar
-  carries the figures worth keeping on a short terminal.
+- The frame is padded with blanks where the budget over-reserves, so that it is
+  the height of the terminal on every terminal. A frame left short draws the
+  bottom of the screen in whatever the terminal had there, which after a resize
+  is not blank.
+- The frame is divided by rules: one on the first row, one under the title, one
+  under the status bar, one above the prompt, and one at the very bottom. Each
+  is separated from what it borders by a blank, except the title, which sits
+  against the rule above it so that the rule reads as the edge of the frame
+  rather than as an underline of the title.
+- The rule on the first row is kept rather than spent on decoration. It marks
+  where the frame begins, so a pane scrolled back is visibly still inside a
+  window, and without it the oldest line of a conversation runs into the edge of
+  the terminal with nothing saying the conversation continues above it.
+- The prompt is found by content rather than by being the last row with anything
+  on it, since the closing rule is drawn below it. The caret therefore sits on
+  a blank rather than against a rule.
+- The header yields before the prompt does, and gives up its rows in the order a
+  reader loses least by: the rules first, since a rule is decoration and a
+  half-drawn one is not a rule, then the blanks, then the title, and the status
+  bar is held to the end since it carries the figures. A kept row still has
+  everything below it.
 - A pasted block takes only what is left once the prompt has been accounted
   for, and is cut and reported rather than allowed to cost the prompt.
 - Width is counted in columns rather than in bytes. The rule is drawn from a
