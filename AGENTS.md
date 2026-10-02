@@ -1188,6 +1188,21 @@ so that a later change does not silently reverse it.
 
 ### Input box
 
+- The composed line is drawn across three quarters of the terminal rather than
+  all of it. A line reaching the edge carries the eye off the end of the screen,
+  and the reader has to find the end of it again to see what they last typed. A
+  prompt spanning the whole width also gives the conversation above it no visible
+  edge, so the two run into each other.
+- A terminal too narrow for the fraction to mean anything keeps the whole width,
+  since three quarters of nothing shows nothing of what is being typed.
+- The rest of the frame is still drawn across the whole terminal. The width is
+  the composed line's alone and the conversation is not narrowed by it.
+- A long line keeps its tail rather than being cut at the head: the reader is
+  looking at the end of what they are writing, and that is the only part they
+  cannot read from memory.
+- The caret sits one column past the last character, which is where the next one
+  is written, and is bounded by the prompt width rather than the terminal.
+
 - The prompt is separated from the conversation by a blank row, a rule, and
   another blank row. Without them the prompt sits directly under the last line of
   a reply and the two are read as one block.

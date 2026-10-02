@@ -323,6 +323,12 @@ line.
 
 ### Input box
 
+The line being composed is drawn across three quarters of the terminal rather
+than all of it, so a long line does not carry the eye off the end of the screen.
+A long line keeps its tail, since that is the end you are writing and the part
+you cannot read from memory. The conversation above is still drawn across the
+full width.
+
 The prompt sits in its own box at the foot of the screen, separated from the
 conversation by a full-width rule with a blank row either side:
 
