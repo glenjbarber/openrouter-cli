@@ -75,8 +75,8 @@ const gitParameters = `{
 //
 // It is an allowlist rather than a list of the subcommands that write, since a
 // blocklist is defeated by every subcommand nobody thought of and by every
-// future one added to git. commit, push and worktree are on it because this
-// repository needs them. Every other subcommand that writes is still refused,
+// future one added to git. commit, push, worktree and merge are on it because
+// this repository needs them. Every other subcommand that writes is refused,
 // so the set bounds what a model may reach rather than opening the tool to
 // everything git can do.
 var gitPermitted = map[string]bool{
@@ -88,6 +88,7 @@ var gitPermitted = map[string]bool{
 	"grep":        true,
 	"log":         true,
 	"ls-files":    true,
+	"merge":       true,
 	"push":        true,
 	"reflog":      true,
 	"remote":      true,
@@ -301,13 +302,17 @@ func (g *gitTools) gitArgv(args []string) ([]string, error) {
 	}
 	rest := args[1:]
 
-	// worktree is checked against the repository root before anything else,
-	// since it is the one permitted subcommand whose arguments name directories
-	// and remove them. The guard is worktreeSafe rather than a case here, so
-	// that the rules about a worktree live in one place with the reasons for
-	// them.
-	if sub == gitWorktree {
+	// worktree and merge carry rules of their own, since they are the two
+	// permitted subcommands that either name directories to remove or answer a
+	// conflict rather than report one. The guards are their own functions, so
+	// that the rules and the reasons for them sit in one place.
+	switch sub {
+	case gitWorktree:
 		if err := worktreeSafe(rest, g.repo); err != nil {
+			return nil, err
+		}
+	case gitMerge:
+		if err := mergeSafe(rest); err != nil {
 			return nil, err
 		}
 	}
