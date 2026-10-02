@@ -134,13 +134,15 @@ func (a *approvalState) record(command string, approved bool) {
 // settles it for this session, because that is the only place a reader can be
 // asked at all. A program settled by either is not asked about again.
 func (s *Session) Approve(command string, args []string, dir string) bool {
-	// A rule in the file is the reader having already answered, so it is
-	// consulted before the prompt and without troubling anybody with it. It
-	// is checked against the directory the command would run in rather than
-	// the one the session was opened in, so that a rule written for the
-	// project covers a build run in a subdirectory of it.
-	if s.cfg != nil && s.cfg.Permits(command, dir) {
-		return true
+	// A rule is the reader having already answered, so it is consulted before
+	// the prompt and without troubling anybody with it. It is checked against
+	// the directory the command would run in rather than the one the session
+	// was opened in, so that a rule written for the project covers a build run
+	// in a subdirectory of it.
+	for _, name := range config.PermittedCommands(s.rulesFor(dir), dir) {
+		if name == strings.TrimSpace(command) {
+			return true
+		}
 	}
 
 	s.mu.Lock()
@@ -399,11 +401,7 @@ func (s *Session) approvalListing() []string {
 		return lines
 	}
 
-	var rules []config.ApprovalRule
-	if s.cfg != nil {
-		rules = s.cfg.Tools
-	}
-	if permitted := config.PermittedCommands(rules, s.tools.dir); len(permitted) > 0 {
+	if permitted := config.PermittedCommands(s.rulesFor(s.tools.dir), s.tools.dir); len(permitted) > 0 {
 		lines = append(lines, "  permitted by the configuration file here: "+
 			strings.Join(permitted, ", "))
 	} else {

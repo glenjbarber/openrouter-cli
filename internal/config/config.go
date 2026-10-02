@@ -456,3 +456,143 @@ func covers(base, dir string) bool {
 	}
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
+
+// RuleFile is the file the approval rules are kept in, apart from the
+// configuration.
+//
+// The configuration file is read-only outside setup, since it holds the
+// credential and a command that rewrote it could damage that. The rules are
+// not a credential and a reader editing them by hand should not have to open a
+// file whose permissions they have to get right. They are kept beside it
+// instead, written by /permission and read by the same loader.
+//
+// A missing file is not an error: a reader who has set nothing up is asking no
+// programs to run without a question, which is the state a fresh install is in.
+func RuleFile() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("locating the home directory: %w", err)
+	}
+	return filepath.Join(home, ".openrouter-cli", "permissions.json"), nil
+}
+
+// LoadRules reads the approval rules from the file beside the configuration.
+//
+// The configuration file is consulted as well, so that a reader who wrote rules
+// into it by hand keeps them and the two are read as one set. The rules in the
+// file beside it come last, so a rule written by /permission is the one a
+// reader most recently said.
+func LoadRules(cfg *Config) ([]ApprovalRule, error) {
+	var rules []ApprovalRule
+	if cfg != nil {
+		rules = append(rules, cfg.Tools...)
+	}
+
+	path, err := RuleFile()
+	if err != nil {
+		return rules, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return rules, nil
+		}
+		return rules, fmt.Errorf("reading %s: %w", path, err)
+	}
+
+	// A file written for a newer version stays readable, on the same terms as
+	// the configuration file: unknown keys are ignored rather than refused.
+	var written struct {
+		Tools []ApprovalRule `json:"OPENROUTER_TOOLS"`
+	}
+	if err := json.Unmarshal(data, &written); err != nil {
+		return rules, fmt.Errorf("%s is not valid JSON: %w", path, err)
+	}
+	return append(rules, written.Tools...), nil
+}
+
+// WriteRules writes the approval rules to the file beside the configuration.
+//
+// The file is written whole rather than edited, since a rule is a list and a
+// partial edit of one is a list with a hole in it. It is written at 0600 for
+// the same reason the configuration file is: it names the directories a model
+// may run programs in, and that is a thing no other account on the system has
+// any business reading.
+func WriteRules(rules []ApprovalRule) error {
+	path, err := RuleFile()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("creating %s: %w", filepath.Dir(path), err)
+	}
+
+	body, err := json.MarshalIndent(struct {
+		Tools []ApprovalRule `json:"OPENROUTER_TOOLS"`
+	}{Tools: rules}, "", "  ")
+	if err != nil {
+		return err
+	}
+	body = append(body, '\n')
+
+	// The file is written beside itself and renamed over, so that a reader
+	// reading it never sees half of one list. A write interrupted by a crash
+	// leaves the previous list rather than a truncated one.
+	tmp := path + ".new"
+	if err := os.WriteFile(tmp, body, 0o600); err != nil {
+		return fmt.Errorf("writing %s: %w", path, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("replacing %s: %w", path, err)
+	}
+	return nil
+}
+
+// RemoveRule drops the rule covering a directory, and reports whether one was
+// there.
+//
+// A directory is covered by the nearest enclosing rule rather than by an exact
+// match, since that is how a rule is applied. Removing the one covering a
+// directory therefore removes a permission the reader may have granted at a
+// higher level, which is said in the report rather than left for the reader to
+// discover from the rule that is now gone.
+func RemoveRule(rules []ApprovalRule, dir string) ([]ApprovalRule, bool) {
+	resolved := dir
+	if abs, err := filepath.Abs(dir); err == nil {
+		resolved = abs
+	}
+	if top, err := filepath.EvalSymlinks(resolved); err == nil {
+		resolved = top
+	}
+
+	kept := make([]ApprovalRule, 0, len(rules))
+	removed := false
+	for _, rule := range rules {
+		base := rule.Path
+		if strings.TrimSpace(base) == "" {
+			kept = append(kept, rule)
+			continue
+		}
+		if !filepath.IsAbs(base) {
+			base = filepath.Join(resolved, base)
+		}
+		if filepath.Clean(base) == resolved {
+			removed = true
+			continue
+		}
+		kept = append(kept, rule)
+	}
+	return kept, removed
+}
+
+// AddRule sets the rules for a directory, replacing any rule covering it.
+//
+// The replacement is by directory rather than by name, since a rule is about a
+// place: a second rule for the same directory would have no way to say which
+// one applies, and the nearest-wins search would make it depend on the order
+// they happened to be written in.
+func AddRule(rules []ApprovalRule, dir string, commands []string) []ApprovalRule {
+	kept, _ := RemoveRule(rules, dir)
+	return append(kept, ApprovalRule{Path: dir, Commands: commands})
+}
