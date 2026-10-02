@@ -64,6 +64,14 @@ const (
 	// which flood the input stream while the pointer moves.
 	seqMouseOn  = "\x1b[?1000h"
 	seqMouseOff = "\x1b[?1000l"
+	// 1006 is the encoding rather than another mode. It asks for the SGR form
+	// of a report rather than the older one, where a coordinate is a single
+	// byte and a pane wider or taller than 223 cannot be scrolled at all.
+	// Terminal.app sends the older form unless asked, and reports a position
+	// past that limit as the last one it can express, so a reader scrolling in
+	// a large window watches the view stop at the edge.
+	seqMouseSGROn  = "\x1b[?1006h"
+	seqMouseSGROff = "\x1b[?1006l"
 )
 
 // isTerminal reports whether the file is a terminal.
@@ -153,11 +161,11 @@ func (s *Screen) restore() {
 	s.closed = true
 	ioctlTermios(s.in.Fd(), ioctlSetTermios, &s.saved)
 	// Reporting is turned off first, since a terminal left reporting sends
-	// every wheel notch into a program that is no longer reading them.
-	if s.mouse {
-		s.write(seqMouseOff)
-		s.mouse = false
-	}
+	// every wheel notch into a program that is no longer reading them. It goes
+	// through SetMouse so that the encoding is put back as well: a terminal
+	// left in the SGR form reports in it to whatever runs next, and the shell
+	// the reader is returned to has no use for a wheel report.
+	s.SetMouse(false)
 	// Bracketed paste is turned off before the alternate screen is left, and
 	// not after it. The mode belongs to the terminal rather than to the
 	// screen, so it survives the switch back: a terminal left believing it is
@@ -213,10 +221,19 @@ func (s *Screen) SetMouse(on bool) {
 	if on == s.mouse {
 		return
 	}
+	// The encoding is turned on before the mode and off after it, so that a
+	// terminal is never asked to report in a form this reader cannot parse,
+	// and is not sent a report at all once the mode is off.
+	//
+	// The two are separate settings on the same terminal, and a reader who
+	// turns reporting off and finds the wheel dead has to be able to turn it
+	// back on without also having to reset the encoding.
 	if on {
+		s.write(seqMouseSGROn)
 		s.write(seqMouseOn)
 	} else {
 		s.write(seqMouseOff)
+		s.write(seqMouseSGROff)
 	}
 	s.mouse = on
 }
