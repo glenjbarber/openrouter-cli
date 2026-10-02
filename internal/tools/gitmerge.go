@@ -33,6 +33,66 @@ var mergeRefused = map[string]string{
 	"-s":                "it names the merge strategy git runs",
 }
 
+// mergeRefusal reports which of the refused options an argument is, and the
+// reason, or an empty name when it is none of them.
+//
+// Three spellings reach the same option and each is named, since git accepts
+// all of them and a refusal that knew only one would be walked around by the
+// others:
+//
+//   - The option written whole, or with its value joined by an equals sign.
+//   - The short option with its value attached, as in -Xtheirs or -sours. Git
+//     reads the rest of the argument as the value, so a refusal of -X and -s by
+//     exact match misses it. Only a single dash counts: --squash begins with
+//     -s in the second position and is a different option. The capital -S is a
+//     different option as well, which signs the commit, and is not matched
+//     since the comparison is case sensitive.
+//   - An abbreviation of a long option. Git takes any prefix of a long option
+//     that is not ambiguous, so --strategy-opt reaches --strategy-option and
+//     --strategy-o as well. Both refused long options are prefixes of
+//     --strategy-option, so one comparison covers them. A prefix shorter than
+//     three characters after the dashes is not matched: --st is ambiguous
+//     between several options and git refuses it itself, and an abbreviation
+//     that short would also be a prefix of options that are harmless. A prefix
+//     that is ambiguous at three or more, such as --str, is refused here
+//     though git would also refuse it, which costs nothing.
+//
+// A cluster of short options, such as -ns ours, is not examined. Which letter
+// in it takes a value depends on the other letters, and refusing every cluster
+// that holds an s or an X would refuse -S with a key id and -m with a message.
+func mergeRefusal(arg string) (name, reason string) {
+	if r := mergeRefused[arg]; r != "" {
+		return arg, r
+	}
+	// The option written as one argument is refused by the same name as one
+	// written as two, since the refusal is by name and would otherwise miss
+	// the form git documents.
+	long, _, found := strings.Cut(arg, "=")
+	if r := mergeRefused[long]; found && r != "" {
+		return long, r
+	}
+	if len(arg) > 2 && arg[0] == '-' && arg[1] != '-' {
+		if short := arg[:2]; mergeRefused[short] != "" {
+			return short, mergeRefused[short]
+		}
+	}
+	// The long names are compared by prefix. --strategy is itself a prefix of
+	// --strategy-option, so an argument no longer than it is the strategy and
+	// a longer one is the strategy option.
+	const abbreviable = "--strategy-option"
+	if len(long) >= len("--")+mergeAbbreviationMin && strings.HasPrefix(abbreviable, long) {
+		if len(long) <= len("--strategy") {
+			return "--strategy", mergeRefused["--strategy"]
+		}
+		return abbreviable, mergeRefused[abbreviable]
+	}
+	return "", ""
+}
+
+// mergeAbbreviationMin is how many characters after the dashes an abbreviation
+// of a refused long option needs before it is refused. See mergeRefusal.
+const mergeAbbreviationMin = 3
+
 // mergeSafe refuses the arguments under which git merge would reach further
 // than joining two histories that agree.
 //
@@ -47,14 +107,7 @@ func mergeSafe(args []string) error {
 		if arg == "" {
 			continue
 		}
-		if reason := mergeRefused[arg]; reason != "" {
-			return fmt.Errorf("git %s will not take %s: %s", gitMerge, arg, reason)
-		}
-		// The option written as one argument is refused by the same name as one
-		// written as two, since the refusal is by name and would otherwise miss
-		// the form git documents.
-		name, _, found := strings.Cut(arg, "=")
-		if reason := mergeRefused[name]; found && reason != "" {
+		if name, reason := mergeRefusal(arg); name != "" {
 			return fmt.Errorf("git %s will not take %s: %s", gitMerge, name, reason)
 		}
 	}

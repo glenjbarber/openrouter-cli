@@ -22,6 +22,12 @@ func TestGitMergeRefusesTheOptionsThatAnswerAConflict(t *testing.T) {
 		{`{"args":["merge","--strategy-option=ours","feature"]}`, "passes an option"},
 		{`{"args":["merge","--strategy","recursive-ours","feature"]}`, "names the merge strategy"},
 		{`{"args":["merge","-s","ort","feature"]}`, "names the merge strategy"},
+		{`{"args":["merge","-sours","feature"]}`, "names the merge strategy"},
+		{`{"args":["merge","-sort","feature"]}`, "names the merge strategy"},
+		{`{"args":["merge","-Xignore-space-change","feature"]}`, "answers a conflict"},
+		{`{"args":["merge","--strat=ours","feature"]}`, "names the merge strategy"},
+		{`{"args":["merge","--strategy-opt=theirs","feature"]}`, "passes an option"},
+		{`{"args":["merge","--strategy-o","theirs","feature"]}`, "passes an option"},
 	} {
 		err := mustFail(t, call(t, s, gitTool, c.args))
 		if !strings.Contains(err.Error(), c.want) {
@@ -56,6 +62,11 @@ func TestGitMergeTakesTheOptionsThatStopShort(t *testing.T) {
 		{"merge", "--no-ff", "feature"},
 		{"merge", "--ff-only", "feature"},
 		{"merge", "--no-edit", "feature"},
+		// Neighbours of the refused options by spelling, which the matching on
+		// short and abbreviated forms must leave alone.
+		{"merge", "--stat", "feature"},
+		{"merge", "--signoff", "feature"},
+		{"merge", "-Sabc123", "feature"},
 	} {
 		argv, err := gitArgv(args)
 		if err != nil {
