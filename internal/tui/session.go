@@ -25,9 +25,17 @@ type Session struct {
 	frame  Frame
 
 	// approvals is what the reader has already decided about a program this
-	// session, and it is guarded by mu because the question is asked from the
-	// turn goroutine rather than from the input one.
+	// session, and is guarded by mu since the turn goroutine writes it and the
+	// input goroutine reads it.
 	approvals *approvalState
+	// asked is the approval question waiting for an answer, nil where none is
+	// open. It is guarded by mu, since the turn goroutine opens it and the
+	// input goroutine closes it.
+	asked *question
+	// answered receives the answer to the question being asked. It is buffered
+	// so that the input goroutine never blocks on the turn having arrived to
+	// receive it, which it may not have when the keys are read.
+	answered chan bool
 	// ask puts a question to the reader and returns the answer. It is a field
 	// rather than a call to askApproval so that the prompt has exactly one
 	// seam: a test substitutes the keyboard, and the decision made around the
@@ -243,7 +251,7 @@ func Start(out, in *os.File, title string) (*Session, error) {
 	// since repeating it on every turn would fill the pane with a line about
 	// something that is not going to change.
 	s.approvals = newApprovalState()
-	s.ask = s.askApproval
+	s.answered = make(chan bool, 1)
 	s.tools = toolsAt(workingDir(), s)
 	if absence := s.tools.absence(); absence != "" {
 		s.addReply(absence)
@@ -498,6 +506,14 @@ func (s *Session) Run() error {
 			// The filter takes every key while it is open, so that typing does
 			// not reach the line editor behind it.
 			s.filterKey()
+			continue
+		}
+		if s.asking() {
+			// A question takes every key while it is open, and it takes them
+			// here rather than on the goroutine that asked it, since this is
+			// the one that owns the terminal. A question read from the turn
+			// would race the line editor for every key the reader pressed.
+			s.questionKey()
 			continue
 		}
 
@@ -2102,6 +2118,11 @@ func (s *Session) paintNow() {
 	// opens or closes one, since the flags are already guarded and six call
 	// sites would be six chances to leave one of them out.
 	switch {
+	case s.asked != nil:
+		// A question outranks the search and the filter. A reader who has
+		// been asked whether a program may run is answering that, and a key
+		// reaching a search behind it would be a key answering nothing.
+		hints.overlay = hintConfirm
 	case s.searchOpen:
 		hints.overlay = hintSearch
 	case s.modelList != nil:
