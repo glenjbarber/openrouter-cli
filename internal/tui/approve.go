@@ -107,11 +107,35 @@ func (s *Session) Approve(command string, args []string, dir string) bool {
 		// never asked has agreed to nothing.
 		return false
 	}
-	approved := <-s.answered
+	approved, ok := s.awaitAnswer()
+	if !ok {
+		// Nothing answered the question, so nothing approved it. A turn that
+		// waited here for ever would be a turn the reader reads as a hang,
+		// which is the one failure this path cannot have.
+		//
+		// The question is closed on the way out, so that the input loop does
+		// not go on taking keys for a question that will never be answered.
+		s.answerQuestion(false)
+		return false
+	}
 	s.mu.Lock()
 	s.approvals.record(command, approved)
 	s.mu.Unlock()
 	return approved
+}
+
+// awaitAnswer waits for the answer to the question being asked.
+//
+// The wait ends when the session ends as well as when the answer arrives,
+// since a question left open at exit would otherwise strand the turn on a
+// channel nobody is left to post to.
+func (s *Session) awaitAnswer() (bool, bool) {
+	select {
+	case approved := <-s.answered:
+		return approved, true
+	case <-s.ctx.Done():
+		return false, false
+	}
 }
 
 // putQuestion draws the question and waits for it to be answered.
@@ -158,11 +182,6 @@ func (s *Session) putQuestion(command string, args []string, dir string) error {
 	s.frame.Confirm = fmt.Sprintf("run %s in %s?", line, where)
 	s.mu.Unlock()
 	s.draw()
-
-	// The turn can be stopped while the question is open. The refusal is
-	// posted so that the input loop stops reading keys for a question the
-	// reader has already walked away from.
-	go func() { <-s.ctx.Done(); s.answerQuestion(false) }()
 
 	return nil
 }
