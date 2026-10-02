@@ -1117,6 +1117,39 @@ so that a later change does not silently reverse it.
   frame paint over the interface after the work had ended.
 - Starting an already-running twiddle does nothing, so a caller need not track
   whether one is running.
+- The twiddle row is the one part of the frame drawn in colour, and the colour
+  scrolls through the six primaries while work is in progress. Every other row
+  is prose: a reply is written by a model and copied out by a reader, and a
+  sequence written into prose is copied out with it. The primaries are used
+  since they are the colours every terminal can be relied on to show.
+- The colour is interpolated between the primaries rather than stepped between
+  them. Six colours turning is not a scroll, and a hard change is the thing a
+  scroll is wanted in place of.
+- A circuit takes four seconds, long enough that the movement reads as movement
+  rather than as a flicker. The ramp is divided by the repaint interval rather
+  than counted in steps of its own, so the colour moves at the rate the figure
+  does whatever the interval is later changed to.
+- A component reaching zero on the way down is floored rather than drawn at the
+  bottom of the cube. A blue at zero is the black that red at zero would be, and
+  a dark background is the common case.
+- The colour is written by the screen and not by the renderer. Every row leaves
+  the renderer as plain text with the bytes a terminal would act on removed, and
+  a sequence inserted before that would be stripped along with the ones a model
+  sent. The screen is the one place that writes bytes rather than text.
+- The sequence is written around the twiddle and reset immediately after it, so
+  the word beside it is not coloured and a selection of the pane carries the
+  characters rather than the colour.
+- The twiddle row is found in the finished frame rather than tracked through the
+  trims the pane applies. The pane drops lines from the front and adds blanks at
+  the back, so an index moved by hand through both is a second thing to keep
+  correct, while matching the line once against a frame that has stopped moving
+  is one comparison. A row that has scrolled off reports none, since a tint
+  naming a row that has taken its place would colour a line of history.
+- The tint carries the twiddle as text rather than as a count of columns. The
+  figures are braille and several bytes each, so a count of bytes cuts one in
+  half and the terminal draws half a glyph followed by the rest of it as text.
+- The tint is cleared with the twiddle. A tint left behind with no twiddle would
+  colour whichever row it was pointed at.
 - The twiddle leads the line rather than trailing it, since a trailing one
   would shift the text sideways on every step.
 
