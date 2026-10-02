@@ -204,9 +204,9 @@ func TestGitWorktreeRefusesForce(t *testing.T) {
 // subcommands that would change the repository and are not on it, and that
 // nothing was run: a refusal after the fact would still have made the change.
 //
-// commit, push and worktree are absent from the list because they are
+// commit, push, worktree and merge are absent because they are
 // permitted. Every other writing subcommand is here, so the set is bounded by
-// more than the three names that were added to it.
+// more than the four names that were added to it.
 func TestGitRefusesASubcommandThatWrites(t *testing.T) {
 	s, _ := gitFixture(t)
 	before := mustText(t, call(t, s, gitTool, `{"args":["rev-parse","HEAD"]}`))
@@ -216,9 +216,9 @@ func TestGitRefusesASubcommandThatWrites(t *testing.T) {
 		{`{"args":["fetch"]}`, "fetch"},
 		{`{"args":["reset","--hard","HEAD"]}`, "reset"},
 		{`{"args":["checkout","-b","another"]}`, "checkout"},
-		{`{"args":["apply","/dev/null"]}`, "apply"},
+		{`{"args":["cherry-pick","HEAD"]}`, "cherry-pick"},
+		{`{"args":["rebase","main"]}`, "rebase"},
 		{`{"args":["gc"]}`, "gc"},
-		{`{"args":["merge","feature"]}`, "merge"},
 	} {
 		err := mustFail(t, call(t, s, gitTool, c.args))
 		if !strings.Contains(err.Error(), "not permitted") {
