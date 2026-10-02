@@ -43,6 +43,21 @@ const shellWaitDelay = 500 * time.Millisecond
 // git, a program on this list is not thereby allowed to run. Each call asks
 // the reader first, so the list bounds what may be proposed rather than what
 // may happen.
+//
+// The scanners and generators below are on the same reasoning as the readers
+// above them: each reports on the tree rather than changing it. errcheck,
+// gosec, govulncheck and staticcheck read the source and print findings. The
+// two protoc generators write only when a model runs protoc to drive them, and
+// they are named here rather than reached for by a path, so a reader approving
+// one is approving a program rather than a location that could be replaced
+// underneath them.
+//
+// Every name on this list resolves by bare name through PATH, as go, make and
+// git already do. That is what makes the list portable rather than pinned to
+// one host, and it is also what a reader should know before approving one: the
+// program that runs is whichever of that name the session reaches first. A
+// reader who wants one permitted in a project writes a rule naming it under
+// OPENROUTER_TOOLS, which is how a lasting permission is expressed.
 var shellPermitted = []string{
 	"go",
 	"gofmt",
@@ -60,6 +75,12 @@ var shellPermitted = []string{
 	"sed",
 	"awk",
 	"ps",
+	"errcheck",
+	"gosec",
+	"govulncheck",
+	"protoc-gen-go",
+	"protoc-gen-go-grpc",
+	"staticcheck",
 }
 
 // shellPermittedMap is shellPermitted as a lookup, so that the two cannot drift
@@ -78,7 +99,7 @@ const shellParameters = `{
   "properties": {
     "command": {
       "type": "string",
-      "description": "The program to run, such as go. It must be one of: go, gofmt, make, git, ls, cat, pwd, echo, grep, find, wc, head, tail, sed, awk, ps. Anything else is refused before it runs."
+      "description": "The program to run, such as go. It must be one of: go, gofmt, make, git, ls, cat, pwd, echo, grep, find, wc, head, tail, sed, awk, ps, errcheck, gosec, govulncheck, protoc-gen-go, protoc-gen-go-grpc, staticcheck. Anything else is refused before it runs."
     },
     "args": {
       "type": "array",
