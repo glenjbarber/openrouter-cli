@@ -66,15 +66,6 @@ const shellWaitDelay = 500 * time.Millisecond
 // without it is refused at exec rather than reported as a permission that is
 // missing.
 //
-// du and df sit with ls for the same reason, each reporting on the tree rather
-// than changing it. du answers what a directory is costing in space, which is
-// the question behind a build that has filled a disk, and df answers what is
-// left of the filesystem it would fill. Neither writes, and neither reaches a
-// program, so neither can reach one that is not on this list. du walks what it
-// is pointed at rather than the tree it runs in, so it is named with the rest
-// only as a read and not as a way of mapping the disk, which is what a model
-// reaching for a build that filled one wants.
-//
 // stat, file and diff sit with ls and cat for the same reason, each reading the
 // tree and printing what it found. stat answers what a path is when ls has
 // already named it, file answers what a file holds when its name does not, and
@@ -127,8 +118,6 @@ var shellPermitted = []string{
 	"grep",
 	"rg",
 	"find",
-	"du",
-	"df",
 	"wc",
 	"head",
 	"tail",
@@ -165,7 +154,7 @@ const shellParameters = `{
   "properties": {
     "command": {
       "type": "string",
-      "description": "The program to run, such as go. It must be one of: go, gofmt, make, bmake, git, ls, cat, pwd, echo, grep, rg, find, du, df, wc, head, tail, sed, awk, stat, file, diff, jq, ps, gh, rm, errcheck, gosec, govulncheck, protoc-gen-go, protoc-gen-go-grpc, staticcheck. Anything else is refused before it runs."
+      "description": "The program to run, such as go. It must be one of: go, gofmt, make, bmake, git, ls, cat, pwd, echo, grep, rg, find, wc, head, tail, sed, awk, stat, file, diff, jq, ps, gh, rm, errcheck, gosec, govulncheck, protoc-gen-go, protoc-gen-go-grpc, staticcheck. Anything else is refused before it runs."
     },
     "args": {
       "type": "array",
