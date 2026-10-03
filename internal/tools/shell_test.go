@@ -72,13 +72,15 @@ func TestShellRefusesAProgramOutsideTheAllowlist(t *testing.T) {
 		return true
 	}))
 
-	// rm is the case the allowlist exists for. It is named rather than run,
+	// curl is the case the allowlist exists for. It is named rather than run,
 	// and it is not even present on every host, so the call has to be refused
-	// before anything is looked up.
-	r := shellCall(t, set, map[string]any{"command": "rm", "args": []string{"-rf", "/tmp/x"}})
+	// before anything is looked up. The arguments are curl's own, since a
+	// flag belonging to another program would read as though the test were
+	// still about that one.
+	r := shellCall(t, set, map[string]any{"command": "curl", "args": []string{"-s", "https://example.invalid"}})
 
 	if r.Err == nil {
-		t.Fatal("rm was not refused")
+		t.Fatal("curl was not refused")
 	}
 	if !strings.Contains(r.Err.Error(), "not permitted") {
 		t.Errorf("the refusal did not say what was wrong: %v", r.Err)

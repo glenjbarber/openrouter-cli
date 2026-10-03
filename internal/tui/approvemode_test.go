@@ -48,14 +48,16 @@ func TestRefuseRefusesWithoutAQuestion(t *testing.T) {
 }
 
 // The allowlist is not the mode. A mode of allow says nothing about what may be
-// proposed, so a program outside the list is still refused by name.
+// proposed, so a program outside the list is still refused by name. curl is
+// named rather than run and is not on the list, which is what this asserts; rm
+// would no longer do, since it was added to the list.
 func TestAllowDoesNotWidenTheAllowlist(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := askingSession(t, "http://127.0.0.1:1", dir, true)
 	s.setApprovalMode(modeAllow)
 
 	set := tools.NewShell(dir, tools.AlwaysAllow())
-	raw, err := json.Marshal(map[string]any{"command": "rm", "args": []string{"-rf", "x"}})
+	raw, err := json.Marshal(map[string]any{"command": "curl", "args": []string{"-s", "https://example.invalid"}})
 	if err != nil {
 		t.Fatalf("encoding the call: %v", err)
 	}
@@ -71,9 +73,6 @@ func TestAllowDoesNotWidenTheAllowlist(t *testing.T) {
 	}
 }
 
-// A remembered answer is meaningless once the reader has stopped asking, so
-// changing the mode clears them. A reader moving from refusing to allowing would
-// otherwise find every program they had refused still refused.
 func TestChangingTheModeClearsWhatWasRemembered(t *testing.T) {
 	st := newApprovalState()
 	st.record("go", false)

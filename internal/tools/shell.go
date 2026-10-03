@@ -58,6 +58,25 @@ const shellWaitDelay = 500 * time.Millisecond
 // an array and no shell is read, it runs no other program, and it opens no
 // connection.
 //
+// gh and rm are on the list for the opposite reason to the readers above, and
+// the reason is that they write. A model repairing a tree needs to remove what
+// a build left behind, and a model working on a repository needs to read and
+// act on a pull request, and refusing both means the reader does them at a
+// second prompt. They are bounded by the two properties that already bound the
+// list rather than by a rule of their own: a name here is a bound on what may
+// be proposed and nothing more, since every call is still asked about, and the
+// arguments go to the program as an array, so there is no pipe, redirect or
+// chain by which one of them could reach a program that is not on the list. The
+// git tool is in the same position, permitting commit, push and worktree
+// alongside the readers, on the maintainers instruction that this repository
+// needs them.
+//
+// bmake sits beside make rather than in place of it, since a build in this
+// repository may have been written for either and the two are different
+// programs on a FreeBSD host. The name resolves through PATH like every other,
+// so a host without it is refused at exec rather than reported as a permission
+// that is missing.
+//
 // Every name on this list resolves by bare name through PATH, as go, make and
 // git already do. That is what makes the list portable rather than pinned to
 // one host, and it is also what a reader should know before approving one: the
@@ -68,6 +87,7 @@ var shellPermitted = []string{
 	"go",
 	"gofmt",
 	"make",
+	"bmake",
 	"git",
 	"ls",
 	"cat",
@@ -82,6 +102,8 @@ var shellPermitted = []string{
 	"awk",
 	"jq",
 	"ps",
+	"gh",
+	"rm",
 	"errcheck",
 	"gosec",
 	"govulncheck",
@@ -106,7 +128,7 @@ const shellParameters = `{
   "properties": {
     "command": {
       "type": "string",
-      "description": "The program to run, such as go. It must be one of: go, gofmt, make, git, ls, cat, pwd, echo, grep, find, wc, head, tail, sed, awk, jq, ps, errcheck, gosec, govulncheck, protoc-gen-go, protoc-gen-go-grpc, staticcheck. Anything else is refused before it runs."
+      "description": "The program to run, such as go. It must be one of: go, gofmt, make, bmake, git, ls, cat, pwd, echo, grep, find, wc, head, tail, sed, awk, jq, ps, gh, rm, errcheck, gosec, govulncheck, protoc-gen-go, protoc-gen-go-grpc, staticcheck. Anything else is refused before it runs."
     },
     "args": {
       "type": "array",
