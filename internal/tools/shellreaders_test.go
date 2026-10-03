@@ -16,7 +16,7 @@ import (
 // against a neighbours punctuation fails the next time anything is appended.
 
 func TestShellNamesTheReadersBesideGrepAndLsInARefusal(t *testing.T) {
-	for _, name := range []string{"rg", "stat", "file", "diff"} {
+	for _, name := range []string{"rg", "stat", "file", "diff", "du", "df"} {
 		if !shellPermittedMap[name] {
 			t.Errorf("%s is not on the allowlist", name)
 		}
