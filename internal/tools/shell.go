@@ -80,18 +80,29 @@ const shellWaitDelay = 500 * time.Millisecond
 // differ is carried back in the failure rather than lost to it, which is the
 // reason for the arrangement in run below.
 //
+// hexdump and od sit with file, on the same reasoning: each reads a file the
+// tree holds and prints what is in it. They are two programs rather than one
+// under two names, since od is the one the POSIX standard names and hexdump
+// the one the BSDs and macOS carry by name alongside it, and a host resolves
+// whichever of the two it has. Neither writes, and each takes its arguments as
+// an array rather than through a shell, so neither can reach a program that is
+// not on this list. A model asking for one is usually chasing a byte at an
+// offset in a binary or in a file whose encoding it does not know, which is a
+// question about content that cat cannot answer.
+//
 // gh and rm are on the list for the opposite reason to the readers above, and
 // the reason is that they write. A model repairing a tree needs to remove what
 // a build left behind, and a model working on a repository needs to read and
 // act on a pull request, and refusing both means the reader does them at a
-// second prompt. They are bounded by the two properties that already bound the
-// list rather than by a rule of their own: a name here is a bound on what may
-// be proposed and nothing more, since every call is still asked about, and the
-// arguments go to the program as an array, so there is no pipe, redirect or
-// chain by which one of them could reach a program that is not on the list. The
-// git tool is in the same position, permitting commit, push and worktree
-// alongside the readers, on the maintainers instruction that this repository
-// needs them.
+// second prompt. They are bounded by two further things rather than by a rule of
+// their own: a name here is a bound on what may be proposed rather than
+// nothing more, since every call is still asked about, and the arguments go to
+// the program as an array, so there is no pipe, redirect or chain by which one
+// of them could reach a program that is not on the list. What bounds where
+// either may reach is containedArgs, which is the check every program on this
+// list is held to and not these two alone. The git tool is in a similar
+// position, permitting commit, push and worktree alongside the readers, on the
+// maintainers instruction that this repository needs them.
 //
 // bmake sits beside make rather than in place of it, since a build in this
 // repository may have been written for either and the two are different
@@ -126,6 +137,8 @@ var shellPermitted = []string{
 	"stat",
 	"file",
 	"diff",
+	"hexdump",
+	"od",
 	"jq",
 	"ps",
 	"gh",
@@ -154,12 +167,12 @@ const shellParameters = `{
   "properties": {
     "command": {
       "type": "string",
-      "description": "The program to run, such as go. It must be one of: go, gofmt, make, bmake, git, ls, cat, pwd, echo, grep, rg, find, wc, head, tail, sed, awk, stat, file, diff, jq, ps, gh, rm, errcheck, gosec, govulncheck, protoc-gen-go, protoc-gen-go-grpc, staticcheck. Anything else is refused before it runs."
+      "description": "The program to run, such as go. It must be one of: go, gofmt, make, bmake, git, ls, cat, pwd, echo, grep, rg, find, wc, head, tail, sed, awk, stat, file, diff, hexdump, od, jq, ps, gh, rm, errcheck, gosec, govulncheck, protoc-gen-go, protoc-gen-go-grpc, staticcheck. Anything else is refused before it runs."
     },
     "args": {
       "type": "array",
       "items": {"type": "string"},
-      "description": "The arguments after the program, such as [\"build\", \"./...\"]. They are passed to the program as an array and are never read by a shell, so a pipe, a redirect or a chain of commands is not expressible here."
+      "description": "The arguments after the program, such as [\"build\", \"./...\"]. They are passed to the program as an array and are never read by a shell, so a pipe, a redirect or a chain of commands is not expressible here. An argument naming a path outside the working directory is refused rather than passed on."
     },
     "path": {
       "type": "string",
@@ -234,7 +247,8 @@ func newShell(dir string, approver Approver, timeout time.Duration) *Set {
 				"printed, such as go build ./... or make check. The reader is asked " +
 				"before each program runs, and a program outside the list is refused. " +
 				"The arguments are given to the program directly and are never read by " +
-				"a shell.",
+				"a shell, and one naming a path outside the working directory is " +
+				"refused.",
 			Parameters: json.RawMessage(shellParameters),
 		},
 	}, sh.call)
@@ -254,8 +268,10 @@ type callArguments struct {
 // program is checked against the allowlist before anything is asked of the
 // reader, since a program that would be refused outright is not something to
 // interrupt somebody about. The path is resolved next, so that the question
-// asked names the directory the command would run in. The reader is asked last,
-// once there is something specific to ask about.
+// asked names the directory the command would run in. The arguments are then
+// checked against that directory, since a question naming a command that would
+// reach outside the tree is a question about something the reader cannot see.
+// The reader is asked last, once there is something specific to ask about.
 func (sh *shellTools) call(raw json.RawMessage) (string, error) {
 	var args callArguments
 	if err := decode(raw, &args); err != nil {
@@ -272,6 +288,12 @@ func (sh *shellTools) call(raw json.RawMessage) (string, error) {
 	}
 	dir, err := sh.workDir(args.Path)
 	if err != nil {
+		return "", err
+	}
+	// The arguments are held to the directory the command runs in, which the
+	// working directory alone does not do: it bounds where a program starts
+	// rather than where it may go.
+	if err := containedArgs(args.Args, dir); err != nil {
 		return "", err
 	}
 
