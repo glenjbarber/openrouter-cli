@@ -58,6 +58,28 @@ const shellWaitDelay = 500 * time.Millisecond
 // an array and no shell is read, it runs no other program, and it opens no
 // connection.
 //
+// rg sits with grep on the same reasoning: it reads the tree and prints the
+// lines that match. The two differ in speed and in the filters they take, and
+// a model refused ripgrep asks for grep instead and reads a slower answer
+// rather than a wrong one, so the list carries whichever of the two the host
+// is quicker at. The name resolves through PATH like every other, so a host
+// without it is refused at exec rather than reported as a permission that is
+// missing.
+//
+// stat, file and diff sit with ls and cat for the same reason, each reading the
+// tree and printing what it found. stat answers what a path is when ls has
+// already named it, file answers what a file holds when its name does not, and
+// diff answers what changed between two of them, which is the question a model
+// asks before it rewrites something. None of them reaches another program,
+// since each takes its arguments as an array rather than through a shell, so
+// none can reach one that is not on this list. diff does write when it is given
+// -p or an output option, and that is recorded rather than separated out: there
+// is no rule here telling the forms that write from those that do not, so such
+// a diff is reached only through a question put to the reader, which is the
+// same bound that covers rm and gh below. What diff prints when the files
+// differ is carried back in the failure rather than lost to it, which is the
+// reason for the arrangement in run below.
+//
 // gh and rm are on the list for the opposite reason to the readers above, and
 // the reason is that they write. A model repairing a tree needs to remove what
 // a build left behind, and a model working on a repository needs to read and
@@ -94,12 +116,16 @@ var shellPermitted = []string{
 	"pwd",
 	"echo",
 	"grep",
+	"rg",
 	"find",
 	"wc",
 	"head",
 	"tail",
 	"sed",
 	"awk",
+	"stat",
+	"file",
+	"diff",
 	"jq",
 	"ps",
 	"gh",
@@ -128,7 +154,7 @@ const shellParameters = `{
   "properties": {
     "command": {
       "type": "string",
-      "description": "The program to run, such as go. It must be one of: go, gofmt, make, bmake, git, ls, cat, pwd, echo, grep, find, wc, head, tail, sed, awk, jq, ps, gh, rm, errcheck, gosec, govulncheck, protoc-gen-go, protoc-gen-go-grpc, staticcheck. Anything else is refused before it runs."
+      "description": "The program to run, such as go. It must be one of: go, gofmt, make, bmake, git, ls, cat, pwd, echo, grep, rg, find, wc, head, tail, sed, awk, stat, file, diff, jq, ps, gh, rm, errcheck, gosec, govulncheck, protoc-gen-go, protoc-gen-go-grpc, staticcheck. Anything else is refused before it runs."
     },
     "args": {
       "type": "array",
@@ -368,9 +394,19 @@ func (sh *shellTools) run(program, dir string, argv []string) (string, error) {
 			program, int64(MaxOutput))
 	}
 	if err != nil {
+		// stderr is preferred, since a diagnostic belongs there. A program
+		// that reports its answer on stdout and signals through its exit
+		// status says nothing on stderr, and reporting the status alone would
+		// throw the answer away: diff prints what changed and exits 1 when
+		// the files differ, which is the answer rather than a fault. stdout
+		// is bounded by the cap above, so a program that floods it has
+		// already been reported as over the limit rather than carried here.
 		detail := strings.TrimSpace(stderr.String())
 		if detail == "" {
-			detail = err.Error()
+			detail = strings.TrimSpace(stdout.buf.String())
+			if detail == "" {
+				detail = err.Error()
+			}
 		}
 		return "", fmt.Errorf("%s failed: %s", program, detail)
 	}
