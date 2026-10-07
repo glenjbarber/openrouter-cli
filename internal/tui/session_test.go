@@ -20,8 +20,8 @@ import (
 var requiredNames = []string{
 	"/help", "/clear", "/quit", "/exit", "/connect", "/key", "/search",
 	"/models", "/freemodels", "/model", "/new", "/bell", "/cognito",
-	"/verbose", "/delegate", "/pane", "/spawn", "/btw", "/main", "/compact", "/mouse", "/info",
-	"/save", "/load", "/tools", "/approve", "/autosave", "/permission", "/copy", "/verbosity", "/color",
+	"/verbose", "/delegate", "/pane", "/spawn", "/providers", "/btw", "/main", "/compact", "/mouse", "/info",
+	"/save", "/load", "/tools", "/approve", "/autosave", "/permission", "/copy", "/verbosity", "/color", "/theme",
 }
 
 // Every name the interface is expected to answer to is declared in the table

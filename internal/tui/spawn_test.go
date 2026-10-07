@@ -117,7 +117,7 @@ func TestASpawnIsGivenTheTools(t *testing.T) {
 	}
 
 	s := toolSession(t, srv.URL, dir)
-	s.startSpawn("what is in here")
+	s.startSpawn("what is in here", "")
 	waitFor(t, func() bool { return s.workerPending() == 0 && wpaneHasLines(s) },
 		"the worker never settled")
 
@@ -181,6 +181,81 @@ func TestASpawnIsRefusedWhileCognito(t *testing.T) {
 	}
 }
 
+// TestASpawnProviderIsRefusedWhenUnconfigured checks that --provider NAME is
+// refused by name when nothing is configured under that name, rather than
+// falling back to the session's OpenRouter client and model silently.
+func TestASpawnProviderIsRefusedWhenUnconfigured(t *testing.T) {
+	s := toolSession(t, "http://127.0.0.1:1/api/v1", t.TempDir())
+	s.command("/spawn --provider groq do a thing")
+
+	joined := strings.Join(s.frame.Reply, "\n")
+	if !strings.Contains(joined, "groq") || !strings.Contains(joined, "not configured") {
+		t.Errorf("/spawn --provider groq was not refused by name:\n%s", joined)
+	}
+	if s.workerPending() != 0 {
+		t.Error("a worker was started with no provider configured")
+	}
+}
+
+// TestASpawnProviderNeedsAName checks that --provider with nothing after it
+// is refused rather than treated as the question.
+func TestASpawnProviderNeedsAName(t *testing.T) {
+	s := toolSession(t, "http://127.0.0.1:1/api/v1", t.TempDir())
+	s.command("/spawn --provider")
+
+	joined := strings.Join(s.frame.Reply, "\n")
+	if !strings.Contains(joined, "--provider needs a name") {
+		t.Errorf("/spawn --provider with no name was not refused:\n%s", joined)
+	}
+	if s.workerPending() != 0 {
+		t.Error("a worker was started with --provider and no name")
+	}
+}
+
+// TestASpawnProviderUsesTheNamedBackend checks that --provider NAME actually
+// reaches that provider's client and model rather than the session's own, by
+// giving the two servers distinguishable replies and asking which one
+// answered.
+func TestASpawnProviderUsesTheNamedBackend(t *testing.T) {
+	mainSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/models" {
+			io.WriteString(w, `{"data":[{"id":"test/model","context_length":8192}]}`)
+			return
+		}
+		t.Error("the main backend was called by a --provider worker")
+	}))
+	defer mainSrv.Close()
+
+	var gotModel string
+	provSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/models" {
+			io.WriteString(w, `{"data":[{"id":"groq/model","context_length":8192}]}`)
+			return
+		}
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		gotModel, _ = body["model"].(string)
+		io.WriteString(w, auditStream)
+	}))
+	defer provSrv.Close()
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	s := toolSession(t, mainSrv.URL, t.TempDir())
+	s.providers = map[string]providerBinding{
+		"groq": {client: openrouter.New(provSrv.URL, "k"), model: "groq/model"},
+	}
+	s.command("/spawn --provider groq what is in here")
+
+	waitFor(t, func() bool { return s.workerPending() == 0 && wpaneHasLines(s) },
+		"the provider worker never settled")
+
+	if gotModel != "groq/model" {
+		t.Errorf("the provider backend was asked for model %q, want %q", gotModel, "groq/model")
+	}
+}
+
 // TestASpawnNamesTheLogItLeaves checks the record, since a worker that acts on
 // the host and keeps nothing is the one thing /cognito refuses. The pane is
 // what a reader watches while it happens; the file is what they read after.
@@ -198,7 +273,7 @@ func TestASpawnNamesTheLogItLeaves(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	s := toolSession(t, srv.URL, t.TempDir())
-	s.startSpawn("what is in here")
+	s.startSpawn("what is in here", "")
 	waitFor(t, func() bool { return s.workerPending() == 0 && wpaneHasLines(s) },
 		"the worker never settled")
 
@@ -257,7 +332,7 @@ func TestASpawnStopsAtTheRoundLimit(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	s := toolSession(t, srv.URL, t.TempDir())
-	s.startSpawn("keep going")
+	s.startSpawn("keep going", "")
 	waitFor(t, func() bool { return s.workerPending() == 0 && wpaneHasLines(s) },
 		"the worker never settled")
 
@@ -296,7 +371,7 @@ func TestASpawnRecordsNothingInTheConversation(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	s := toolSession(t, srv.URL, t.TempDir())
-	s.startSpawn("read the directory")
+	s.startSpawn("read the directory", "")
 	waitFor(t, func() bool { return s.workerPending() == 0 && wpaneHasLines(s) },
 		"the worker never settled")
 
@@ -384,7 +459,7 @@ func TestCloseWaitsForAWorker(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	s := toolSession(t, srv.URL, t.TempDir())
-	s.startSpawn("what is in here")
+	s.startSpawn("what is in here", "")
 	waitFor(t, func() bool { return s.workerPending() == 1 }, "the worker never started")
 
 	done := make(chan struct{})

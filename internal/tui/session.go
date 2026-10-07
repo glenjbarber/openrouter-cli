@@ -71,7 +71,12 @@ type Session struct {
 	// request loop writes it too.
 	mu     sync.Mutex
 	client *openrouter.Client
-	conv   *Conversation
+	// providers are the named alternate backends a worker started with
+	// /spawn --provider NAME may run against, built from OPENROUTER_PROVIDERS
+	// on the same terms as client and OPENROUTER_API_KEY. A name not in the
+	// map is refused rather than guessed at.
+	providers map[string]providerBinding
+	conv      *Conversation
 	// spinner turns the twiddle while work is in progress.
 	spinner *Spinner
 	// completedPrefix is the token the held candidates were completed from,
@@ -200,6 +205,13 @@ type Session struct {
 	// It is a preference read from the configuration and changed at runtime,
 	// so that a user who did not ask for it never hears one.
 	bellWanted bool
+	// bellSaver records the bell state in the configuration file, or is nil
+	// when there is no file to record it in, on the same terms as colorSaver.
+	bellSaver func(on bool) error
+	// verbositySaver records the verbosity level in the configuration file,
+	// or is nil when there is no file to record it in, on the same terms as
+	// colorSaver.
+	verbositySaver func(level int) error
 	// colorOn reports that color is drawn on the screen. It is off unless the
 	// configuration asked for it, and /color changes it and records the change.
 	colorOn bool
@@ -209,6 +221,14 @@ type Session struct {
 	// colorTheme is the base colors the configuration asks for, empty on a
 	// side that follows the terminal theme.
 	colorTheme config.Theme
+	// ground is which of the two role tables a frame is drawn against. It
+	// follows the theme unless /theme sets it. It is guarded by mu, since the
+	// command writes it from the input goroutine and the paint path reads it
+	// from the spinner one.
+	ground ground
+	// themeSaver records the ground in the configuration file, or is nil when
+	// there is no file to record it in.
+	themeSaver func(dark bool) error
 	// out is where the bell is written, which is the interface output.
 	out *os.File
 	// cognito reports that this session records nothing. The mode is in force
@@ -281,15 +301,18 @@ func Start(out, in *os.File, title string) (*Session, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Session{
-		screen:    screen,
-		editor:    NewLineEditor(in),
-		conv:      NewConversation(),
-		windows:   newContextLength(),
-		spinner:   NewSpinner(),
-		out:       out,
-		ctx:       ctx,
-		cancel:    cancel,
-		completer: complete.New(candidates()),
+		screen:  screen,
+		editor:  NewLineEditor(in),
+		conv:    NewConversation(),
+		windows: newContextLength(),
+		spinner: NewSpinner(),
+		out:     out,
+		ctx:     ctx,
+		cancel:  cancel,
+		// The arguments of a command are completed where it declares them,
+		// over and above the command names. A command that declares none
+		// completes nothing in its arguments, as it always has.
+		completer: complete.New(candidates()).WithArguments(argumentCandidates()),
 		frame: Frame{
 			Title: title,
 			Status: Status{
@@ -309,11 +332,12 @@ func Start(out, in *os.File, title string) (*Session, error) {
 	// something that is not going to change.
 	s.approvals = newApprovalState()
 	s.answered = make(chan bool, 1)
-	// The level a session starts at is the one the configuration file names,
-	// which is a preference rather than a setting: it is about the conversation
-	// rather than about the client. A session with no file, or one naming a
-	// level that is not one, starts at the default.
-	s.verbosity = clampVerbosity(cfgVerbosity(s.cfg))
+	// This is a placeholder default rather than the file's own level: s.cfg
+	// is not attached until Configure runs, after Start returns, and
+	// Configure is what applies the level the file actually names. A
+	// session built here and never handed to Configure, as a test may do,
+	// still starts at a sane value rather than the zero one.
+	s.verbosity = DefaultVerbosity
 	if chosen, err := config.LoadChosen(); err == nil {
 		s.chosen = chosen
 	}
@@ -630,11 +654,37 @@ func (s *Session) Configure(cfg *config.Config) {
 		s.updateStatus()
 		return
 	}
+	// The level a session starts at is the one the configuration file
+	// names. It is applied here rather than only at Start, since Start
+	// runs before this method does and the comment on its own assignment
+	// was wrong about that: s.cfg is nil there in every real session, this
+	// method being the first place a configuration is ever attached to
+	// one, so cfgVerbosity(s.cfg) at Start always read the default rather
+	// than the file. A level set with /verbosity before Configure runs is
+	// not something to protect here, since nothing can call /verbosity
+	// before Start has returned and main.go has called Configure.
+	s.verbosity = clampVerbosity(cfgVerbosity(cfg))
 	// The model is adopted whether or not a credential is present, so that
 	// the status bar reflects the file from the first repaint.
 	if cfg.APIKey != "" {
 		s.client = openrouter.New(cfg.URLBase, cfg.APIKey)
 	}
+	// Each named provider gets a client of its own, on the same terms as
+	// the OpenRouter one: built once here, never from the environment.
+	// parseProviders has already dropped an incomplete entry, so every
+	// entry that reaches this loop is complete.
+	if len(cfg.Providers) > 0 {
+		s.providers = make(map[string]providerBinding, len(cfg.Providers))
+		for _, p := range cfg.Providers {
+			s.providers[p.Name] = providerBinding{
+				client: openrouter.New(p.URLBase, p.APIKey),
+				model:  p.Model,
+			}
+		}
+	}
+	s.tools.addGitHub(cfg.GitHubToken)
+	s.tools.addNotion(cfg.NotionToken)
+	s.tools.addGoogleDrive(cfg.GoogleDriveCredentials)
 	// The status bar is refreshed here as well as in the conversation, since
 	// a model taken from the file must appear on the first repaint rather than
 	// only after the first exchange.
@@ -813,12 +863,14 @@ func init() {
 		{names: []string{"/new"}, description: "clear the conversation", run: (*Session).cmdNew, idleOnly: true},
 		{names: []string{"/bell"}, description: "ring the terminal bell on reply, on or off", run: (*Session).cmdBell},
 		{names: []string{"/color"}, hidden: []string{"/colour"}, usage: "/color [on|off]", description: "turn color on or off, and save the choice", run: (*Session).cmdColor},
+		{names: []string{"/theme"}, usage: "/theme [dark|light|auto]", description: "choose the light or dark ground, and save the choice", run: (*Session).cmdTheme},
 		{names: []string{"/cognito"}, description: "record nothing, on or off", run: (*Session).cmdCognito},
 		{names: []string{"/verbosity"}, usage: "/verbosity [0-6]", description: "how much the model is asked to answer with", run: (*Session).cmdVerbosity},
 		{names: []string{"/verbose"}, description: "report the shape of each streamed turn, on or off", run: (*Session).cmdVerbose},
 		{names: []string{"/delegate"}, usage: "/delegate QUESTION", description: "ask a question alongside, without recording it", run: (*Session).cmdDelegate},
 		{names: []string{"/pane"}, usage: "/pane [main|delegate|spawn]", description: "show the conversation, the /delegate output or the /spawn output", run: (*Session).cmdPane},
-		{names: []string{"/spawn"}, usage: "/spawn QUESTION", description: "answer a question in a worker given the tools", run: (*Session).cmdSpawn},
+		{names: []string{"/spawn"}, usage: "/spawn [--provider NAME] QUESTION", description: "answer a question in a worker given the tools; --provider runs it against a named alternate backend instead", run: (*Session).cmdSpawn},
+		{names: []string{"/providers"}, description: "report the configured OPENROUTER_PROVIDERS entries, and how to add one", run: (*Session).cmdProviders},
 		{names: []string{"/btw"}, description: "start a thread branched from this conversation", run: (*Session).cmdBtw, idleOnly: true},
 		{names: []string{"/main"}, description: "leave the thread and return to the conversation", run: (*Session).cmdMain, idleOnly: true},
 		{names: []string{"/compact"}, description: "summarise the conversation and start again", run: (*Session).cmdCompact, idleOnly: true},
@@ -828,6 +880,7 @@ func init() {
 		{names: []string{"/clear"}, description: "clear the pane", run: (*Session).cmdClear, idleOnly: true},
 		{names: []string{"/info"}, description: "report the session settings", run: (*Session).cmdInfo},
 		{names: []string{"/copy"}, description: "copy the conversation to the clipboard", run: (*Session).cmdCopy},
+		{names: []string{"/paste"}, description: "put the clipboard into the input", run: (*Session).cmdPaste},
 		{names: []string{"/permission"}, usage: "/permission [add|remove] [DIR] PROG...", description: "grant or refuse programs in a directory", run: (*Session).cmdPermission},
 		{names: []string{"/autosave"}, usage: "/autosave [on|off|now]", description: "write the conversation without being asked", run: (*Session).cmdAutosave},
 		{names: []string{"/approve"}, usage: "/approve [ask|allow|refuse]", description: "report or set whether programs run without asking", run: (*Session).cmdApprove, idleOnly: true},
@@ -1021,6 +1074,60 @@ func (s *Session) cmdInfo([]string) bool {
 func (s *Session) cmdTools([]string) bool {
 	lines := s.tools.toolsListing()
 	lines = append(lines, s.approvalListing()...)
+	s.appendLines(strings.Join(lines, "\n"))
+	return false
+}
+
+// providersHelp is what /providers prints: how to configure a named
+// alternate backend, and nothing else, since that is the one thing this
+// command exists to answer.
+const providersHelp = `/spawn --provider NAME runs a worker against a named alternate backend instead of OpenRouter.
+
+Add an entry to OPENROUTER_PROVIDERS in the configuration file (one of the
+paths /key reports), which must be mode 0600:
+
+  "OPENROUTER_PROVIDERS": [
+    {"name": "lfm", "api_key": "your-key", "url_base": "https://labs.liquid.ai/api/v1", "model": "lfm2.5-8b-a1b"}
+  ]
+
+Every field is required: name, api_key, url_base and model. There is no
+default endpoint or model to fall back to, since a provider this client has
+not spoken to before has no endpoint to guess and a model guessed on your
+behalf is the one inference this client otherwise always avoids. An entry
+missing a field is dropped, with the reason reported once at startup, rather
+than carried through to fail later at the point /spawn --provider tries to
+use it.
+
+Like OPENROUTER_API_KEY, every field is read from the file only. It is
+never read from the environment, and an environment variable of the same
+name has no effect.`
+
+// cmdProviders reports how to configure a named provider, and which ones
+// are configured already.
+//
+// It takes no argument, on the same terms as /tools: a listing rather than
+// a question, so there is nothing to answer about.
+func (s *Session) cmdProviders(args []string) bool {
+	if len(args) != 0 {
+		s.addReply("usage: /providers")
+		return false
+	}
+	lines := []string{providersHelp}
+	if len(s.providers) == 0 {
+		lines = append(lines, "", "Not configured: no OPENROUTER_PROVIDERS entry was found.")
+	} else {
+		names := make([]string, 0, len(s.providers))
+		for name := range s.providers {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		var configured []string
+		for _, name := range names {
+			configured = append(configured, name+" ("+s.providers[name].model+")")
+		}
+		lines = append(lines, "", "Configured: "+strings.Join(configured, ", ")+
+			". Run a worker against one with /spawn --provider NAME.")
+	}
 	s.appendLines(strings.Join(lines, "\n"))
 	return false
 }

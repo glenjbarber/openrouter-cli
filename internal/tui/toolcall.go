@@ -29,12 +29,16 @@ import (
 // each step, and one that fixes two errors in the same file runs out mid task
 // and reports a limit rather than an answer. A model that converges does so in
 // far fewer rounds than this, so the cap is not what stops a working turn; it
-// is what stops one that never does, and a higher cap makes that rarer without
-// making it slower, since a reader can stop a turn at any time.
+// is what stops one that never does. It was raised from 64 on the maintainers
+// short of finishing, and then again to this figure on the grounds that a cap
+// low enough to interrupt a long piece of work costs the reader more than the
+// runaway it prevents. A higher cap makes the runaway rarer without needing to
+// babysit the terminal, since the reader can stop a turn at any time and a
+// model that is not converging is stopped rather than waited out.
 //
 // It is a cap on requests rather than on tool calls, since a round may carry
 // several calls, and the requests are what the allowance is spent on.
-const maxToolRounds = 64
+const maxToolRounds = 4096
 
 // The labels the pane draws a call under.
 //
@@ -43,9 +47,12 @@ const maxToolRounds = 64
 // what the tools were built from, which is also what /tools reports, so the two
 // cannot name the same tool differently.
 const (
-	fsToolLabel    = "fs"
-	gitToolLabel   = "git"
-	shellToolLabel = "shell"
+	fsToolLabel     = "fs"
+	gitToolLabel    = "git"
+	shellToolLabel  = "shell"
+	githubToolLabel = "github"
+	notionToolLabel = "notion"
+	driveToolLabel  = "google_drive"
 	// shellToolName is the name the shell tool is offered under, which the
 	// tools package owns. It is spelled here so that the label and the name
 	// can be told apart: one is what the pane draws, the other is what a
@@ -57,8 +64,8 @@ const (
 // them.
 //
 // The set is built once at startup and held for the session, since a root is
-// taken from the working directory once and a set rebuilt per turn would open a
-// descriptor per turn to contain the same directory.
+// taken from the working directory once and a set rebuilt per turn would open
+// a descriptor per turn to contain the same directory.
 type toolSet struct {
 	// set is what a request offers and what a call is run by.
 	set *tools.Set
@@ -148,6 +155,51 @@ func toolsAt(dir string, approver tools.Approver) *toolSet {
 	// catalogue should meet the contained tools first.
 	t.merge(shellToolLabel, tools.NewShell(dir, approver))
 	return t
+}
+
+// addGitHub builds the GitHub tool from a token and merges it into the set.
+//
+// It is called from Configure rather than from toolsAt, because the token is
+// a value in the configuration file and the configuration arrives after the
+// tools are built: the interface opens before a credential exists, on the
+// same reasoning as the model client, and a blank token is left out of the
+// catalogue rather than reported, in the manner of a directory in no git
+// repository.
+func (t *toolSet) addGitHub(token string) {
+	if t == nil || t.set == nil {
+		return
+	}
+	gh, err := tools.NewGitHub(token)
+	if err != nil {
+		return
+	}
+	t.merge(githubToolLabel, gh)
+}
+
+// addNotion builds the Notion tool from a token and merges it into the set,
+// on the same terms as addGitHub.
+func (t *toolSet) addNotion(token string) {
+	if t == nil || t.set == nil {
+		return
+	}
+	nt, err := tools.NewNotion(token)
+	if err != nil {
+		return
+	}
+	t.merge(notionToolLabel, nt)
+}
+
+// addGoogleDrive builds the Google Drive tool from a service account key
+// and merges it into the set, on the same terms as addGitHub and addNotion.
+func (t *toolSet) addGoogleDrive(credentials json.RawMessage) {
+	if t == nil || t.set == nil {
+		return
+	}
+	gd, err := tools.NewGoogleDrive(credentials)
+	if err != nil {
+		return
+	}
+	t.merge(driveToolLabel, gd)
 }
 
 // merge copies the tools of one set into the combined set.

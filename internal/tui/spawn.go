@@ -12,6 +12,14 @@ import (
 	"github.com/glenjbarber/openrouter-cli/internal/tools"
 )
 
+// providerBinding is one named alternate backend a worker may be sent to
+// with /spawn --provider NAME: a client built from its credential and
+// endpoint, and the model it runs against.
+type providerBinding struct {
+	client *openrouter.Client
+	model  string
+}
+
 // Spawn is a delegate that is given tools.
 //
 // It is the same shape as a Delegate in every respect but one: the request
@@ -302,7 +310,16 @@ func (s *Session) cmdSpawn(args []string) bool {
 			"/cognito first)")
 		return false
 	}
-	s.startSpawn(strings.Join(args, " "))
+	provider := ""
+	if len(args) > 0 && args[0] == "--provider" {
+		if len(args) < 2 {
+			s.addReply("--provider needs a name: /spawn --provider NAME QUESTION")
+			return false
+		}
+		provider = args[1]
+		args = args[2:]
+	}
+	s.startSpawn(strings.Join(args, " "), provider)
 	return false
 }
 
@@ -312,17 +329,33 @@ func (s *Session) cmdSpawn(args []string) bool {
 // counting apply: a worker is registered under the session lock and counted on
 // the same wait group, so leaving does not leave one writing to a frame nobody
 // is drawing on.
-func (s *Session) startSpawn(task string) {
-	if s.client == nil {
+func (s *Session) startSpawn(task string, provider string) {
+	if strings.TrimSpace(task) == "" {
+		s.addReply("/spawn needs a question to answer")
+		return
+	}
+
+	// The backend is resolved before anything else is checked, so a worker
+	// asked for on a backend with nothing configured is refused by name
+	// rather than by a message about a key or a model that does not say
+	// which of the two credentials it means.
+	client := s.client
+	model := s.conv.Model()
+	if provider != "" {
+		binding, ok := s.providers[provider]
+		if !ok {
+			s.addReply("--provider " + provider + " is not configured: see /providers")
+			return
+		}
+		client = binding.client
+		model = binding.model
+	}
+	if client == nil {
 		s.appendLines("no API key is configured")
 		return
 	}
-	if s.conv.Model() == "" {
+	if model == "" {
 		s.appendLines("no model is selected: /model NAME")
-		return
-	}
-	if strings.TrimSpace(task) == "" {
-		s.addReply("/spawn needs a question to answer")
 		return
 	}
 
@@ -341,16 +374,16 @@ func (s *Session) startSpawn(task string) {
 		s.addReply("(a worker log could not be opened: " + err.Error() + ")")
 		return
 	}
-	model := s.conv.Model()
 	log.header(task, model)
 
 	w := NewSpawn(s.conv, task, s.tools, specs)
 	w.log = log
 	w.onUsage = s.noteSideSpend
 
-	// The client is taken here rather than inside the goroutine, for the same
-	// reason a delegate takes it there.
-	client := s.client
+	// client and model were resolved above, from the named provider when
+	// --provider was given and from the session otherwise. They are taken
+	// here rather than inside the goroutine, for the same reason a delegate
+	// takes its client there.
 
 	s.mu.Lock()
 	if s.closing {
