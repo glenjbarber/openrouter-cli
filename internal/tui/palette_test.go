@@ -14,6 +14,40 @@ import (
 // own, since it is an opt in alternative.
 var allowedSequence = regexp.MustCompile(`^\x1b\[(3[0-7]|9[0-7]|[34]8;5;(\d{1,3}))m$`)
 
+// allowedRoleSequence matches the only form a default role may take. The roles
+// are fixed values rather than color numbers, since a number leaves what the
+// reader sees to the terminal theme.
+var allowedRoleSequence = regexp.MustCompile(`^\x1b\[38;5;(\d{1,3})m$`)
+
+// roleIndex returns the 256 color index a role sequence names, failing the test
+// if it is not one.
+func roleIndex(t *testing.T, seq string) int {
+	t.Helper()
+	m := allowedRoleSequence.FindStringSubmatch(seq)
+	if m == nil {
+		t.Fatalf("%q is not a 256 color role sequence", seq)
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil || n < 0 || n > 255 {
+		t.Fatalf("%q names an index outside the palette", seq)
+	}
+	return n
+}
+
+// ansiIndex returns the index within the sixteen colors that an ANSI foreground
+// sequence names, and whether it names one.
+func ansiIndex(seq string) (int, bool) {
+	for i := 0; i < 8; i++ {
+		if seq == "\x1b["+strconv.Itoa(30+i)+"m" {
+			return i, true
+		}
+		if seq == "\x1b["+strconv.Itoa(90+i)+"m" {
+			return i + 8, true
+		}
+	}
+	return 0, false
+}
+
 func TestColorSequenceForeground(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -297,12 +331,37 @@ func TestTheNamedRolesAreDefined(t *testing.T) {
 	}
 }
 
-// Dim is bright black by default, and failure and approval are never mistaken
-// for it or for each other.
+// Both tables are well formed for every role: each names either a 256 color or
+// one of the sixteen ANSI foregrounds, and nothing else.
+func TestBothRoleTablesAreWellFormed(t *testing.T) {
+	for name, table := range map[string][roleCount]string{
+		"dark": roleSequences, "light": roleSequencesLight,
+	} {
+		for r := role(0); r < roleCount; r++ {
+			seq := table[r]
+			if _, ok := ansiIndex(seq); ok {
+				continue
+			}
+			m := allowedRoleSequence.FindStringSubmatch(seq)
+			if m == nil {
+				t.Errorf("%s role %d: %q is neither an ANSI foreground nor a 256 color", name, r, seq)
+				continue
+			}
+			n, _ := strconv.Atoi(m[1])
+			if n > 255 {
+				t.Errorf("%s role %d: %q has an index above 255", name, r, seq)
+			}
+		}
+	}
+}
+
+// Dim is a grey rather than a color, since dim text is quiet text and a hue
+// would read as something it is not. Failure, approval and success are never
+// mistaken for it or for each other.
 func TestDimAndTheStrongRolesAreDistinct(t *testing.T) {
 	p := newPalette(config.Theme{})
-	if p.role(roleDim) != "\x1b[90m" {
-		t.Errorf("dim = %q, want bright black", p.role(roleDim))
+	if p.role(roleDim) != "\x1b[38;5;244m" {
+		t.Errorf("dim = %q, want the grey at 244", p.role(roleDim))
 	}
 	strong := []role{roleFailure, roleApproval, roleSuccess}
 	for i, a := range strong {
@@ -336,12 +395,92 @@ func TestToolIdentitiesAreDistinct(t *testing.T) {
 	}
 }
 
-// The roles do not depend on the theme: the theme sets the base only.
-func TestThemeDoesNotChangeTheRoles(t *testing.T) {
-	a := newPalette(config.Theme{})
-	b := newPalette(config.Theme{Foreground: "#102030", Background: "white"})
-	if a.roles != b.roles {
-		t.Error("a theme changed the role sequences")
+// Every dark role is brighter than the color number it replaced, which is what
+// the request for brighter defaults rests on. The comparison is against the
+// value the terminal theme would have drawn that ANSI name at, so a role that
+// gained no brightness at all is caught.
+func TestEveryDarkRoleIsBrighterThanTheColorNumberItReplaced(t *testing.T) {
+	for r := role(0); r < roleCount; r++ {
+		old, ok := ansiIndex(roleSequencesLight[r])
+		if !ok {
+			t.Fatalf("light role %d: %q is not an ANSI foreground", r, roleSequencesLight[r])
+		}
+		got := relativeLuminance(paletteAt(roleIndex(t, roleSequences[r])))
+		want := relativeLuminance(paletteAt(old))
+		if got <= want {
+			t.Errorf("role %d: %q at luminance %.3f is not brighter than the ANSI color at %.3f",
+				r, roleSequences[r], got, want)
+		}
+	}
+}
+
+// A dark role reads against a dark ground, so it is light enough to be legible
+// rather than sitting at the bottom of the cube, where a color is dark whatever
+// its hue. Dim is excepted: dim text is meant to recede, and a dim that
+// competed with the prose would be no dim at all.
+func TestEveryDarkRoleReadsAgainstADarkGround(t *testing.T) {
+	for r := role(0); r < roleCount; r++ {
+		if r == roleDim {
+			continue
+		}
+		c := paletteAt(roleIndex(t, roleSequences[r]))
+		if got := relativeLuminance(c); got < 0.25 {
+			t.Errorf("role %d: %q has luminance %.3f, too dark to read", r, roleSequences[r], got)
+		}
+	}
+}
+
+// The theme sets the base, and the roles follow the background it names rather
+// than the base alone.
+func TestTheRolesFollowTheBackgroundAndNotTheForeground(t *testing.T) {
+	// A light foreground says nothing about the ground, so the roles are the
+	// dark-terminal ones.
+	a := newPalette(config.Theme{Foreground: "white"})
+	if a.roles != roleSequences {
+		t.Error("a foreground alone changed the roles")
+	}
+	// A background that is light does change them.
+	b := newPalette(config.Theme{Background: "#ffffff"})
+	if b.roles != roleSequencesLight {
+		t.Error("a light background did not take the light roles")
+	}
+}
+
+// With no background the roles are the dark-terminal ones, since a dark terminal
+// is the common case and the defaults were chosen for it.
+func TestAnAbsentBackgroundMeansTheDarkRoles(t *testing.T) {
+	if newPalette(config.Theme{}).roles != roleSequences {
+		t.Error("no theme did not give the dark roles")
+	}
+	if newPalette(config.Theme{Foreground: "white"}).roles != roleSequences {
+		t.Error("a foreground alone did not give the dark roles")
+	}
+}
+
+// A background the client cannot judge is not judged to be light, since guessing
+// the other way would draw the common case for the uncommon one.
+func TestAnUnreadableBackgroundMeansTheDarkRoles(t *testing.T) {
+	for _, bg := range []string{"orange", "256", "#12345g"} {
+		if newPalette(config.Theme{Background: bg}).roles != roleSequences {
+			t.Errorf("background %q gave the light roles", bg)
+		}
+	}
+}
+
+// The two tables are told apart by the luminance of the background, in each of
+// the forms a theme value may take.
+func TestALightBackgroundIsOneAtOrAboveHalfLuminance(t *testing.T) {
+	light := []string{"#ffffff", "#eeeeee", "white", "bright_white", "231", "#c0c0c0"}
+	for _, bg := range light {
+		if !isLightBackground(config.Theme{Background: bg}) {
+			t.Errorf("background %q was not taken to be light", bg)
+		}
+	}
+	dark := []string{"#000000", "#101010", "black", "bright_black", "17", "#3c3c3c"}
+	for _, bg := range dark {
+		if isLightBackground(config.Theme{Background: bg}) {
+			t.Errorf("background %q was taken to be light", bg)
+		}
 	}
 }
 
@@ -351,7 +490,7 @@ func TestFaintDimIsAnAlternative(t *testing.T) {
 	if f.role(roleDim) != "\x1b[2m" {
 		t.Errorf("faint dim = %q, want the faint attribute", f.role(roleDim))
 	}
-	if p.role(roleDim) != "\x1b[90m" {
+	if p.role(roleDim) != "\x1b[38;5;244m" {
 		t.Error("withFaintDim changed the palette it was called on")
 	}
 	for r := role(0); r < roleCount; r++ {
@@ -363,7 +502,7 @@ func TestFaintDimIsAnAlternative(t *testing.T) {
 
 func TestPaint(t *testing.T) {
 	p := newPalette(config.Theme{})
-	if got, want := p.paint(roleFailure, "no"), "\x1b[31mno\x1b[0m"; got != want {
+	if got, want := p.paint(roleFailure, "no"), roleSequences[roleFailure]+"no\x1b[0m"; got != want {
 		t.Errorf("paint = %q, want %q", got, want)
 	}
 	if got := p.paint(roleFailure, ""); got != "" {
@@ -372,7 +511,8 @@ func TestPaint(t *testing.T) {
 	// With a theme the reset puts the base back, so the rest of the row is not
 	// left in the terminal theme.
 	q := newPalette(config.Theme{Foreground: "white", Background: "17"})
-	if got, want := q.paint(roleNotice, "x"), "\x1b[33mx\x1b[0m\x1b[37m\x1b[48;5;17m"; got != want {
+	if got, want := q.paint(roleNotice, "x"),
+		roleSequences[roleNotice]+"x\x1b[0m\x1b[37m\x1b[48;5;17m"; got != want {
 		t.Errorf("paint with a theme = %q, want %q", got, want)
 	}
 }
