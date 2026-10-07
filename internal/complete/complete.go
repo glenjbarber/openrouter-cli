@@ -91,11 +91,39 @@ func (r Result) Applied() bool { return r.Kind == Unique }
 // third list to drift from the first two.
 type Completer struct {
 	commands []Candidate
+	// arguments are the argument candidates for the commands that take a
+	// fixed set, keyed by the command name. A command with no entry offers
+	// nothing for its arguments, which is the answer it gave before this was
+	// here: what a command takes as an argument is its own business, and
+	// guessing at it would be completing a word the reader did not ask for.
+	arguments map[string][]Candidate
 }
 
 // New returns a Completer that offers the given commands alongside the
 // configuration option names.
 func New(commands []Candidate) Completer { return Completer{commands: commands} }
+
+// WithArguments returns a Completer that also completes the arguments of the
+// named commands, over and above the command names it already offered.
+//
+// It returns the same Completer rather than taking a new one, since a caller
+// that has no arguments to complete should not have to build a map to say so.
+// A command named twice keeps the last set given, since the vocabulary is
+// written in one table and a second entry would be a second copy of it.
+func (c Completer) WithArguments(args map[string][]Candidate) Completer {
+	if len(args) == 0 {
+		return c
+	}
+	merged := make(map[string][]Candidate, len(c.arguments)+len(args))
+	for name, set := range c.arguments {
+		merged[name] = set
+	}
+	for name, set := range args {
+		merged[name] = set
+	}
+	c.arguments = merged
+	return c
+}
 
 // Complete returns the completion of the token the caret sits in.
 //
@@ -113,6 +141,18 @@ func (c Completer) Complete(line string, caret int) Result {
 	set, name := c.commands, "commands"
 	if pos == posOption {
 		set, name = options, "options"
+	}
+	if pos == posArgument {
+		// A command that declares no arguments completes nothing here, which
+		// is the answer this position gave before it was a position at all.
+		// Letting the command set stand would offer the whole interface
+		// vocabulary where a model name or a question was being typed, which
+		// is worse than offering nothing.
+		argSet, ok := c.arguments[strings.TrimSpace(line[0:start])]
+		if !ok {
+			return Result{Kind: NotApplicable, Line: line}
+		}
+		set, name = argSet, "arguments"
 	}
 	prefix := line[start:caret]
 
@@ -148,6 +188,9 @@ const (
 	// posCommand means the caret is in the command name at the head of the
 	// line.
 	posCommand
+	// posArgument means the caret is in an argument of a command, which is
+	// where a command that declares its arguments has them offered.
+	posArgument
 	// posOption means the caret is in a bare single word, which is the only
 	// place a configuration option name is completed.
 	posOption
@@ -176,7 +219,12 @@ func positionAt(line string, caret int) (pos position, start, end int) {
 			first = i
 		}
 		if caret > first {
-			return posNone, 0, 0
+			// A caret past the command name is in an argument. Whether
+			// anything may be completed there is for the completer to
+			// decide, since only it knows which commands declare an
+			// argument set, and a command that declares none completes
+			// nothing here as it always has.
+			return posArgument, 0, len(line)
 		}
 		return posCommand, 0, first
 	}
