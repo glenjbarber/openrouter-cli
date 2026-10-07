@@ -126,10 +126,11 @@ func isVerbosity(content string) bool {
 
 // cmdVerbosity reports or sets the level at which the model is asked to answer.
 //
-// The level is a session preference rather than a file the reader edits, since
-// it is a preference about the conversation rather than a setting about the
-// client, and a reader who has said it once should not have to say it again on
-// every run. The configuration file names the level a session starts at.
+// The session changes first, and the level is also recorded in the
+// configuration file, on the same terms as /color and /bell: a reader who
+// has said it once should not have to say it again on every run, and a file
+// that cannot take the change is reported in one line with nothing from the
+// file in it.
 func (s *Session) cmdVerbosity(args []string) bool {
 	if len(args) == 0 {
 		s.appendLines(strings.Join(s.verbosityListing(), "\n"))
@@ -146,10 +147,29 @@ func (s *Session) cmdVerbosity(args []string) bool {
 
 	s.mu.Lock()
 	s.verbosity = level
+	save := s.verbositySaver
 	s.mu.Unlock()
-	s.appendLines("answers are asked for at level " + itoa(level) + ", " +
-		verbosityLevels[level].name + ".")
+
+	state := "answers are asked for at level " + itoa(level) + ", " +
+		verbosityLevels[level].name + "."
+	err := config.ErrNoConfigFile
+	if save != nil {
+		err = save(level)
+	}
+	if err != nil {
+		state += " (not saved: " + strings.Join(strings.Fields(err.Error()), " ") + ")"
+	}
+	s.appendLines(state)
 	return false
+}
+
+// SetVerbositySaver installs the function /verbosity calls to record the new
+// level. A session with none changes for the session only and says so, on
+// the same terms as SetColorSaver.
+func (s *Session) SetVerbositySaver(save func(level int) error) {
+	s.mu.Lock()
+	s.verbositySaver = save
+	s.mu.Unlock()
 }
 
 // parseVerbosity reads a level from what the reader typed.

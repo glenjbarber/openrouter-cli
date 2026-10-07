@@ -275,15 +275,27 @@ func TestTheBaseIsReappliedAfterEveryReset(t *testing.T) {
 	}
 }
 
-// With no theme there is no base, and no sequence of one is written.
+// With no theme there is no base, and every row is begun with a bare reset.
+//
+// The check is on the row start rather than on the 256 color forms. A role is
+// written as 38;5;n and a base background as 48;5;n, but a theme foreground is
+// 38;5;n too, so the two cannot be told apart by scanning for a form: a role and
+// a theme foreground are the same sequence. What is asserted instead is that the
+// palette resolved to no base at all and that every row therefore begins with the
+// bare reset, which is what a frame with no base looks like.
 func TestNoThemeWritesNoBaseInTheFrame(t *testing.T) {
 	pal := newPalette(config.Theme{})
+	if pal.base() != "" {
+		t.Fatalf("no theme resolved to a base: %q", pal.base())
+	}
 	sc, read := screenCapture(t)
 	sc.height, sc.width = 10, 40
 	rows, spans, _, _ := renderStyled(Frame{Title: "t", Input: "x"}, 6, 40)
 	sc.DrawFrame(rows, framePaint{spans: spans, pal: &pal, twiddle: -1})
-	if strings.Contains(read(), "\x1b[38;5;") || strings.Contains(read(), "\x1b[48;5;") {
-		t.Error("a base was written with no theme")
+	got := read()
+
+	if n := strings.Count(got, sgrReset+seqClearLine); n != len(rows) {
+		t.Errorf("%d rows are begun with a bare reset, want %d", n, len(rows))
 	}
 	if sc.base {
 		t.Error("the screen believes a base is set")

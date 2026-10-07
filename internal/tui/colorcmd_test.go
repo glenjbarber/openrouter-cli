@@ -81,6 +81,9 @@ func TestCommandAndConfigKeyPaintTheSame(t *testing.T) {
 		{},
 		{Foreground: "white", Background: "#101010"},
 		{Background: "0"},
+		// A light background takes the other role table, and the two paths to
+		// it must agree on that as well as on the base.
+		{Background: "#f0f0f0"},
 	}
 	for _, theme := range themes {
 		viaKey, capKey := auditSession(t, "")
@@ -171,11 +174,16 @@ func TestAnInvalidThemeFallsBackAndShowsTheNote(t *testing.T) {
 	if !strings.Contains(frame, chromeColor) {
 		t.Errorf("color did not stay on with a dropped theme:\n%q", frame)
 	}
+	// The base is checked on the palette rather than by scanning the frame for
+	// a 256 color form. A role is written as 38;5;n and a theme foreground is
+	// written as 38;5;n as well, so the two are the same sequence in the output
+	// and a scan for one finds the other. A theme that resolved to no base
+	// writes no base, and the roles are the dark-terminal ones since no
+	// background was read.
 	if pal := s.framePalette(); pal == nil || pal.base() != "" {
 		t.Errorf("an invalid theme left a base: %+v", pal)
-	}
-	if strings.Contains(frame, "\x1b[38;5;") || strings.Contains(frame, "\x1b[48;5;") {
-		t.Errorf("a base sequence was written for an invalid theme:\n%q", frame)
+	} else if pal.roles != roleSequences {
+		t.Errorf("an invalid theme chose the light roles")
 	}
 }
 

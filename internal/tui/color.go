@@ -71,12 +71,12 @@ func (s *Session) SetColorSaver(save func(on bool) error) {
 // base, which is the terminal theme showing through.
 func (s *Session) framePalette() *palette {
 	s.mu.Lock()
-	on, theme := s.colorOn, s.colorTheme
+	on, theme, ground := s.colorOn, s.colorTheme, s.ground
 	s.mu.Unlock()
 	if !on {
 		return nil
 	}
-	p := newPalette(theme)
+	p := newPaletteOn(theme, ground)
 	return &p
 }
 

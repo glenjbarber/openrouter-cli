@@ -1,6 +1,11 @@
 package tui
 
-import "os"
+import (
+	"os"
+	"strings"
+
+	"github.com/glenjbarber/openrouter-cli/internal/config"
+)
 
 // bellFile is the control character that rings the terminal bell.
 //
@@ -29,16 +34,30 @@ func (s *Session) ringBell() {
 	}
 }
 
-// toggleBell turns the bell on or off.
+// toggleBell turns the bell on or off, and records the new state in the
+// configuration file, on the same terms as cmdColor: the session changes
+// first and whatever happens to the file does not undo it, and a reader is
+// told in one line when the file could not take the change.
 //
 // It is changed at runtime rather than only in the configuration file, since a
 // user reaching for a bell mid-session wants it now and would not want to
 // restart to get it.
 func (s *Session) toggleBell() {
 	s.bellWanted = !s.bellWanted
+	on := s.bellWanted
 	state := "off"
-	if s.bellWanted {
+	if on {
 		state = "on"
+	}
+	s.mu.Lock()
+	save := s.bellSaver
+	s.mu.Unlock()
+	err := config.ErrNoConfigFile
+	if save != nil {
+		err = save(on)
+	}
+	if err != nil {
+		state += " (not saved: " + strings.Join(strings.Fields(err.Error()), " ") + ")"
 	}
 	s.appendLines("bell " + state +
 		": the terminal bell is rung when a reply arrives")
@@ -49,3 +68,12 @@ func (s *Session) toggleBell() {
 // The value comes from the configuration file, so a user who wants the bell
 // writes it once rather than typing a command at every session.
 func (s *Session) SetBell(on bool) { s.bellWanted = on }
+
+// SetBellSaver installs the function /bell calls to record the new state. A
+// session with none changes for the session only and says so, on the same
+// terms as SetColorSaver.
+func (s *Session) SetBellSaver(save func(on bool) error) {
+	s.mu.Lock()
+	s.bellSaver = save
+	s.mu.Unlock()
+}
