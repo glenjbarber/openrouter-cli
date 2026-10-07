@@ -26,6 +26,21 @@ var (
 	pasteEndBytes   = []byte(pasteEnd)
 )
 
+// LandBlock holds lines in the block above the prompt as though they had
+// landed there by a paste.
+//
+// It is the door /paste comes through, and it is a method rather than a field
+// the command writes because the editor owns what is composed. Lines put
+// anywhere else would be drawn in one place and sent from another, or drawn
+// and never sent.
+//
+// The block is reported afterwards, so the rows the reader sees are the rows
+// they will send, whether the text arrived from the terminal or from here.
+func (le *LineEditor) LandBlock(lines []string) {
+	le.pasted = append(le.pasted, lines...)
+	le.reportBlock()
+}
+
 // stripPaste removes the bracketed paste markers from text.
 //
 // Text that carries no markers is returned unchanged, so a paste arriving from

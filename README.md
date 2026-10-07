@@ -265,8 +265,9 @@ behind by a crash is noticed at the next start and reported rather than
 honoured silently.
 
 The terminal bell is off unless asked for. `/bell` turns it on or off at
-runtime, and `OPENROUTER_BELL` in the configuration file sets it for every
-session. The bell is rung when a reply has finished arriving rather than when
+runtime and records the new state in the configuration file, and
+`OPENROUTER_BELL` in the configuration file sets it for every session. The
+bell is rung when a reply has finished arriving rather than when
 the request was sent, and it is written only when the output is a terminal, so a
 redirected run carries no stray control character.
 
@@ -503,6 +504,9 @@ external dependency. These keys are recognized:
 | `OPENROUTER_MODEL`    | No       | The model requests are sent to, such as `stealth/space-bunny-alpha`. |
 | `OPENROUTER_MOUSE`    | No       | Set to `true` to ask for mouse reporting, so the wheel scrolls.     |
 | `OPENROUTER_BELL`     | No       | Set to `true` to ring the terminal bell when a reply arrives.       |
+| `GITHUB_TOKEN`        | No       | A GitHub personal access token. When set, the model is offered a `github` tool that reads repositories, issues, pull requests, files and search results over the REST API. A session with no token simply does not offer the tool. |
+| `NOTION_TOKEN`        | No       | A Notion integration token. When set, the model is offered a `notion` tool that reads pages, page content, databases and search results over the REST API. A session with no token simply does not offer the tool. The integration must be shared on a page or database in Notion before this tool can see it. |
+| `GOOGLE_DRIVE_CREDENTIALS` | No  | A Google Cloud service account key, as the JSON object Google's console issues, held inline rather than as a path to the downloaded file. When set, the model is offered a `google_drive` tool that reads file metadata, file content and search results. A session with no credentials simply does not offer the tool. A service account sees only what is explicitly shared with its own email address, not a user's Drive automatically. |
 
 The keys are given in the same form as the equivalent environment variables,
 which keeps a value transferable between the file and the environment.
@@ -512,7 +516,12 @@ accepted only from the configuration file. An environment variable of that name
 is ignored, even when it is set and even when the file is absent, so a key
 present in the environment cannot silently take effect. This removes an entire
 class of confusion in which a correct file is shadowed by a stale value
-elsewhere.
+elsewhere. `GITHUB_TOKEN`, `NOTION_TOKEN` and `GOOGLE_DRIVE_CREDENTIALS` are
+each held to the same rule: read from the configuration file alone, with an
+environment variable of that name having no effect. This client never reads
+`GOOGLE_APPLICATION_CREDENTIALS`, the file-path convention Google's own
+client libraries use, since a service account key is a credential and the
+file is the only place one is accepted from.
 
 An example, with the key redacted:
 

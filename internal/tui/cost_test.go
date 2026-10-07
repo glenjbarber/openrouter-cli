@@ -303,7 +303,7 @@ func TestSideRequestsAreCounted(t *testing.T) {
 	t.Run("worker", func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
 		s := toolSession(t, costServer(t, paidModels, costBody("0.0090")).URL, t.TempDir())
-		s.startSpawn("what is in here")
+		s.startSpawn("what is in here", "")
 		waitFor(t, func() bool { return s.workerPending() == 0 && wpaneHasLines(s) },
 			"the worker never settled")
 		s.mu.Lock()

@@ -78,6 +78,9 @@ func run(args []string) error {
 		if keyErr.URLBase != "" {
 			cfg.URLBase = keyErr.URLBase
 		}
+		cfg.GitHubToken = keyErr.GitHubToken
+		cfg.NotionToken = keyErr.NotionToken
+		cfg.GoogleDriveCredentials = keyErr.GoogleDriveCredentials
 	}
 
 	// The current directory is read only with the reader's permission. The
@@ -120,6 +123,17 @@ func interface_(out, in *os.File, cfg *config.Config, opts options, doc *bootstr
 	// note is shown once so that the fallback is not silent.
 	session.SetColor(cfg.Color)
 	session.SetColorTheme(cfg.ColorTheme)
+	// /theme records the ground in the same file /color records its own, so
+	// that a reader who has chosen once is not asked again on every run. The
+	// path is found again at the time of the command, for the reason the
+	// color saver finds it again: a file made during setup is then seen.
+	session.SetTheme(func(dark bool) error {
+		path, ok := config.ConfigPath()
+		if !ok {
+			return config.ErrNoConfigFile
+		}
+		return config.WriteTheme(path, dark)
+	})
 	// /color records its choice in the file the loader read, found again at the
 	// time of the command so that a file made during setup is seen.
 	session.SetColorSaver(func(on bool) error {
@@ -129,8 +143,28 @@ func interface_(out, in *os.File, cfg *config.Config, opts options, doc *bootstr
 		}
 		return config.WriteColor(path, on)
 	})
+	// /bell and /verbosity record their choice in the file the loader read,
+	// on the same terms as /color: found again at the time of the command
+	// so that a file made during setup is seen.
+	session.SetBellSaver(func(on bool) error {
+		path, ok := config.ConfigPath()
+		if !ok {
+			return config.ErrNoConfigFile
+		}
+		return config.WriteBell(path, on)
+	})
+	session.SetVerbositySaver(func(level int) error {
+		path, ok := config.ConfigPath()
+		if !ok {
+			return config.ErrNoConfigFile
+		}
+		return config.WriteVerbosity(path, level)
+	})
 	if cfg.ColorNote != "" {
 		session.Note("%s", cfg.ColorNote)
+	}
+	if cfg.ProviderNote != "" {
+		session.Note("%s", cfg.ProviderNote)
 	}
 
 	// A marker left by an earlier session is adopted before anything is sent,
