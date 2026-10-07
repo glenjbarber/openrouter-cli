@@ -32,6 +32,21 @@ type rawFile struct {
 	URLBase string `json:"OPENROUTER_URL_BASE"`
 	Model   string `json:"OPENROUTER_MODEL"`
 	Bell    bool   `json:"OPENROUTER_BELL"`
+	// GitHubToken is the personal access token the github tool is built
+	// with. It is a second credential in the same file rather than a second
+	// file, on the same reasoning as the API key: a file searched a second
+	// time for a second secret is a second place that secret can be found
+	// unprotected, and the mode this file is required to hold already covers
+	// it.
+	GitHubToken string `json:"GITHUB_TOKEN"`
+	// NotionToken is the integration token the notion tool is built with,
+	// on the same reasoning as GitHubToken: a second credential in the same
+	// file rather than a second file.
+	NotionToken string `json:"NOTION_TOKEN"`
+	// GoogleDriveCredentials is the service account key the google_drive
+	// tool is built with, held raw since this package's job is to carry a
+	// credential through rather than to understand Google's key shape.
+	GoogleDriveCredentials json.RawMessage `json:"GOOGLE_DRIVE_CREDENTIALS"`
 	// SetupKey keeps its name from the open decision about the setup state.
 	SetupKey bool `json:"setup_complete"`
 	// Mouse asks for mouse reporting. It is a preference rather than a
@@ -56,11 +71,46 @@ type rawFile struct {
 	// a note rather than failing the whole file. A theme is a preference and
 	// is never fatal.
 	ColorTheme json.RawMessage `json:"color_theme"`
+	// Providers are the named alternate backends a worker may be sent to
+	// with /spawn --provider NAME, read raw so that one entry of the wrong
+	// shape is reported in a note rather than failing the whole file, on
+	// the same reasoning as ColorTheme.
+	Providers json.RawMessage `json:"OPENROUTER_PROVIDERS"`
+}
+
+// Provider is one named alternate backend a worker may be sent to with
+// /spawn --provider NAME.
+//
+// Every field is required. There is no default endpoint to fall back to, as
+// OPENROUTER_URL_BASE has: a provider this client has not spoken to before
+// has no endpoint this client could guess, and a model guessed on the
+// reader's behalf is the one inference this client otherwise always avoids.
+// This is also the whole of the generalization: a provider speaking the same
+// OpenAI-compatible chat/completions shape OpenRouter and Liquid AI both do
+// is added by a reader editing the file, and costs no code in this client.
+type Provider struct {
+	Name    string `json:"name"`
+	APIKey  string `json:"api_key"`
+	URLBase string `json:"url_base"`
+	Model   string `json:"model"`
 }
 
 // Config is the resolved configuration.
 type Config struct {
 	APIKey string
+	// GitHubToken is the personal access token the github tool is built
+	// with, empty when the file does not carry one. It is not an error for
+	// it to be empty: a session with no token simply does not offer the
+	// tool, on the same reasoning as a directory in no git repository.
+	GitHubToken string
+	// NotionToken is the integration token the notion tool is built with,
+	// empty when the file does not carry one, on the same reasoning as
+	// GitHubToken.
+	NotionToken string
+	// GoogleDriveCredentials is the service account key the google_drive
+	// tool is built with, empty when the file does not carry one, on the
+	// same reasoning as GitHubToken.
+	GoogleDriveCredentials json.RawMessage
 	// Model is the model requests are sent to when the session has not chosen
 	// one. It is empty when the file does not set it, which is not an error:
 	// the model may be chosen at runtime instead.
@@ -98,6 +148,16 @@ type Config struct {
 	// ColorNote is a single line describing a theme value that was dropped, or
 	// empty when the theme was fine. The interface shows it once at startup.
 	ColorNote string
+	// Providers are the named alternate backends a worker may be sent to
+	// with /spawn --provider NAME, parsed and validated: an entry missing
+	// a field is left out rather than carried through to fail at the
+	// point of use, and ProviderNote says what was dropped.
+	Providers []Provider
+	// ProviderNote is a single line describing a provider entry that was
+	// dropped for missing a field, or empty when every entry carried was
+	// valid. The interface shows it once at startup, on the same terms as
+	// ColorNote.
+	ProviderNote string
 }
 
 // Permits reports whether the configuration permits a command for a directory
@@ -152,11 +212,28 @@ type ErrNoAPIKey struct {
 	// not a credential, and dropping it would make a file that was read look
 	// as though it had not been.
 	Tools []ApprovalRule
+	// GitHubToken travels with the error on the same reasoning as the rest:
+	// it is a second credential, not the one that is missing, and dropping
+	// it here would cost a session the github tool over an absent key the
+	// token has nothing to do with.
+	GitHubToken string
+	// NotionToken travels with the error on the same reasoning as
+	// GitHubToken.
+	NotionToken string
+	// GoogleDriveCredentials travels with the error on the same reasoning as
+	// GitHubToken.
+	GoogleDriveCredentials json.RawMessage
 	// Color, ColorTheme and ColorNote are the color preferences the file
 	// carries, carried through on the same reasoning as the rest.
 	Color      bool
 	ColorTheme Theme
 	ColorNote  string
+	// Providers and ProviderNote travel with the error on the same
+	// reasoning as the rest: a worker's credentials are not the OpenRouter
+	// key, and dropping them here would make a file that was read look as
+	// though it had not been.
+	Providers    []Provider
+	ProviderNote string
 }
 
 // Error implements the error interface.
@@ -320,21 +397,28 @@ func parse(path string) (*Config, error) {
 	unset := strings.TrimSpace(raw.APIKey) == ""
 
 	theme, themeNote := parseTheme(raw.ColorTheme)
+	providers, providerNote := parseProviders(raw.Providers)
 
 	cfg := &Config{
-		APIKey:    raw.APIKey,
-		Model:     strings.TrimSpace(raw.Model),
-		Bell:      raw.Bell,
-		URLBase:   resolveURLBase(raw.URLBase),
-		Path:      path,
-		Skipped:   raw.SetupKey && unset,
-		Mouse:     raw.Mouse,
-		Tools:     raw.Tools,
-		Verbosity: raw.Verbosity,
+		APIKey:                 raw.APIKey,
+		GitHubToken:            strings.TrimSpace(raw.GitHubToken),
+		NotionToken:            strings.TrimSpace(raw.NotionToken),
+		GoogleDriveCredentials: raw.GoogleDriveCredentials,
+		Model:                  strings.TrimSpace(raw.Model),
+		Bell:                   raw.Bell,
+		URLBase:                resolveURLBase(raw.URLBase),
+		Path:                   path,
+		Skipped:                raw.SetupKey && unset,
+		Mouse:                  raw.Mouse,
+		Tools:                  raw.Tools,
+		Verbosity:              raw.Verbosity,
 
 		Color:      raw.Color,
 		ColorTheme: theme,
 		ColorNote:  themeNote,
+
+		Providers:    providers,
+		ProviderNote: providerNote,
 	}
 
 	if unset {
@@ -346,17 +430,23 @@ func parse(path string) (*Config, error) {
 			return cfg, nil
 		}
 		return nil, &ErrNoAPIKey{
-			Path:      path,
-			Bell:      raw.Bell,
-			Model:     cfg.Model,
-			Mouse:     raw.Mouse,
-			URLBase:   cfg.URLBase,
-			Tools:     raw.Tools,
-			Verbosity: raw.Verbosity,
+			Path:                   path,
+			Bell:                   raw.Bell,
+			Model:                  cfg.Model,
+			Mouse:                  raw.Mouse,
+			URLBase:                cfg.URLBase,
+			Tools:                  raw.Tools,
+			Verbosity:              raw.Verbosity,
+			GitHubToken:            cfg.GitHubToken,
+			NotionToken:            cfg.NotionToken,
+			GoogleDriveCredentials: cfg.GoogleDriveCredentials,
 
 			Color:      raw.Color,
 			ColorTheme: theme,
 			ColorNote:  themeNote,
+
+			Providers:    cfg.Providers,
+			ProviderNote: cfg.ProviderNote,
 		}
 	}
 	return cfg, nil
@@ -372,9 +462,16 @@ func parse(path string) (*Config, error) {
 // A value that does not parse as a URL is passed on as written, so that the
 // backend reports it rather than this client guessing at what was meant.
 func resolveURLBase(raw string) string {
+	return resolveURLBaseDefault(raw, DefaultURLBase)
+}
+
+// resolveURLBaseDefault is resolveURLBase's rule, parameterised on which
+// endpoint a blank override falls back to, so the same rule serves both
+// credentials rather than being written out twice.
+func resolveURLBaseDefault(raw, def string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return DefaultURLBase
+		return def
 	}
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme == "" || u.Host == "" {
@@ -385,6 +482,63 @@ func resolveURLBase(raw string) string {
 	}
 	u.Path = strings.TrimRight(u.Path, "/") + "/api/v1"
 	return u.String()
+}
+
+// parseProviders reads the OPENROUTER_PROVIDERS array.
+//
+// An entry missing a field is dropped rather than carried through to fail
+// later, at the point a worker tries to use it, since a reader editing the
+// file benefits more from being told at startup than from a failure several
+// steps removed from the line that caused it. The array itself, rather than
+// one entry, is read raw first, so that a file whose value is not an array
+// at all produces one clear note instead of an entry-shaped error with
+// nothing to point at.
+func parseProviders(raw json.RawMessage) ([]Provider, string) {
+	text := strings.TrimSpace(string(raw))
+	if text == "" || text == "null" {
+		return nil, ""
+	}
+
+	var entries []Provider
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		return nil, "OPENROUTER_PROVIDERS is not an array of provider objects, so no provider is configured"
+	}
+
+	var providers []Provider
+	var dropped []string
+	for i, p := range entries {
+		p.Name = strings.TrimSpace(p.Name)
+		p.APIKey = strings.TrimSpace(p.APIKey)
+		p.URLBase = strings.TrimSpace(p.URLBase)
+		p.Model = strings.TrimSpace(p.Model)
+		var missing []string
+		if p.Name == "" {
+			missing = append(missing, "name")
+		}
+		if p.APIKey == "" {
+			missing = append(missing, "api_key")
+		}
+		if p.URLBase == "" {
+			missing = append(missing, "url_base")
+		}
+		if p.Model == "" {
+			missing = append(missing, "model")
+		}
+		if len(missing) > 0 {
+			label := p.Name
+			if label == "" {
+				label = fmt.Sprintf("entry %d", i)
+			}
+			dropped = append(dropped, fmt.Sprintf("%s (missing %s)", label, strings.Join(missing, ", ")))
+			continue
+		}
+		providers = append(providers, p)
+	}
+
+	if len(dropped) == 0 {
+		return providers, ""
+	}
+	return providers, "OPENROUTER_PROVIDERS dropped: " + strings.Join(dropped, "; ")
 }
 
 // checkMode enforces the 0600 requirement.

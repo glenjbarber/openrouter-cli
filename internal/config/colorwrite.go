@@ -96,6 +96,18 @@ func WriteColor(path string, on bool) error {
 		return fmt.Errorf("cannot edit %s", path)
 	}
 
+	return writeReplacing(path, body)
+}
+
+// writeReplacing writes body over the file at path, atomically.
+//
+// It is shared by the two runtime writers so that neither carries its own
+// copy of the rename, since a difference between the two would be a difference
+// in how a credential file is put back after a reader has changed a preference
+// in it. The temporary file is beside the original so the rename is within one
+// filesystem, and it is created exclusively so a file that appeared since the
+// last read is not overwritten.
+func writeReplacing(path string, body []byte) error {
 	tmp := path + ".new"
 	os.Remove(tmp)
 	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, RequiredMode)

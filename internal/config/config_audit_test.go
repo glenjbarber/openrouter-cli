@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -32,6 +33,93 @@ func TestMissingKeyCarriesBell(t *testing.T) {
 	}
 	if !noKey.Bell {
 		t.Error("Bell = false, want the preference carried through with the typed error")
+	}
+}
+
+// The GitHub token is a second credential, not the one that is missing, so
+// it must not be dropped when the OpenRouter key is absent.
+func TestMissingKeyCarriesGitHubToken(t *testing.T) {
+	path := writeConfig(t, `{"GITHUB_TOKEN":"ghp_abc"}`)
+
+	_, err := parse(path)
+	var noKey *ErrNoAPIKey
+	if !errors.As(err, &noKey) {
+		t.Fatalf("err = %v, want *ErrNoAPIKey", err)
+	}
+	if noKey.GitHubToken != "ghp_abc" {
+		t.Errorf("GitHubToken = %q, want it carried through with the typed error", noKey.GitHubToken)
+	}
+}
+
+// A file carrying both credentials resolves to a configuration holding both,
+// with the token trimmed on the same terms as the other string fields.
+func TestLoadCarriesGitHubToken(t *testing.T) {
+	path := writeConfig(t, `{"OPENROUTER_API_KEY":"k","GITHUB_TOKEN":" ghp_abc "}`)
+
+	cfg, err := parse(path)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if cfg.GitHubToken != "ghp_abc" {
+		t.Errorf("GitHubToken = %q, want it trimmed and carried through", cfg.GitHubToken)
+	}
+}
+
+// The Notion token is a second credential, not the one that is missing, so
+// it must not be dropped when the OpenRouter key is absent.
+func TestMissingKeyCarriesNotionToken(t *testing.T) {
+	path := writeConfig(t, `{"NOTION_TOKEN":"secret_abc"}`)
+
+	_, err := parse(path)
+	var noKey *ErrNoAPIKey
+	if !errors.As(err, &noKey) {
+		t.Fatalf("err = %v, want *ErrNoAPIKey", err)
+	}
+	if noKey.NotionToken != "secret_abc" {
+		t.Errorf("NotionToken = %q, want it carried through with the typed error", noKey.NotionToken)
+	}
+}
+
+// A file carrying both credentials resolves to a configuration holding both,
+// with the token trimmed on the same terms as the other string fields.
+func TestLoadCarriesNotionToken(t *testing.T) {
+	path := writeConfig(t, `{"OPENROUTER_API_KEY":"k","NOTION_TOKEN":" secret_abc "}`)
+
+	cfg, err := parse(path)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if cfg.NotionToken != "secret_abc" {
+		t.Errorf("NotionToken = %q, want it trimmed and carried through", cfg.NotionToken)
+	}
+}
+
+// The Google Drive credentials are a second credential, not the one that is
+// missing, so they must not be dropped when the OpenRouter key is absent.
+func TestMissingKeyCarriesGoogleDriveCredentials(t *testing.T) {
+	path := writeConfig(t, `{"GOOGLE_DRIVE_CREDENTIALS":{"client_email":"a@b.com"}}`)
+
+	_, err := parse(path)
+	var noKey *ErrNoAPIKey
+	if !errors.As(err, &noKey) {
+		t.Fatalf("err = %v, want *ErrNoAPIKey", err)
+	}
+	if !strings.Contains(string(noKey.GoogleDriveCredentials), "a@b.com") {
+		t.Errorf("GoogleDriveCredentials = %s, want it carried through with the typed error", noKey.GoogleDriveCredentials)
+	}
+}
+
+// A file carrying both credentials resolves to a configuration holding
+// both.
+func TestLoadCarriesGoogleDriveCredentials(t *testing.T) {
+	path := writeConfig(t, `{"OPENROUTER_API_KEY":"k","GOOGLE_DRIVE_CREDENTIALS":{"client_email":"a@b.com"}}`)
+
+	cfg, err := parse(path)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !strings.Contains(string(cfg.GoogleDriveCredentials), "a@b.com") {
+		t.Errorf("GoogleDriveCredentials = %s, want it carried through", cfg.GoogleDriveCredentials)
 	}
 }
 
