@@ -166,6 +166,7 @@ var shellPermitted = []string{
 	"make",
 	"bmake",
 	"git",
+	"notmuch",
 	"ls",
 	"cat",
 	"pwd",
