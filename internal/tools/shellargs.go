@@ -37,6 +37,76 @@ func containedArgs(argv []string, dir string) error {
 	return nil
 }
 
+// urlArgs checks the URL schemes carried by the arguments of a network reader.
+//
+// A URL is an argument rather than a path, so containedArgs holds one to the
+// tree without knowing what it is. That check answers where a call begins and
+// reaches rather than what it does with the argument it was given, which is
+// already the case for git and for make. What it cannot answer is the question
+// this one is: a file: URL is the one scheme with no network between the model
+// and the filesystem, so `file:///etc/passwd` reaches the account through a
+// program whose name suggests it is only fetching a page, and the reader
+// approving `urlview` was approving a fetch.
+//
+// The rule is one scheme rather than a list of refused ones, so a scheme
+// nobody thought of is refused with the rest rather than permitted by an
+// omission. https is the one permitted, and http is refused beside file rather
+// than being overlooked by it: an http URL carries the same content over a
+// channel anyone on the path can change, so it is the same reach for less.
+//
+// An argument carrying no scheme is left alone. Both of these programs take a
+// filename as well as a URL, and the name of a file may hold a colon without
+// being a scheme at all, so an argument is read as a URL only where it is
+// spelled as one. The two are told apart by requiring `://` rather than by a
+// colon, since a scheme without an authority is not what a fetch is given.
+func urlArgs(argv []string) error {
+	for _, arg := range argv {
+		scheme, ok := urlScheme(arg)
+		if !ok {
+			continue
+		}
+		if scheme != "https" {
+			return fmt.Errorf("refused: %q is a %s URL and only https is permitted; "+
+				"a file: URL has no network between the model and the filesystem, "+
+				"and anything else is not a page", arg, scheme)
+		}
+	}
+	return nil
+}
+
+// urlScheme reads the scheme of an argument spelled as a URL, and reports
+// whether it was.
+//
+// The scheme is required to be followed by an authority, since `://` is what
+// separates a URL from a path carrying a colon in it. The comparison is
+// against a lowercased scheme, since a scheme is case insensitive and a model
+// writing `HTTPS://` is naming the same scheme as one writing `https://`.
+func urlScheme(arg string) (string, bool) {
+	if strings.HasPrefix(arg, "-") {
+		return "", false
+	}
+	head, _, found := strings.Cut(arg, "://")
+	if !found || head == "" {
+		return "", false
+	}
+	for i := 0; i < len(head); i++ {
+		c := head[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z':
+		case c >= '0' && c <= '9', c == '+', c == '-', c == '.':
+			// A scheme may carry these after the first character, and are
+			// refused by the same rule as any other, since naming them here
+			// is what keeps this from reading part of a path as a scheme.
+			if i == 0 {
+				return "", false
+			}
+		default:
+			return "", false
+		}
+	}
+	return strings.ToLower(head), true
+}
+
 // resolvedRoot is the directory arguments are judged against, with its symlinks
 // followed.
 //
@@ -86,7 +156,7 @@ func escapesArg(arg, root string) bool {
 	// no shell is read and the program is what expands it, and the directory
 	// it is expanded against is inside the tree. A pattern is judged by the
 	// directory leading to it, which is the part that can reach out.
-	if head, _, ok := cutWildcard(joined); ok {
+	if head, ok := cutWildcard(joined); ok {
 		return escapesArg(head, root)
 	}
 

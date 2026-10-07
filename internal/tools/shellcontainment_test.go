@@ -72,7 +72,15 @@ func TestShellAllowsAPathInsideTheTree(t *testing.T) {
 
 	for _, args := range [][]string{{name}, {"file"}, {"./file"}, {dir}} {
 		r := shellCall(t, set, map[string]any{"command": "cat", "args": args})
-		if r.Err != nil {
+		if r.Err == nil {
+			continue
+		}
+		// The directory itself is not a file, so cat fails on it for its own
+		// reason, and that failure belongs to the program rather than to the
+		// bound. What is asserted is that none of these was refused for
+		// reaching out of the tree, which is the same distinction
+		// TestShellAnOptionIsNotAPath makes for grep matching nothing.
+		if strings.Contains(r.Err.Error(), "outside") {
 			t.Errorf("cat %v was refused: %v", args, r.Err)
 		}
 	}

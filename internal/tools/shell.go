@@ -25,7 +25,7 @@ const shellTool = "shell"
 // A timeout is required rather than trusted to the program finishing, since the
 // process is outside this one. A command that blocks returns an error rather
 // than waiting for a reader who cannot see that it has, which is the same
-// reason the git tool carries a deadline. The figure is longer than the git
+// reasons the git tool carries a deadline. The figure is longer than the git
 // one, since a build legitimately takes longer than a status.
 const ShellTimeout = 2 * time.Minute
 
@@ -82,13 +82,32 @@ const shellWaitDelay = 500 * time.Millisecond
 //
 // hexdump and od sit with file, on the same reasoning: each reads a file the
 // tree holds and prints what is in it. They are two programs rather than one
-// under two names, since od is the one the POSIX standard names and hexdump
-// the one the BSDs and macOS carry by name alongside it, and a host resolves
-// whichever of the two it has. Neither writes, and each takes its arguments as
-// an array rather than through a shell, so neither can reach a program that is
-// not on this list. A model asking for one is usually chasing a byte at an
-// offset in a binary or in a file whose encoding it does not know, which is a
-// question about content that cat cannot answer.
+// under two names, since od is the one POSIX names and hexdump the one the BSDs
+// and macOS carry by name alongside it, and a host resolves whichever of the
+// two it has. Neither writes, and each takes its arguments as an array rather
+// than through a shell, so neither can reach a program that is not on this
+// list. A model asking for one is usually chasing a byte at an offset in a
+// binary or in a file whose encoding it does not know, which is a question
+// about content that cat cannot answer.
+//
+// sqlite3 sits with jq above it, on the same reasoning, and is here for the
+// reason the saved-session format was chosen at all: a session is written as a
+// database so that it can be opened afterwards with any SQLite tool rather than
+// only with this client. The client writes those files with a pure Go driver
+// and never runs this program to read one, so it is on the list for a model
+// working on this repository rather than for the client itself. A model
+// checking the schema of a saved conversation, reading an autosave written
+// before a change, or answering what a message table holds has this as its
+// route in, and refusing it would mean the reader opened the file by hand.
+//
+// It writes as well as reads, since `sqlite3 session.db "drop table message"`
+// drops a table and an import creates one. That is recorded rather than
+// separated out, on the same terms as diff and as the two generators: there is
+// no rule here telling the forms that write from those that do not, so the
+// bound is the one already covering rm and gh, namely that the name bounds
+// what may be proposed while every call is still put to the reader. An
+// argument reaching out of the tree is refused by containedArgs whatever the
+// call then does with it.
 //
 // gh and rm are on the list for the opposite reason to the readers above, and
 // the reason is that they write. A model repairing a tree needs to remove what
@@ -109,6 +128,31 @@ const shellWaitDelay = 500 * time.Millisecond
 // programs on a FreeBSD host. The name resolves through PATH like every other,
 // so a host without it is refused at exec rather than reported as a permission
 // that is missing.
+//
+// urlview and urlscan are the two names on this list that fetch from the
+// network, and they are the first. Every other entry here reads the tree or
+// writes to it, so a model held to the rest of the list cannot send anything
+// out of the machine. These two can, and that is the one thing about them a
+// reader is approving that is not true of any other name here. They were added
+// on the maintainers instruction and the difference is recorded rather than
+// left to be discovered by a reader who approved one.
+//
+// urlview prints what a URL holds, and urlscan prints that page with the
+// patterns a security tool looks for marked in it, so the second is the first
+// plus a judgement. Neither is on every host, both being ports rather than
+// base programs, and a host without one is refused at exec and reported as a
+// failed command rather than as a permission that is missing.
+//
+// A URL is an argument rather than a path, so containedArgs reads it as one and
+// holds it to the tree. That check answers where a call begins and reaches
+// rather than what it does with the argument it was given, which is already the
+// case for git and for make. The scheme is held separately, and only for these
+// two, by urlArgs: a file: URL is the one scheme with no network between the
+// model and the filesystem, so it reaches the account through a program whose
+// name says it is fetching a page, and https is the only scheme permitted. The
+// rule is confined to the network readers rather than applied to every
+// argument, since `grep http://` is a reader looking for text rather than a
+// fetch, and a check on every program would refuse it.
 //
 // Every name on this list resolves by bare name through PATH, as go, make and
 // git already do. That is what makes the list portable rather than pinned to
@@ -141,6 +185,7 @@ var shellPermitted = []string{
 	"od",
 	"jq",
 	"ps",
+	"sqlite3",
 	"gh",
 	"rm",
 	"errcheck",
@@ -149,7 +194,27 @@ var shellPermitted = []string{
 	"protoc-gen-go",
 	"protoc-gen-go-grpc",
 	"staticcheck",
+	"urlview",
+	"urlscan",
 }
+
+// shellNetwork is the subset of shellPermitted that is given a URL rather than
+// a path, and the only programs whose arguments are held to a scheme.
+//
+// The two are separate lists rather than a property carried by the name, since
+// the reason for the second is a reach the first does not close and applying it
+// to every program would refuse a reader searching for the text of a URL.
+var shellNetwork = []string{"urlview", "urlscan"}
+
+// shellNetworkMap is shellNetwork as a lookup, built the same way
+// shellPermittedMap is.
+var shellNetworkMap = func() map[string]bool {
+	m := make(map[string]bool, len(shellNetwork))
+	for _, name := range shellNetwork {
+		m[name] = true
+	}
+	return m
+}()
 
 // shellPermittedMap is shellPermitted as a lookup, so that the two cannot drift
 // apart as separate lists would.
@@ -167,12 +232,12 @@ const shellParameters = `{
   "properties": {
     "command": {
       "type": "string",
-      "description": "The program to run, such as go. It must be one of: go, gofmt, make, bmake, git, ls, cat, pwd, echo, grep, rg, find, wc, head, tail, sed, awk, stat, file, diff, hexdump, od, jq, ps, gh, rm, errcheck, gosec, govulncheck, protoc-gen-go, protoc-gen-go-grpc, staticcheck. Anything else is refused before it runs."
+      "description": "The program to run, such as go. It must be one of: go, gofmt, make, bmake, git, ls, cat, pwd, echo, grep, rg, find, wc, head, tail, sed, awk, stat, file, diff, hexdump, od, jq, ps, sqlite3, gh, rm, errcheck, gosec, govulncheck, protoc-gen-go, protoc-gen-go-grpc, staticcheck, urlview, urlscan. Anything else is refused before it runs."
     },
     "args": {
       "type": "array",
       "items": {"type": "string"},
-      "description": "The arguments after the program, such as [\"build\", \"./...\"]. They are passed to the program as an array and are never read by a shell, so a pipe, a redirect or a chain of commands is not expressible here. An argument naming a path outside the working directory is refused rather than passed on."
+      "description": "The arguments after the program, such as [\"build\", \"./...\"]. They are passed to the program as an array and are never read by a shell, so a pipe, a redirect or a chain of commands is not expressible here. An argument naming a path outside the working directory is refused rather than passed on. An argument to urlview or urlscan naming a URL must be an https one; every other scheme is refused, including file."
     },
     "path": {
       "type": "string",
@@ -271,7 +336,10 @@ type callArguments struct {
 // asked names the directory the command would run in. The arguments are then
 // checked against that directory, since a question naming a command that would
 // reach outside the tree is a question about something the reader cannot see.
-// The reader is asked last, once there is something specific to ask about.
+// A URL argument is held to its scheme before either, since the one form worth
+// naming reaches the filesystem itself rather than the tree the reader was
+// shown. The reader is asked last, once there is something specific to ask
+// about.
 func (sh *shellTools) call(raw json.RawMessage) (string, error) {
 	var args callArguments
 	if err := decode(raw, &args); err != nil {
@@ -285,6 +353,16 @@ func (sh *shellTools) call(raw json.RawMessage) (string, error) {
 	if !shellPermittedMap[program] {
 		return "", fmt.Errorf("%s is not permitted: this tool runs %s, and the reader "+
 			"is asked about each one", program, permittedPrograms())
+	}
+	// A network reader is the one program here that is handed a URL rather than
+	// a path, so it is the one program whose arguments are held to a scheme.
+	// The check is before the reader is asked, on the same grounds as the
+	// others: a call that would be refused is not something to interrupt
+	// somebody about.
+	if shellNetworkMap[program] {
+		if err := urlArgs(args.Args); err != nil {
+			return "", err
+		}
 	}
 	dir, err := sh.workDir(args.Path)
 	if err != nil {
@@ -434,7 +512,8 @@ func (sh *shellTools) run(program, dir string, argv []string) (string, error) {
 	}
 
 	// A program that succeeded and said nothing still reports what it did,
-	// since an empty result reads to a model as though the call was dropped.
+	// since an empty result reads to a model as though the call had been
+	// dropped.
 	if stdout.buf.Len() == 0 {
 		return fmt.Sprintf("%s ran in %s and printed nothing.", Describe(program, argv), dir), nil
 	}

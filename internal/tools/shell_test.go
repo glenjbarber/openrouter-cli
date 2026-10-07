@@ -247,11 +247,15 @@ func TestShellACommandThatOverrunsIsStopped(t *testing.T) {
 	dir := t.TempDir()
 	set := newShell(dir, AlwaysAllow(), 100*time.Millisecond)
 
+	if err := os.WriteFile(filepath.Join(dir, "followed"), nil, 0o600); err != nil {
+		t.Fatalf("writing the file: %v", err)
+	}
+
 	// tail is on the allowlist and following an empty file blocks for ever, so
 	// this reaches the deadline through the whole path rather than by calling
 	// the runner directly.
 	start := time.Now()
-	r := shellCall(t, set, map[string]any{"command": "tail", "args": []string{"-f", "/dev/null"}})
+	r := shellCall(t, set, map[string]any{"command": "tail", "args": []string{"-f", "followed"}})
 
 	if r.Err == nil {
 		t.Fatal("a command past its deadline reported no error")
