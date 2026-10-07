@@ -37,6 +37,18 @@ GO_MODULE=	github.com/glenjbarber/openrouter-cli
 # value falls back to the port version.
 GO_LDFLAGS=	-X main.version=${PORTVERSION}
 
+# The build does not stamp VCS information into the binary.
+#
+# A tree that has no .git beside it refuses to build at all, reporting only
+# "error obtaining VCS status" and naming nothing in the source. That is the
+# distfile a port is built from, an exported archive, and a copy made by hand,
+# so the flag is what keeps those building rather than only a checkout.
+#
+# What is given up is the revision recorded in the binary, which the port
+# Makefile above already states in LICENSE_COMMIT and PORTVERSION, so a reader
+# of the build has the revision without it being carried by the executable.
+GO_BUILD_FLAGS=	-buildvcs=false
+
 # ---------------------------------------------------------------- developer
 
 PREFIX?=	/usr/local
@@ -63,7 +75,7 @@ build: ${BIN}
 # is requested, which costs a second and avoids a stale build.
 ${BIN}: ${GO_FILES}
 	@mkdir -p ${BUILD_DIR}
-	${GO} build -ldflags "${GO_LDFLAGS}" -o ${BIN} ./cmd/openrouter-cli
+	${GO} build ${GO_BUILD_FLAGS} -ldflags "${GO_LDFLAGS}" -o ${BIN} ./cmd/openrouter-cli
 
 ## install: copy the client into ${BINDIR}.
 install: build
@@ -102,7 +114,7 @@ tidy:
 crossbuild:
 	@for os in freebsd linux darwin netbsd openbsd; do \
 		printf '%-10s ' $$os; \
-		GOOS=$$os GOARCH=amd64 $(GO) build ./... || exit 1; \
+		GOOS=$$os GOARCH=amd64 $(GO) build ${GO_BUILD_FLAGS} ./... || exit 1; \
 		GOOS=$$os GOARCH=amd64 $(GO) vet ./... || exit 1; \
 		echo ok; \
 	done

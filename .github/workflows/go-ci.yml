@@ -25,6 +25,10 @@ jobs:
       - name: Install PAM development files
         run: sudo apt-get update && sudo apt-get install -y libpam0g-dev
 
+      # The tree is checked out with its history, so the revision can be
+      # stamped into the binary here. The Makefile does not stamp one, since a
+      # distfile has no revision to stamp, and the two agree on the version
+      # being built rather than disagreeing about it.
       - name: Check formatting
         run: test -z "$(gofmt -l .)"
 
@@ -35,7 +39,7 @@ jobs:
         run: go test -race ./...
 
       - name: Build
-        run: go build ./...
+        run: go build -ldflags "-X main.version=0.0.0-dev" -o build/openrouter-cli ./cmd/openrouter-cli
 
       # The terminal layer names ioctl requests that differ between the BSD
       # family and System V. A change there breaks a platform that is not the

@@ -44,3 +44,9 @@ go.work.sum
 # Working notes, not part of the project.
 /todo.txt
 .OPENROUTER.md
+
+# The worker's operating log and its lock, written per worktree and never
+# committed.
+.orcli.md
+.orcli.log
+.orcli.log.lock
